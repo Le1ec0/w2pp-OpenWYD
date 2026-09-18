@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WydCdk.ClientPatcher/WydCdk.ClientPatcher.csproj" />
+    <Project Path="src/WydCdk.Protocol/WydCdk.Protocol.csproj" />
+    <Project Path="src/WydCdk.Server/WydCdk.Server.csproj" />
+    <Project Path="src/WydCdk.Server.ControlPanel/WydCdk.Server.ControlPanel.csproj" />
+    <Project Path="src/WydCdk.World/WydCdk.World.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WydCdk.Engine.Tests/WydCdk.Engine.Tests.csproj" />
+  </Folder>
+</Solution>

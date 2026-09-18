@@ -1,0 +1,8 @@
+namespace WydCdk.Protocol;
+
+/// <summary>Exact 7.xx key table transcribed from the current legacy CPSock.cpp.</summary>
+public static class LegacyKeywordTable
+{
+    private const string Base64 = "hIc31+p5kX1LS4V9h4GRfA9zkZGHfQ19ho9zD+HdhX0FfYWDh5yFMw3ihxkPeYWGN33X3el9132FeQV9D+GHfiOH9Xlf40uDo6KuDhR93n6FeoWvzX2HpYd94X2IfRWRI32HfA16hYcXfIV9rIC7eYSbW6XXjwUPhX6FgIWY9Z2jGg0Zh3yFfYR9hX7nlw0PhXvqfa2ArX23rw196T2FfYe3I33nt6MMh36FpX12NbkNbyN9h5uFDOGhDX+HfYR6hHvhhuhv0XmFGVOVw0cZfecMN3wjfYV9S3khpYd9GX0NfRWRI32HfIV6ha/NfYd96T2FfRV5hX3Be+p9t32FfYV9DX3pc4V5BX3XfYXhueEPZYWGLX3X3aOO5n3efq4OD+GJfiN99Xkj4UuDDA+Fe4V+j4CFmPV6hRoN4Q98iQyFCyNph3sjDB+3IXqIfo+lfYC3uRi/SxmFpZGAh4GHfA9zkZGEhzfXhnnh3YV6c5sFfQ2Dh5yFM4d9hQ+HfQ199n6HfYgZifXR3YV9i8PqetewDX2HpYd8c359hocjhRDX3+2l4XqFI+p+hZiteYZ9hX3XfeF69X2FsCs34XqHeYR9c3OHfSN96X2FfgJ93S2Heed5rXwj2ocNDXvneZt9148FfQ00j32th+l8hYCFeYrD56Xoaw10EHMzFw03IRk=";
+    public static ReadOnlyMemory<byte> Bytes { get; } = Convert.FromBase64String(Base64);
+}
