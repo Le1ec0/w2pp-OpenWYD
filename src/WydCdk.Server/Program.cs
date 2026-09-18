@@ -214,7 +214,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                     {
                         if (accounts is null || !sessions.TryGet(connectionId, out var deleteSession) || deleteSession!.State != LoginSessionState.CharacterSelection)
                         {
-                            await stream.WriteAsync(DeleteCharacterFailSignal.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, DeleteCharacterFailSignal.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken, "delete-character-failure-session");
                             Console.WriteLine("Rejected delete-character frame: session is not in character selection.");
                             continue;
                         }
@@ -222,7 +222,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         var outcome = await new DeleteCharacterCoordinator(accounts).HandleAsync(deleteSession.AccountName!, deleteCharacter, deleteSession.SecureVerified, cancellationToken);
                         if (outcome.IsSuccess && outcome.Snapshot is not null)
                         {
-                            await stream.WriteAsync(new DeleteCharacterConfirmation(outcome.Snapshot.Characters).ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, new DeleteCharacterConfirmation(outcome.Snapshot.Characters).ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken, $"delete-character-confirmation account={deleteSession.AccountName} slot={deleteCharacter.Slot}");
                             Console.WriteLine($"Character deleted: account={deleteSession.AccountName}, slot={deleteCharacter.Slot}.");
                         }
                         else if (outcome.Status == DeleteCharacterStatus.SecureNotVerified)
@@ -232,7 +232,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         }
                         else
                         {
-                            await stream.WriteAsync(DeleteCharacterFailSignal.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, DeleteCharacterFailSignal.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken, $"delete-character-failure account={deleteSession.AccountName} slot={deleteCharacter.Slot} reason={outcome.Status}");
                             Console.WriteLine($"Character deletion rejected: account={deleteSession.AccountName}, slot={deleteCharacter.Slot}, reason={outcome.Status}.");
                         }
                         continue;
