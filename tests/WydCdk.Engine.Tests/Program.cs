@@ -2768,9 +2768,12 @@ static void LegacyAccountSnapshotReadsFixture()
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(firstCharacter[18..], 55); // Guild
     System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(firstCharacter[28..], 66); // Coin
     System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(firstCharacter[32..], 77); // Exp
-    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(firstCharacter[42..], 9); // SPY (the only half of the SPX/SPY bug that survives)
+    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(firstCharacter[40..], 8); // SPX
+    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(firstCharacter[42..], 9); // SPY
     new LegacyScore(3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21).Write(firstCharacter.Slice(92, LegacyScore.SizeInBytes));
     new LegacyItem(42, 1, 2, 3, 4, 5, 6).Write(firstCharacter.Slice(140, LegacyItem.SizeInBytes));
+    var firstMobExtra = file.AsSpan(mobExtraOffset, mobExtraStride);
+    firstMobExtra[LegacyAccountSnapshot.MobExtraCitizenOffset] = 7;
 
     // Second character wears one of the five "empty face" placeholders; DBGetSelChar replaces it using mobExtra.
     var secondCharacter = file.AsSpan(charactersOffset + characterStride, characterStride);
@@ -2800,8 +2803,8 @@ static void LegacyAccountSnapshotReadsFixture()
     var snapshot = LegacyAccountSnapshot.Read("SANDBOX", file);
     var hero = snapshot.Characters.Slots[0];
     Assert(hero.Name == "HERO" && hero.Guild == 55 && hero.Coin == 66 && hero.Experience == 77, "Character name, guild, coin, or experience differ from fixture.");
-    Assert(hero.SavedPositionX == 9 && hero.SavedPositionY == 0, "SPX/SPY legacy bug was not reproduced (SPY survives into SavedPositionX, SavedPositionY stays zero).");
-    Assert(hero.Score.Level == 3 && hero.Equipment[0].Index == 42, "Character score or equipment offset differs from fixture.");
+    Assert(hero.SavedPositionX == 8 && hero.SavedPositionY == 9, "SPX/SPY were not projected into the character-selection snapshot.");
+    Assert(hero.Score.Level == 3 && hero.Equipment[0].Index == 42 && hero.Equipment[0].Effect3 == 28 && hero.Equipment[0].Value3 == 7, "Character score, equipment, or citizen marker differs from fixture.");
     Assert(snapshot.Characters.Slots[1].Equipment[0].Index == 21, "Mortal face substitution (ClassMaster == MORTAL) was not applied.");
     Assert(snapshot.Characters.Slots[2].Equipment[0].Index == 12, "Non-mortal face substitution (MortalFace + 7) was not applied.");
     Assert(snapshot.Cargo[0].Index == 99 && snapshot.Coin == 12345, "Cargo or account coin offset differs from fixture.");

@@ -78,6 +78,7 @@ public sealed record LegacyAccountSnapshot(
     public const int MobResistOffset = 806; // STRUCT_MOB.Resist[4], confirmed by the x86 layout probe
 
     public const int MobExtraClassMasterOffset = 0;
+    public const int MobExtraCitizenOffset = 2; // STRUCT_MOBEXTRA.Citizen in the 7.59 account layout
     public const int MobExtraMortalFaceOffset = 14;
     public const int MobExtraPilulaOrcOffset = 19; // QuestInfo.Mortal.PilulaOrc, confirmed by the x86 layout probe
     public const int MobExtraHoldOffset = 476; // offsetof(STRUCT_MOBEXTRA, Hold), confirmed with the x86 probe against Basedef.h
@@ -101,12 +102,14 @@ public sealed record LegacyAccountSnapshot(
         for (var character = 0; character < CharacterCount; character++)
         {
             var mob = file.Slice(CharactersOffset + (character * CharacterStride), CharacterStride);
+            var mobExtra = file.Slice(MobExtraOffset + (character * MobExtraStride), MobExtraStride);
             var name = ReadCString(mob.Slice(MobNameOffset, NameFieldLength));
             var guild = BinaryPrimitives.ReadUInt16LittleEndian(mob[MobGuildOffset..]);
-            // CFileDB::DBGetSelChar assigns sel->SPX[i] twice (SPX then SPY), so only SPY survives on
-            // the wire; STRUCT_SELCHAR.SPY is left as uninitialized stack memory in the original C++.
-            // We reproduce the deterministic half of that bug and use zero for the undefined half.
-            var savedPositionX = BinaryPrimitives.ReadInt16LittleEndian(mob[MobSavedPositionYOffset..]);
+            // Reference759/ServidorSource/Code/DBSrv/CFileDB.cpp: DBGetSelChar copies both saved
+            // coordinates into STRUCT_SELCHAR. The older W2PP source in this repository has a stale
+            // SPX/SPY typo; it is not the layout used by the 7.59 client/server reference.
+            var savedPositionX = BinaryPrimitives.ReadInt16LittleEndian(mob[MobSavedPositionXOffset..]);
+            var savedPositionY = BinaryPrimitives.ReadInt16LittleEndian(mob[MobSavedPositionYOffset..]);
             var score = LegacyScore.Read(mob.Slice(MobCurrentScoreOffset, LegacyScore.SizeInBytes));
             var coin = BinaryPrimitives.ReadInt32LittleEndian(mob[MobCoinOffset..]);
             var experience = BinaryPrimitives.ReadInt64LittleEndian(mob[MobExperienceOffset..]);
@@ -119,14 +122,21 @@ public sealed record LegacyAccountSnapshot(
             // face computed from mobExtra, so the client shows the character's face instead of a bare head.
             if (equipment[0].Index is 22 or 23 or 24 or 25 or 32)
             {
-                var mobExtra = file.Slice(MobExtraOffset + (character * MobExtraStride), MobExtraStride);
                 var classMaster = BinaryPrimitives.ReadInt16LittleEndian(mobExtra[MobExtraClassMasterOffset..]);
                 var mortalFace = BinaryPrimitives.ReadInt16LittleEndian(mobExtra[MobExtraMortalFaceOffset..]);
                 var faceIndex = (short)(classMaster == ClassMasterMortal ? 21 : mortalFace + 7);
                 equipment[0] = equipment[0] with { Index = faceIndex };
             }
 
-            slots[character] = new LegacyCharacterSlot(savedPositionX, 0, name, score, equipment, guild, coin, experience);
+            // The selection screen uses the third helm effect for the citizen/mantle state. The legacy
+            // DBGetSelChar projection writes it for every slot, including an empty/deleted slot.
+            equipment[0] = equipment[0] with
+            {
+                Effect3 = 28,
+                Value3 = mobExtra[MobExtraCitizenOffset]
+            };
+
+            slots[character] = new LegacyCharacterSlot(savedPositionX, savedPositionY, name, score, equipment, guild, coin, experience);
         }
 
         var cargo = new LegacyItem[CargoCount];
