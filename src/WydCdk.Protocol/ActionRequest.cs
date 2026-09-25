@@ -10,6 +10,7 @@ public sealed record ActionRequest(short PositionX, short PositionY, int Effect,
     public const ushort IllusionMessageType = 0x0368; // 104 | both directions
     public const int PacketSize = 52;
     private const int RouteLength = 24;
+    public ushort WireType { get; init; } = MessageType;
 
     public static bool TryParse(DecodedFrame frame, out ActionRequest? request)
     {
@@ -25,7 +26,10 @@ public sealed record ActionRequest(short PositionX, short PositionY, int Effect,
             BinaryPrimitives.ReadInt32LittleEndian(payload[8..]),
             payload.Slice(12, RouteLength).ToArray(),
             BinaryPrimitives.ReadInt16LittleEndian(payload[36..]),
-            BinaryPrimitives.ReadInt16LittleEndian(payload[38..]));
+            BinaryPrimitives.ReadInt16LittleEndian(payload[38..]))
+        {
+            WireType = frame.Header.Type,
+        };
         return true;
     }
 
@@ -46,6 +50,6 @@ public sealed record ActionRequest(short PositionX, short PositionY, int Effect,
     public byte[] ToFrame(LegacyFrameCodec codec, uint clientTick, byte keywordIndex, ushort id)
     {
         ArgumentNullException.ThrowIfNull(codec);
-        return codec.Encode(MessageType, id, clientTick, ToPayload(), keywordIndex);
+        return codec.Encode(WireType, id, clientTick, ToPayload(), keywordIndex);
     }
 }

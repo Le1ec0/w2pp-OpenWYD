@@ -13,6 +13,8 @@ if (args.Length == 4 && args[0].Equals("disasm", StringComparison.OrdinalIgnoreC
     return DisassembleExecutable(Path.GetFullPath(args[1]), disasmVa, disasmCount);
 if (args.Length == 3 && args[0].Equals("find-hex", StringComparison.OrdinalIgnoreCase))
     return FindHex(Path.GetFullPath(args[1]), args[2]);
+if (args.Length == 2 && args[0].Equals("embed", StringComparison.OrdinalIgnoreCase))
+    return EmbedNativeHooks(Path.GetFullPath(args[1]));
 
 // Each patch flips one already-existing constant at its point of assignment (never a jump/return fake-out),
 // matching how the reference W2PP\Source\Code\ClientPatch_v7662 hooks work. Offsets are file offsets
@@ -114,7 +116,7 @@ PatchDefinition[] wydLauncherPatches =
 
 if (args.Length != 2 || args[0] is not ("apply" or "restore"))
 {
-    Console.Error.WriteLine("Uso: WydCdk.ClientPatcher <apply|restore|inspect|decode-strdef> <caminho>");
+    Console.Error.WriteLine("Uso: WydCdk.ClientPatcher <apply|restore|inspect|decode-strdef|embed> <caminho>");
     Console.Error.WriteLine("     WydCdk.ClientPatcher disasm <caminho-exe> <va-hex> <quantidade>");
     Console.Error.WriteLine("     WydCdk.ClientPatcher find-hex <caminho-exe> <bytes-hex>");
     return 2;
@@ -194,32 +196,7 @@ foreach (var patch in patches)
 }
 
 if (!isLauncher)
-{
-    var nativeBridge = Path.Combine(Path.GetDirectoryName(target)!, "CDK.dll");
-    if (File.Exists(nativeBridge))
-    {
-        var importResult = EnsureStaticImport(bytes, "CDK.dll", "CDK_Anchor");
-        if (importResult.Error is not null)
-        {
-            Console.Error.WriteLine($"Import estatico nao aplicado: {importResult.Error}");
-            return 10;
-        }
-
-        if (importResult.Changed)
-        {
-            changed = true;
-            Console.WriteLine("Import estatico 'CDK.dll' adicionado ao WYD.exe.");
-        }
-        else
-        {
-            Console.WriteLine("Import estatico 'CDK.dll' ja aplicado.");
-        }
-    }
-    else
-    {
-        Console.WriteLine("CDK.dll ausente ao lado do WYD.exe; ponte nativa nao adicionada.");
-    }
-}
+    Console.WriteLine("Ponte nativa externa desativada; use 'embed' para embutir os hooks no WYD.exe.");
 
 if (changed)
 {
@@ -231,87 +208,6 @@ if (changed)
 
 Console.WriteLine($"Backup original: {backup}");
 return 0;
-
-static ImportPatchResult EnsureStaticImport(byte[] image, string dllName, string functionName)
-{
-    if (!TryReadPe32Layout(image, out var layout, out var layoutError))
-        return new(false, layoutError);
-
-    if (Encoding.ASCII.GetByteCount(dllName) > 255 || Encoding.ASCII.GetByteCount(functionName) > 255)
-        return new(false, "nome de DLL ou funcao grande demais");
-
-    if (!TryRvaToFileOffset(layout.ImportRva, layout.Sections, out var importOffset) || layout.ImportSize < 20)
-        return new(false, "diretorio de imports invalido");
-
-    var importEnd = checked(importOffset + (int)layout.ImportSize);
-    if (importEnd > image.Length)
-        return new(false, "diretorio de imports ultrapassa o arquivo");
-
-    var descriptorCount = 0;
-    for (var descriptor = importOffset; descriptor + 20 <= importEnd; descriptor += 20)
-    {
-        var nameRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor + 12));
-        var firstThunkRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor + 16));
-        if (nameRva == 0 && firstThunkRva == 0)
-            break;
-
-        if (TryRvaToFileOffset(nameRva, layout.Sections, out var nameOffset) &&
-            string.Equals(ReadAsciiNullTerminated(image, nameOffset, 256), dllName, StringComparison.OrdinalIgnoreCase))
-            return new(false, null);
-
-        descriptorCount++;
-    }
-
-    var oldTerminatorOffset = importOffset + descriptorCount * 20;
-    if (oldTerminatorOffset + 20 > importEnd)
-        return new(false, "diretorio de imports sem terminador valido");
-
-    var newImportSize = checked((int)layout.ImportSize + 20);
-    var dllNameBytes = Encoding.ASCII.GetBytes(dllName + "\0");
-    var functionNameBytes = Encoding.ASCII.GetBytes(functionName + "\0");
-    var hintNameLength = checked(2 + functionNameBytes.Length);
-    var storageLength = Align4(newImportSize) + 8 + 8 + Align4(dllNameBytes.Length) + Align4(hintNameLength);
-    var dataSectionIndex = Array.FindIndex(layout.Sections, section => section.Name.Equals(".data", StringComparison.Ordinal));
-    if (dataSectionIndex < 0)
-        return new(false, "secao .data ausente");
-    var dataSection = layout.Sections[dataSectionIndex];
-
-    var storageOffset = FindZeroRun(image, checked((int)dataSection.RawPointer), checked((int)dataSection.RawSize), storageLength, 4);
-    if (storageOffset < 0)
-        return new(false, "nao ha espaco zerado seguro na secao .data");
-
-    var newImportOffset = storageOffset;
-    var iltOffset = Align4(newImportOffset + newImportSize);
-    var iatOffset = iltOffset + 8;
-    var dllNameOffset = iatOffset + 8;
-    var hintNameOffset = Align4(dllNameOffset + dllNameBytes.Length);
-
-    if (!TryFileOffsetToVa(newImportOffset, layout.Sections, layout.ImageBase, out var newImportRva, out _) ||
-        !TryFileOffsetToVa(iltOffset, layout.Sections, layout.ImageBase, out var iltRva, out _) ||
-        !TryFileOffsetToVa(iatOffset, layout.Sections, layout.ImageBase, out var iatRva, out _) ||
-        !TryFileOffsetToVa(dllNameOffset, layout.Sections, layout.ImageBase, out var dllNameRva, out _) ||
-        !TryFileOffsetToVa(hintNameOffset, layout.Sections, layout.ImageBase, out var hintNameRva, out _))
-        return new(false, "nao foi possivel converter o novo import para RVA");
-
-    Array.Clear(image, newImportOffset, storageLength);
-    Buffer.BlockCopy(image, importOffset, image, newImportOffset, descriptorCount * 20);
-
-    var newDescriptorOffset = newImportOffset + descriptorCount * 20;
-    WriteUInt32(image, newDescriptorOffset, iltRva);
-    WriteUInt32(image, newDescriptorOffset + 12, dllNameRva);
-    WriteUInt32(image, newDescriptorOffset + 16, iatRva);
-
-    WriteUInt32(image, iltOffset, hintNameRva);
-    WriteUInt32(image, iatOffset, hintNameRva);
-    dllNameBytes.CopyTo(image.AsSpan(dllNameOffset));
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(hintNameOffset), 0);
-    functionNameBytes.CopyTo(image.AsSpan(hintNameOffset + 2));
-
-    var importDirectoryOffset = layout.OptionalOffset + 96 + (1 * 8);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(importDirectoryOffset), newImportRva);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(importDirectoryOffset + 4), (uint)newImportSize);
-    return new(true, null);
-}
 
 static bool TryReadPe32Layout(byte[] image, out PeLayout layout, out string error)
 {
@@ -368,34 +264,7 @@ static bool TryReadPe32Layout(byte[] image, out PeLayout layout, out string erro
     return true;
 }
 
-static int FindZeroRun(byte[] image, int start, int length, int required, int alignment)
-{
-    var end = checked(start + length);
-    for (var offset = AlignUp(start, alignment); offset + required <= end; offset += alignment)
-    {
-        var allZero = true;
-        for (var index = offset; index < offset + required; index++)
-        {
-            if (image[index] != 0)
-            {
-                allZero = false;
-                break;
-            }
-        }
-
-        if (allZero)
-            return offset;
-    }
-
-    return -1;
-}
-
-static int Align4(int value) => AlignUp(value, 4);
-
 static int AlignUp(int value, int alignment) => checked((value + alignment - 1) / alignment * alignment);
-
-static void WriteUInt32(byte[] image, int offset, uint value) =>
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset, 4), value);
 
 static string HashOf(string path)
 {
@@ -658,6 +527,255 @@ static int FindHex(string target, string patternText)
     return 0;
 }
 
+static int EmbedNativeHooks(string target)
+{
+    // This is the untouched WYD.exe shared by the validated 7.60 profiles.
+    // The temporary debug hooks are intentionally not part of the payload.
+    const string embeddedWydExeSha256 = "B81D826E44B2366DDE03FED91076631F6C94AAAB067CF876F679B78D564AC56B";
+
+    if (!File.Exists(target))
+    {
+        Console.Error.WriteLine($"Executavel nao encontrado: {target}");
+        return 3;
+    }
+
+    var backup = target + ".cdk-original.bak";
+    var bytes = File.ReadAllBytes(target);
+    if (TryReadPe32Layout(bytes, out var existingLayout, out var layoutError) &&
+        existingLayout.Sections.Any(section => section.Name.Equals(".cdk", StringComparison.OrdinalIgnoreCase)))
+    {
+        if (!TryRemoveStaticImport(bytes, "CDK.dll", out var importChanged, out var importError))
+        {
+            Console.Error.WriteLine($"Payload ja embutido, mas a limpeza do import falhou: {importError}");
+            return 11;
+        }
+
+        if (!importChanged)
+        {
+            Console.WriteLine("Payload funcional ja embutido e sem import de CDK.dll; nada a alterar.");
+            return 0;
+        }
+
+        var cleanBackup = target + ".cdk-original.bak";
+        if (!File.Exists(cleanBackup) || !string.Equals(HashOf(cleanBackup), embeddedWydExeSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("Backup original ausente ou invalido para limpar o import de CDK.dll.");
+            return 7;
+        }
+
+        var cleanTemporary = target + ".cdk-import-cleaning";
+        File.WriteAllBytes(cleanTemporary, bytes);
+        File.Move(cleanTemporary, target, overwrite: true);
+        Console.WriteLine($"Import de CDK.dll removido do WYD.exe: {target}");
+        return 0;
+    }
+
+    if (!string.Equals(HashOf(target), embeddedWydExeSha256, StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine("Recusado: o WYD.exe nao e a copia 7.60 original validada para a injecao.");
+        return 6;
+    }
+
+    if (!File.Exists(backup))
+        File.Copy(target, backup, overwrite: false);
+    if (!string.Equals(HashOf(backup), embeddedWydExeSha256, StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine("Backup .cdk existente nao confere com o WYD.exe original; interrompido.");
+        return 7;
+    }
+
+    if (!TryEmbedNativeHooks(ref bytes, out var message))
+    {
+        Console.Error.WriteLine($"Injecao recusada: {message}");
+        return 10;
+    }
+
+    var temporary = target + ".cdk-embedding";
+    File.WriteAllBytes(temporary, bytes);
+    File.Move(temporary, target, overwrite: true);
+    Console.WriteLine($"Payload funcional embutido: {target}");
+    Console.WriteLine($"Backup original: {backup}");
+    return 0;
+}
+
+static bool TryEmbedNativeHooks(ref byte[] image, out string error)
+{
+    error = string.Empty;
+    if (!TryReadPe32Layout(image, out var layout, out error))
+        return false;
+
+    var peOffset = BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(0x3C));
+    var sectionCount = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(peOffset + 6));
+    var optionalSize = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(peOffset + 20));
+    var optionalOffset = peOffset + 24;
+    var sectionTableOffset = optionalOffset + optionalSize;
+    var fileAlignment = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(optionalOffset + 36));
+    var sectionAlignment = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(optionalOffset + 32));
+    var imageBase = layout.ImageBase;
+    var originalEntryRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(optionalOffset + 16));
+
+    if (fileAlignment == 0 || sectionAlignment == 0 || sectionCount == 0)
+    {
+        error = "alinhamento ou tabela de secoes invalido";
+        return false;
+    }
+
+    var lastSectionEndRva = layout.Sections.Max(section =>
+        checked(section.VirtualAddress + Math.Max(section.VirtualSize, section.RawSize)));
+    var newSectionRva = checked((uint)AlignUp(checked((int)lastSectionEndRva), checked((int)sectionAlignment)));
+    var newRawOffset = AlignUp(image.Length, checked((int)fileAlignment));
+    var imageBaseVa = imageBase + newSectionRva;
+
+    if (!TryFindImportIat(image, "KERNEL32.dll", "VirtualProtect", out var virtualProtectIatVa))
+    {
+        error = "VirtualProtect nao foi encontrado nos imports do WYD.exe";
+        return false;
+    }
+    if (!TryFindImportIat(image, "KERNEL32.dll", "GetModuleHandleA", out var getModuleHandleAIatVa) ||
+        !TryFindImportIat(image, "KERNEL32.dll", "GetProcAddress", out var getProcAddressIatVa))
+    {
+        error = "APIs de resolucao dinamica ausentes nos imports do WYD.exe";
+        return false;
+    }
+
+    var payload = NativeHookPayload.Build(
+        imageBaseVa,
+        imageBase + originalEntryRva,
+        virtualProtectIatVa,
+        getModuleHandleAIatVa,
+        getProcAddressIatVa);
+    var rawSize = AlignUp(payload.Length, checked((int)fileAlignment));
+    var newSizeOfImage = AlignUp(checked((int)(newSectionRva + (uint)payload.Length)), checked((int)sectionAlignment));
+    var newSectionHeaderOffset = checked(sectionTableOffset + sectionCount * 40);
+
+    var sizeOfHeaders = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(optionalOffset + 60));
+    if ((uint)(newSectionHeaderOffset + 40) > sizeOfHeaders)
+    {
+        error = "nao ha espaco no cabecalho PE para uma nova secao";
+        return false;
+    }
+
+    Array.Resize(ref image, checked(newRawOffset + rawSize));
+    Array.Clear(image, newRawOffset, rawSize);
+    payload.CopyTo(image.AsSpan(newRawOffset));
+
+    var sectionHeader = image.AsSpan(newSectionHeaderOffset, 40);
+    sectionHeader.Clear();
+    Encoding.ASCII.GetBytes(".cdk\0\0\0\0").CopyTo(sectionHeader);
+    BinaryPrimitives.WriteUInt32LittleEndian(sectionHeader[8..], (uint)payload.Length);
+    BinaryPrimitives.WriteUInt32LittleEndian(sectionHeader[12..], newSectionRva);
+    BinaryPrimitives.WriteUInt32LittleEndian(sectionHeader[16..], (uint)rawSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(sectionHeader[20..], (uint)newRawOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(sectionHeader[36..], 0xE0000020);
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), checked((ushort)(sectionCount + 1)));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 16), newSectionRva);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 56), (uint)newSizeOfImage);
+
+    if (!TryRemoveStaticImport(image, "CDK.dll", out _, out error))
+        return false;
+    return true;
+}
+
+static bool TryRemoveStaticImport(byte[] image, string dllName, out bool changed, out string error)
+{
+    changed = false;
+    error = string.Empty;
+    if (!TryReadPe32Layout(image, out var layout, out error) ||
+        !TryRvaToFileOffset(layout.ImportRva, layout.Sections, out var importOffset))
+    {
+        error = string.IsNullOrEmpty(error) ? "diretorio de imports invalido" : error;
+        return false;
+    }
+
+    for (var descriptor = importOffset; descriptor + 20 <= image.Length; descriptor += 20)
+    {
+        var originalThunkRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor));
+        var nameRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor + 12));
+        var firstThunkRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor + 16));
+        if (originalThunkRva == 0 && nameRva == 0 && firstThunkRva == 0)
+            break;
+        if (!TryRvaToFileOffset(nameRva, layout.Sections, out var nameOffset) ||
+            !string.Equals(ReadAsciiNullTerminated(image, nameOffset, 128), dllName, StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        var nextDescriptor = descriptor + 20;
+        if (nextDescriptor + 20 > image.Length ||
+            BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(nextDescriptor)) != 0 ||
+            BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(nextDescriptor + 12)) != 0 ||
+            BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(nextDescriptor + 16)) != 0)
+        {
+            error = "o import de CDK.dll nao e o ultimo descritor; limpeza segura recusada";
+            return false;
+        }
+
+        var hintNameOffset = -1;
+        if (originalThunkRva != 0 && TryRvaToFileOffset(originalThunkRva, layout.Sections, out var originalThunkOffset))
+        {
+            var hintNameRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(originalThunkOffset));
+            if ((hintNameRva & 0x8000_0000) == 0)
+                TryRvaToFileOffset(hintNameRva, layout.Sections, out hintNameOffset);
+        }
+
+        Array.Clear(image, descriptor, 20);
+        if (TryRvaToFileOffset(firstThunkRva, layout.Sections, out var firstThunkOffset))
+            Array.Clear(image, firstThunkOffset, Math.Min(8, image.Length - firstThunkOffset));
+        if (TryRvaToFileOffset(originalThunkRva, layout.Sections, out var originalThunkToClear))
+            Array.Clear(image, originalThunkToClear, Math.Min(8, image.Length - originalThunkToClear));
+        Array.Clear(image, nameOffset, Math.Min(ReadAsciiNullTerminated(image, nameOffset, 128).Length + 1, image.Length - nameOffset));
+        if (hintNameOffset >= 0)
+        {
+            var functionLength = ReadAsciiNullTerminated(image, hintNameOffset + 2, 128).Length;
+            Array.Clear(image, hintNameOffset, Math.Min(2 + functionLength + 1, image.Length - hintNameOffset));
+        }
+
+        changed = true;
+        return true;
+    }
+
+    return true;
+}
+
+static bool TryFindImportIat(byte[] image, string dllName, string functionName, out uint iatVa)
+{
+    iatVa = 0;
+    if (!TryReadPe32Layout(image, out var layout, out _))
+        return false;
+    if (!TryRvaToFileOffset(layout.ImportRva, layout.Sections, out var importOffset))
+        return false;
+
+    for (var descriptor = importOffset; descriptor + 20 <= image.Length; descriptor += 20)
+    {
+        var originalThunkRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor));
+        var nameRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor + 12));
+        var firstThunkRva = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(descriptor + 16));
+        if (originalThunkRva == 0 && nameRva == 0 && firstThunkRva == 0)
+            break;
+        if (!TryRvaToFileOffset(nameRva, layout.Sections, out var nameOffset) ||
+            !string.Equals(ReadAsciiNullTerminated(image, nameOffset, 128), dllName, StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        var thunkRva = originalThunkRva != 0 ? originalThunkRva : firstThunkRva;
+        if (!TryRvaToFileOffset(thunkRva, layout.Sections, out var thunkOffset))
+            return false;
+        for (var index = 0; thunkOffset + index * 4 + 4 <= image.Length; index++)
+        {
+            var thunk = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(thunkOffset + index * 4));
+            if (thunk == 0)
+                break;
+            if ((thunk & 0x8000_0000) != 0 || !TryRvaToFileOffset(thunk, layout.Sections, out var hintNameOffset))
+                continue;
+            if (string.Equals(ReadAsciiNullTerminated(image, hintNameOffset + 2, 128), functionName, StringComparison.Ordinal))
+            {
+                iatVa = layout.ImageBase + firstThunkRva + (uint)(index * 4);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 static void InspectImports(byte[] image, int optionalOffset, IReadOnlyList<PeSection> sections, uint imageBase)
 {
     const int DataDirectoryOffset = 96;
@@ -796,10 +914,319 @@ static string ReadStringPreview(byte[] source, int offset, Encoding encoding)
     return text.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
 }
 
+static class NativeHookPayload
+{
+    public static byte[] Build(
+        uint payloadVa,
+        uint originalEntryVa,
+        uint virtualProtectIatVa,
+        uint getModuleHandleAIatVa,
+        uint getProcAddressIatVa)
+    {
+        var code = new X86Emitter();
+
+        code.Label("entry");
+        code.EmitRel32ToLabel(0xE8, "installer");
+        code.EmitRel32ToVa(0xE9, originalEntryVa);
+
+        code.Label("installer");
+        code.EmitPushLabel("kernel32Name");
+        code.EmitCallIat(getModuleHandleAIatVa);
+        code.EmitPushLabel("flushName");
+        code.Emit(0x50);                   // push hModule returned above
+        code.EmitCallIat(getProcAddressIatVa);
+        code.EmitMovAbsEaxLabel("flushFunction");
+        code.EmitProtectedJump(0x0042_42BA, 5, "connect", virtualProtectIatVa,
+            site => code.EmitRel32Patch(site, "connect"));
+        code.EmitProtectedJump(0x004B_2580, 6, "labelsA", virtualProtectIatVa,
+            site => code.EmitRel32PatchWithNop(site, "labelsA"));
+        code.EmitProtectedJump(0x004B_26EE, 6, "labelsB", virtualProtectIatVa,
+            site => code.EmitRel32PatchWithNop(site, "labelsB"));
+        code.EmitMovEaxMemoryLabel("flushFunction");
+        code.Emit(0x85, 0xC0);
+        code.EmitJccToLabel(0x84, "skipFlush");
+        code.EmitPush(0x001F_3000);
+        code.EmitPush(0x0040_0000);
+        code.EmitPush(0xFFFF_FFFF);
+        code.Emit(0xFF, 0xD0);             // call FlushInstructionCache
+        code.Label("skipFlush");
+        code.Emit(0xC3);                       // ret to the entry stub
+
+        code.Label("connect");
+        code.Emit(0x89, 0x4D, 0xD0);       // mov [ebp-30h], ecx
+        code.Emit(0x6A, 0x10);             // push 10h
+        code.Emit(0x60);                   // pushad
+        code.Emit(0x8B, 0x45, 0x08);       // mov eax,[ebp+8]
+        code.Emit(0x85, 0xC0);             // test eax,eax
+        code.EmitJccToLabel(0x84, "connectDone");
+        code.Emit(0x89, 0xC2);             // mov edx,eax
+
+        code.Label("scanHost");
+        code.Emit(0x8A, 0x0A);             // mov cl,[edx]
+        code.Emit(0x84, 0xC9);             // test cl,cl
+        code.EmitJccToLabel(0x84, "connectDone");
+        code.Emit(0x80, 0xF9, 0x3A);       // cmp cl, ':'
+        code.EmitJccToLabel(0x84, "portColon");
+        code.Emit(0x42);                   // inc edx
+        code.EmitRel32ToLabel(0xE9, "scanHost");
+
+        code.Label("portColon");
+        code.Emit(0x31, 0xC9);             // xor ecx,ecx (port)
+        code.Emit(0x31, 0xFF);             // xor edi,edi (digit count)
+        code.Emit(0x8D, 0x72, 0x01);       // lea esi,[edx+1]
+
+        code.Label("portDigits");
+        code.Emit(0x8A, 0x06);             // mov al,[esi]
+        code.Emit(0x84, 0xC0);             // test al,al
+        code.EmitJccToLabel(0x84, "portDigitsDone");
+        code.Emit(0x3C, 0x30);             // cmp al,'0'
+        code.EmitJccToLabel(0x82, "connectDone");
+        code.Emit(0x3C, 0x39);             // cmp al,'9'
+        code.EmitJccToLabel(0x87, "connectDone");
+        code.Emit(0x81, 0xF9, 0x99, 0x19, 0x00, 0x00); // cmp ecx,6553
+        code.EmitJccToLabel(0x87, "connectDone");
+        code.EmitJccToLabel(0x85, "portMultiply");
+        code.Emit(0x3C, 0x35);             // if port == 6553, final digit <= 5
+        code.EmitJccToLabel(0x87, "connectDone");
+        code.Label("portMultiply");
+        code.Emit(0x2C, 0x30);             // convert ASCII digit to numeric value
+        code.Emit(0x6B, 0xC9, 0x0A);       // imul ecx,ecx,10
+        code.Emit(0x0F, 0xB6, 0xC0);       // movzx eax,al
+        code.Emit(0x01, 0xC1);             // add ecx,eax
+        code.Emit(0x47);                   // inc edi
+        code.Emit(0x46);                   // inc esi
+        code.EmitRel32ToLabel(0xE9, "portDigits");
+
+        code.Label("portDigitsDone");
+        code.Emit(0x85, 0xFF);             // test edi,edi
+        code.EmitJccToLabel(0x84, "connectDone");
+        code.Emit(0x80, 0x3E, 0x00);       // cmp byte ptr [esi],0
+        code.EmitJccToLabel(0x85, "connectDone");
+        code.Emit(0x85, 0xC9);             // test ecx,ecx
+        code.EmitJccToLabel(0x84, "connectDone");
+        code.Emit(0x89, 0x4D, 0x0C);       // mov [ebp+0Ch],ecx
+        code.Emit(0xC6, 0x02, 0x00);       // mov byte ptr [edx],0
+
+        code.Label("connectDone");
+        code.Emit(0x61);                   // popad
+        code.EmitRel32ToVa(0xE9, 0x0042_42BF);
+
+        EmitChannelLabelTrampoline(code, "labelsA", 0x004B_2586, 0x0061_5810, 0x0061_57E4, useEdx: false);
+        EmitChannelLabelTrampoline(code, "labelsB", 0x004B_26F4, 0x0061_5828, 0x0061_57E4, useEdx: true);
+
+        code.Label("oldProtection");
+        code.Emit(0, 0, 0, 0);
+        code.Label("temporaryProtection");
+        code.Emit(0, 0, 0, 0);
+        code.Label("flushFunction");
+        code.Emit(0, 0, 0, 0);
+        code.Label("kernel32Name");
+        code.Emit((byte)'K', (byte)'E', (byte)'R', (byte)'N', (byte)'E', (byte)'L',
+            (byte)'3', (byte)'2', (byte)'.', (byte)'d', (byte)'l', (byte)'l', 0);
+        code.Label("flushName");
+        code.Emit((byte)'F', (byte)'l', (byte)'u', (byte)'s', (byte)'h',
+            (byte)'I', (byte)'n', (byte)'s', (byte)'t', (byte)'r', (byte)'u',
+            (byte)'c', (byte)'t', (byte)'i', (byte)'o', (byte)'n', (byte)'C',
+            (byte)'a', (byte)'c', (byte)'h', (byte)'e', 0);
+        code.Label("upLabel");
+        code.Emit((byte)'U', (byte)'P', 0);
+        code.Label("pvpLabel");
+        code.Emit((byte)'P', (byte)'V', (byte)'P', 0);
+
+        return code.Build(payloadVa);
+    }
+
+    private static void EmitChannelLabelTrampoline(
+        X86Emitter code,
+        string name,
+        uint returnVa,
+        uint originalFormatVa,
+        uint simpleFormatVa,
+        bool useEdx)
+    {
+        code.Label(name);
+        code.Emit(0x83, 0x3C, 0x24, 0x01); // cmp dword ptr [esp],1
+        code.EmitJccToLabel(0x84, name + ".up");
+        code.Emit(0x83, 0x3C, 0x24, 0x02); // cmp dword ptr [esp],2
+        code.EmitJccToLabel(0x84, name + ".pvp");
+        code.Emit(useEdx ? (byte)0x52 : (byte)0x51); // original group-name pointer
+        code.EmitPush(originalFormatVa);
+        code.EmitRel32ToVa(0xE9, returnVa);
+
+        code.Label(name + ".up");
+        code.EmitPushLabel("upLabel");
+        code.EmitPush(simpleFormatVa);
+        code.EmitRel32ToVa(0xE9, returnVa);
+
+        code.Label(name + ".pvp");
+        code.EmitPushLabel("pvpLabel");
+        code.EmitPush(simpleFormatVa);
+        code.EmitRel32ToVa(0xE9, returnVa);
+    }
+}
+
+sealed class X86Emitter
+{
+    private readonly List<byte> _bytes = [];
+    private readonly Dictionary<string, int> _labels = new(StringComparer.Ordinal);
+    private readonly List<RelFixup> _relativeFixups = [];
+    private readonly List<AbsoluteFixup> _absoluteFixups = [];
+
+    public void Label(string name) => _labels[name] = _bytes.Count;
+
+    public void Emit(params byte[] bytes) => _bytes.AddRange(bytes);
+
+    public void EmitPush(uint value)
+    {
+        Emit(0x68);
+        EmitUInt32(value);
+    }
+
+    public void EmitPushLabel(string label)
+    {
+        Emit(0x68);
+        var immediateOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _absoluteFixups.Add(new(immediateOffset, label));
+    }
+
+    public void EmitPushMemoryLabel(string label)
+    {
+        Emit(0xFF, 0x35);
+        var addressOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _absoluteFixups.Add(new(addressOffset, label));
+    }
+
+    public void EmitCallIat(uint iatVa)
+    {
+        Emit(0xFF, 0x15);
+        EmitUInt32(iatVa);
+    }
+
+    public void EmitMovAbsEaxLabel(string label)
+    {
+        Emit(0xA3);
+        var addressOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _absoluteFixups.Add(new(addressOffset, label));
+    }
+
+    public void EmitMovEaxMemoryLabel(string label)
+    {
+        Emit(0xA1);
+        var addressOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _absoluteFixups.Add(new(addressOffset, label));
+    }
+
+    public void EmitRel32ToLabel(byte opcode, string label)
+    {
+        Emit(opcode);
+        var immediateOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _relativeFixups.Add(new(immediateOffset, label, null, null));
+    }
+
+    public void EmitJccToLabel(byte condition, string label)
+    {
+        Emit(0x0F, condition);
+        var immediateOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _relativeFixups.Add(new(immediateOffset, label, null, null));
+    }
+
+    public void EmitRel32ToVa(byte opcode, uint targetVa)
+    {
+        Emit(opcode);
+        var immediateOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _relativeFixups.Add(new(immediateOffset, string.Empty, targetVa, null));
+    }
+
+    public void EmitRel32Patch(uint siteVa, string trampolineLabel)
+    {
+        Emit(0xC6, 0x05);
+        EmitUInt32(siteVa);
+        Emit(0xE9);
+        Emit(0xC7, 0x05);
+        EmitUInt32(siteVa + 1);
+        var immediateOffset = _bytes.Count;
+        Emit(0, 0, 0, 0);
+        _relativeFixups.Add(new(immediateOffset, trampolineLabel, null, siteVa + 5));
+    }
+
+    public void EmitRel32PatchWithNop(uint siteVa, string trampolineLabel)
+    {
+        EmitRel32Patch(siteVa, trampolineLabel);
+        Emit(0xC6, 0x05);
+        EmitUInt32(siteVa + 5);
+        Emit(0x90);
+    }
+
+    public void EmitProtectedJump(
+        uint siteVa,
+        int size,
+        string trampolineLabel,
+        uint virtualProtectIatVa,
+        Action<uint> emitPatch)
+    {
+        var skipLabel = $"protectSkip{_relativeFixups.Count}";
+        EmitPushLabel("oldProtection");
+        EmitPush(0x40);
+        EmitPush((uint)size);
+        EmitPush(siteVa);
+        EmitCallIat(virtualProtectIatVa);
+        Emit(0x85, 0xC0);
+        EmitJccToLabel(0x84, skipLabel);
+        emitPatch(siteVa);
+        EmitPushLabel("temporaryProtection");
+        EmitPushMemoryLabel("oldProtection");
+        EmitPush((uint)size);
+        EmitPush(siteVa);
+        EmitCallIat(virtualProtectIatVa);
+        codeLabel(skipLabel);
+    }
+
+    private void codeLabel(string name) => Label(name);
+
+    public byte[] Build(uint payloadVa)
+    {
+        var bytes = _bytes.ToArray();
+        foreach (var fixup in _absoluteFixups)
+        {
+            if (!_labels.TryGetValue(fixup.Label, out var labelOffset))
+                throw new InvalidOperationException($"Payload label ausente: {fixup.Label}");
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                bytes.AsSpan(fixup.Offset), payloadVa + (uint)labelOffset);
+        }
+
+        foreach (var fixup in _relativeFixups)
+        {
+            var targetVa = fixup.TargetVa ?? (payloadVa + (uint)_labels[fixup.Label]);
+            var nextVa = fixup.NextVa ?? (payloadVa + (uint)fixup.Offset + 4);
+            var relative = unchecked(targetVa - nextVa);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                bytes.AsSpan(fixup.Offset), relative);
+        }
+
+        return bytes;
+    }
+
+    private void EmitUInt32(uint value)
+    {
+        _bytes.Add((byte)value);
+        _bytes.Add((byte)(value >> 8));
+        _bytes.Add((byte)(value >> 16));
+        _bytes.Add((byte)(value >> 24));
+    }
+
+    private readonly record struct RelFixup(int Offset, string Label, uint? TargetVa, uint? NextVa);
+    private readonly record struct AbsoluteFixup(int Offset, string Label);
+}
+
 readonly record struct PeSection(string Name, uint VirtualSize, uint VirtualAddress, uint RawSize, uint RawPointer);
 
 readonly record struct PeLayout(int OptionalOffset, uint ImageBase, PeSection[] Sections, uint ImportRva, uint ImportSize);
-
-readonly record struct ImportPatchResult(bool Changed, string? Error);
 
 record PatchDefinition(string Name, int Offset, byte[] Original, byte[] Patched);

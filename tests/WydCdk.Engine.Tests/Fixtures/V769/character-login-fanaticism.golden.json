@@ -1,0 +1,58 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=5",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=5",
+  "cases": [
+    {
+      "name": "no-fanatism-affect",
+      "startingDexterity": 100,
+      "records": [],
+      "targetExpected": 100,
+      "w2ppExpected": 100
+    },
+    {
+      "name": "single-value-25-reduction",
+      "startingDexterity": 100,
+      "records": [{ "slot": 0, "type": 5, "value": 25, "level": 0 }],
+      "targetExpected": 75,
+      "w2ppExpected": 75
+    },
+    {
+      "name": "float-truncation",
+      "startingDexterity": 101,
+      "records": [{ "slot": 0, "type": 5, "value": 33, "level": 0 }],
+      "targetExpected": 67,
+      "w2ppExpected": 67
+    },
+    {
+      "name": "repeated-reductions-are-sequential",
+      "startingDexterity": 100,
+      "records": [
+        { "slot": 0, "type": 5, "value": 10, "level": 0 },
+        { "slot": 1, "type": 5, "value": 10, "level": 0 }
+      ],
+      "targetExpected": 81,
+      "w2ppExpected": 81
+    },
+    {
+      "name": "value-100-reduces-to-zero",
+      "startingDexterity": 123,
+      "records": [{ "slot": 0, "type": 5, "value": 100, "level": 0 }],
+      "targetExpected": 0,
+      "w2ppExpected": 0
+    },
+    {
+      "name": "byte-value-255-preserves-signed-short-result",
+      "startingDexterity": 100,
+      "records": [{ "slot": 0, "type": 5, "value": 255, "level": 0 }],
+      "targetExpected": -155,
+      "w2ppExpected": -155
+    },
+    {
+      "name": "other-affects-are-ignored",
+      "startingDexterity": 100,
+      "records": [{ "slot": 0, "type": 6, "value": 25, "level": 0 }],
+      "targetExpected": 100,
+      "w2ppExpected": 100
+    }
+  ]
+}

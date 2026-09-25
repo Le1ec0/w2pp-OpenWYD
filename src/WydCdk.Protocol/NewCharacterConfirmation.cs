@@ -1,8 +1,8 @@
 namespace WydCdk.Protocol;
 
 /// <summary>
-/// Encoder for legacy <c>MSG_CNFNewCharacter</c>: a CPSock header followed by the
-/// 840-byte <see cref="LegacyCharacterSelection"/> snapshot returned after creation.
+/// Encoder for <c>MSG_CNFNewCharacter</c>: the 7.670 contract is the 12-byte
+/// CPSock header followed directly by the 840-byte <see cref="LegacyCharacterSelection"/>.
 /// </summary>
 public sealed class NewCharacterConfirmation(LegacyCharacterSelection selection)
 {
@@ -13,7 +13,12 @@ public sealed class NewCharacterConfirmation(LegacyCharacterSelection selection)
 
     public LegacyCharacterSelection Selection { get; } = selection ?? throw new ArgumentNullException(nameof(selection));
 
-    public byte[] ToPayload() => Selection.ToBytes();
+    public byte[] ToPayload()
+    {
+        var payload = new byte[PayloadSize];
+        Selection.ToBytes().CopyTo(payload);
+        return payload;
+    }
 
     public byte[] ToFrame(LegacyFrameCodec codec, uint clientTick, byte keywordIndex)
     {

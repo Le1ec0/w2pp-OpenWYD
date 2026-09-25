@@ -1,6 +1,9 @@
 namespace WydCdk.Protocol;
 
-/// <summary>Encoder for the legacy <c>MSG_CNFDeleteCharacter</c> selection response.</summary>
+/// <summary>
+/// Encoder for <c>MSG_CNFDeleteCharacter</c>: the 7.670 contract is the 12-byte
+/// CPSock header followed directly by the 840-byte <see cref="LegacyCharacterSelection"/>.
+/// </summary>
 public sealed class DeleteCharacterConfirmation(LegacyCharacterSelection selection)
 {
     public const ushort MessageType = 0x0112; // 18 | FLAG_GAME2CLIENT
@@ -10,6 +13,13 @@ public sealed class DeleteCharacterConfirmation(LegacyCharacterSelection selecti
 
     public LegacyCharacterSelection Selection { get; } = selection ?? throw new ArgumentNullException(nameof(selection));
 
+    public byte[] ToPayload()
+    {
+        var payload = new byte[PayloadSize];
+        Selection.ToBytes().CopyTo(payload);
+        return payload;
+    }
+
     public byte[] ToFrame(LegacyFrameCodec codec, uint clientTick, byte keywordIndex) =>
-        codec.Encode(MessageType, SceneId, clientTick, Selection.ToBytes(), keywordIndex);
+        codec.Encode(MessageType, SceneId, clientTick, ToPayload(), keywordIndex);
 }

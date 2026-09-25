@@ -1,0 +1,30 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Cur SpeedRun mount gate and g_pMountBonus/g_pMountTempBonus speed columns",
+  "tables": [
+    {
+      "kind": "standard",
+      "firstIndex": 2360,
+      "targetRunFloors": [4, 4, 5, 5, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+      "w2ppRunFloors": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+    },
+    {
+      "kind": "temporary",
+      "firstIndex": 3980,
+      "targetRunFloors": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+      "w2ppRunFloors": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+    }
+  ],
+  "cases": [
+    { "name": "standard-mount-inactive-effect", "input": { "mountIndex": 2360, "firstEffectValue": 0 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": { "hasFloor": false, "runFloor": 0 } },
+    { "name": "standard-mount-first-entry", "input": { "mountIndex": 2360, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": true, "runFloor": 4 }, "w2ppExpected": { "hasFloor": true, "runFloor": 6 } },
+    { "name": "standard-mount-last-in-bounds-entry", "input": { "mountIndex": 2389, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": true, "runFloor": 6 }, "w2ppExpected": { "hasFloor": true, "runFloor": 6 } },
+    { "name": "inclusive-source-bound-is-one-past-table", "input": { "mountIndex": 2390, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": null, "w2ppNote": "out-of-bounds-read" },
+    { "name": "one-past-table-with-inactive-effect-does-not-read", "input": { "mountIndex": 2390, "firstEffectValue": 0 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": { "hasFloor": false, "runFloor": 0 } },
+    { "name": "below-standard-range", "input": { "mountIndex": 2359, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": { "hasFloor": false, "runFloor": 0 } },
+    { "name": "above-standard-range", "input": { "mountIndex": 2391, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": { "hasFloor": false, "runFloor": 0 } },
+    { "name": "temporary-mount-does-not-require-effect-value", "input": { "mountIndex": 3980, "firstEffectValue": 0 }, "targetExpected": { "hasFloor": true, "runFloor": 6 }, "w2ppExpected": { "hasFloor": true, "runFloor": 6 } },
+    { "name": "temporary-mount-last-supported-entry", "input": { "mountIndex": 3994, "firstEffectValue": 0 }, "targetExpected": { "hasFloor": true, "runFloor": 6 }, "w2ppExpected": { "hasFloor": true, "runFloor": 6 } },
+    { "name": "below-temporary-range", "input": { "mountIndex": 3979, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": { "hasFloor": false, "runFloor": 0 } },
+    { "name": "above-temporary-range", "input": { "mountIndex": 3995, "firstEffectValue": 1 }, "targetExpected": { "hasFloor": false, "runFloor": 0 }, "w2ppExpected": { "hasFloor": false, "runFloor": 0 } }
+  ]
+}

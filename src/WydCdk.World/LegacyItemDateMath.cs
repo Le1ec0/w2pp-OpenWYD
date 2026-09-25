@@ -8,13 +8,14 @@ public static class LegacyItemDateMath
     public static LegacyItem SetItemDate(LegacyItem item, int days, DateTime localNow)
     {
         var dayNext = localNow.Day + days;
-        var month = localNow.Month - 1;
         var year = localNow.Year - 1900;
+        var month = days >= 30 ? localNow.Month : localNow.Month - 1;
 
-        if (localNow.Day + days >= 30)
-            month += 1;
         if (month >= 12)
+        {
             month = 0;
+            year++;
+        }
         if (dayNext >= 30)
             dayNext -= 29;
         if (month == 1 && dayNext >= 27)
@@ -29,5 +30,20 @@ public static class LegacyItemDateMath
             Effect3 = checked((byte)LegacyItemEffect.Year),
             Value3 = unchecked((byte)(year - 100)),
         };
+    }
+
+    /// <summary>Reproduces the legacy <c>BASE_CheckItemDate</c> comparisons.</summary>
+    public static bool IsExpired(LegacyItem item, DateTime localNow)
+    {
+        var itemDay = item.Value1;
+        var itemMonth = item.Value2;
+        var itemYear = item.Value3;
+        var currentYear = localNow.Year - 2000;
+
+        if (localNow.Day >= itemDay && localNow.Month - 1 >= itemMonth - 1 && currentYear >= itemYear)
+            return true;
+        if (localNow.Month - 1 > itemMonth && currentYear >= itemYear)
+            return true;
+        return currentYear > itemYear;
     }
 }

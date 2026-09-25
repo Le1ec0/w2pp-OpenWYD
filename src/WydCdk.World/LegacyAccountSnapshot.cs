@@ -31,8 +31,8 @@ public sealed record LegacyAccountSnapshot(
     public const int CharactersOffset = 216; // sizeof(STRUCT_ACCOUNTINFO)
     public const int CharacterStride = 816; // sizeof(STRUCT_MOB)
     public const int CharacterCount = 4; // MOB_PER_ACCOUNT
-    private const int CargoOffset = 3480; // sizeof(STRUCT_ACCOUNTINFO) + 4 * sizeof(STRUCT_MOB)
-    private const int CargoCount = 128; // MAX_CARGO
+    public const int CargoOffset = 3480; // sizeof(STRUCT_ACCOUNTINFO) + 4 * sizeof(STRUCT_MOB)
+    public const int CargoCount = 128; // MAX_CARGO
     public const int AccountCoinOffset = 4504;
     // ShortSkill/affect confirmed by the same compiled offsetof probe as the rest of this file (see class remarks):
     // offsetof(STRUCT_ACCOUNTFILE, ShortSkill)=4508, offsetof(..., affect)=4572, sizeof(STRUCT_AFFECT)=8, MAX_AFFECT=32.
@@ -110,6 +110,14 @@ public sealed record LegacyAccountSnapshot(
             // SPX/SPY typo; it is not the layout used by the 7.59 client/server reference.
             var savedPositionX = BinaryPrimitives.ReadInt16LittleEndian(mob[MobSavedPositionXOffset..]);
             var savedPositionY = BinaryPrimitives.ReadInt16LittleEndian(mob[MobSavedPositionYOffset..]);
+            // BASE_ClearMob leaves an empty slot at the default map position. Older C#-created
+            // accounts may still contain zeroed empty slots, so repair that representation at
+            // the wire boundary as well as in the persistent delete path.
+            if (name.Length == 0 && savedPositionX == 0 && savedPositionY == 0)
+            {
+                savedPositionX = LegacyCharacterStorageDefaults.EmptyCharacterPosition;
+                savedPositionY = LegacyCharacterStorageDefaults.EmptyCharacterPosition;
+            }
             var score = LegacyScore.Read(mob.Slice(MobCurrentScoreOffset, LegacyScore.SizeInBytes));
             var coin = BinaryPrimitives.ReadInt32LittleEndian(mob[MobCoinOffset..]);
             var experience = BinaryPrimitives.ReadInt64LittleEndian(mob[MobExperienceOffset..]);

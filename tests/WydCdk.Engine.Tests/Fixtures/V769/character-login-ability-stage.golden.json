@@ -1,0 +1,63 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Cur HP/MP ability setup",
+  "cases": [
+    {
+      "name": "equipment-ability-rules-before-later-bonuses",
+      "baseAttackRun": 160,
+      "currentAttackRun": 63,
+      "equipment": [
+        { "slot": 1, "index": 1, "dynamicEffects": [[26, 1], [26, 1], [71, 9]] },
+        { "slot": 2, "index": 2, "dynamicEffects": [[68, 9]] }
+      ],
+      "expected": {
+        "saveMana": 12,
+        "magic": 3,
+        "runSeed": 6,
+        "attackSpeedSeed": 130,
+        "regenHpSeed": -4,
+        "regenMpSeed": 5,
+        "criticalSeed": 2
+      }
+    },
+    {
+      "name": "sanctuary-nine-run-speed-exception",
+      "baseAttackRun": 112,
+      "currentAttackRun": 29,
+      "equipment": [
+        { "slot": 1, "index": 3, "dynamicEffects": [[116, 9]] }
+      ],
+      "expected": {
+        "saveMana": 0,
+        "magic": 0,
+        "runSeed": 6,
+        "attackSpeedSeed": 70,
+        "regenHpSeed": 0,
+        "regenMpSeed": 0,
+        "criticalSeed": 0
+      }
+    }
+  ],
+  "itemData": [
+    {
+      "index": 1,
+      "name": "UNIQUE ABILITY TEST",
+      "unique": 45,
+      "position": 0,
+      "effects": [[44, 12], [60, 10], [68, 1], [29, 5], [26, 1], [47, 4], [48, 5], [42, 99]]
+    },
+    {
+      "index": 2,
+      "name": "NON-UNIQUE MAGIC ADD TEST",
+      "unique": 0,
+      "position": 0,
+      "effects": [[67, 40], [68, 40], [47, -8]]
+    },
+    {
+      "index": 3,
+      "name": "SANCTUARY RUN SPEED TEST",
+      "unique": 50,
+      "position": 0,
+      "effects": [[29, 2]]
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Soul Kibita detection and late override",
+  "inputs": {
+    "currentHp": 333,
+    "currentMp": 222,
+    "maxHp": 1000,
+    "maxMp": 500,
+    "strength": 10,
+    "intelligence": 100,
+    "constitution": 50
+  },
+  "cases": [
+    {
+      "name": "mortal-kibita-below-level-369",
+      "classMaster": 2,
+      "level": 368,
+      "soul": 3,
+      "activeAffects": [{ "slot": 0, "type": 29 }],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 500 },
+      "targetExpected": { "strength": 2000, "intelligence": 2000, "maxHp": 10000, "maxMp": 700 },
+      "w2ppExpected": { "maxMp": 1200 }
+    },
+    {
+      "name": "level-369-uses-ordinary-mortal-soul",
+      "classMaster": 2,
+      "level": 369,
+      "soul": 3,
+      "activeAffects": [{ "slot": 0, "type": 29 }],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 860 },
+      "targetExpected": { "strength": 10, "intelligence": 100, "maxHp": 1000, "maxMp": 860 }
+    },
+    {
+      "name": "low-level-mortal-without-soul-affect",
+      "classMaster": 2,
+      "level": 368,
+      "soul": 3,
+      "activeAffects": [],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 500 },
+      "targetExpected": { "strength": 10, "intelligence": 100, "maxHp": 1000, "maxMp": 500 }
+    },
+    {
+      "name": "duplicate-kibita-affects-apply-late-override-once",
+      "classMaster": 2,
+      "level": 368,
+      "soul": 3,
+      "activeAffects": [{ "slot": 0, "type": 29 }, { "slot": 1, "type": 29 }],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 500 },
+      "targetExpected": { "strength": 2000, "intelligence": 2000, "maxHp": 10000, "maxMp": 700 }
+    },
+    {
+      "name": "summon-bypasses-kibita-detection-and-override",
+      "classMaster": 2,
+      "level": 368,
+      "soul": 3,
+      "isSummon": true,
+      "activeAffects": [{ "slot": 0, "type": 29 }],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 500 },
+      "targetExpected": { "strength": 10, "intelligence": 100, "maxHp": 1000, "maxMp": 500 }
+    },
+    {
+      "name": "source-item-int-branch-preserves-base-score-value",
+      "classMaster": 2,
+      "level": 368,
+      "soul": 3,
+      "baseIntelligence": 2501,
+      "activeAffects": [{ "slot": 0, "type": 29 }],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 500 },
+      "targetExpected": { "strength": 2000, "intelligence": 2000, "maxHp": 10000, "maxMp": 5502 },
+      "w2ppExpected": { "maxMp": 6002 }
+    },
+    {
+      "name": "source-item-int-upper-branch",
+      "classMaster": 2,
+      "level": 368,
+      "soul": 3,
+      "baseIntelligence": -1,
+      "activeAffects": [{ "slot": 0, "type": 29 }],
+      "afterSoulStage": { "maxHp": 1000, "maxMp": 500 },
+      "targetExpected": { "strength": 2000, "intelligence": 2000, "maxHp": 10000, "maxMp": 4500 },
+      "w2ppExpected": { "maxMp": 5000 }
+    }
+  ]
+}

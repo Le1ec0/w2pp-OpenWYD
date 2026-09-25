@@ -5,13 +5,42 @@ using WydCdk.Protocol;
 namespace WydCdk.World;
 
 /// <summary>Shared in-memory presence for the connected players in the current world instance.</summary>
-public sealed class WorldHub
+public sealed partial class WorldHub
 {
+    // Pinned TMProject 7.69 default groupItens.json (Servidor/Server/Common/Settings).
+    // The legacy server loads these IDs from configuration and uses the same list
+    // for TradingItem merges and SplitItem eligibility.
+    private static readonly HashSet<short> legacyStackableItemIndices =
+    [
+        412, 413, 419, 420,
+        777,
+        2390, 2391, 2392, 2393, 2394, 2395, 2396, 2397, 2398, 2399,
+        2400, 2401, 2402, 2403, 2404, 2405, 2406, 2407, 2408, 2409,
+        2410, 2411, 2412, 2413, 2414, 2415, 2416, 2417, 2418, 2419,
+        2426, 2427, 2428, 2429,
+        3173, 3182,
+        3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209,
+        3314, 3324, 3325, 3326, 3330,
+        4016, 4017, 4018, 4019, 4020, 4021, 4022, 4023, 4024, 4025,
+        4038, 4039, 4040, 4041, 4042,
+        4117, 4118, 4119, 4120, 4121,
+        4140,
+        4900,
+    ];
+
+    private const int LegacyBaseCarryCapacity = 30;
+    private const int LegacyCarryExpansionItemIndex = 3467;
+    private const int LegacyFirstCarryExpansionSlot = 60;
+    private const int LegacySecondCarryExpansionSlot = 61;
+    private const int LegacyCarryExpansionSize = 15;
+
     private readonly object gate = new();
     private readonly Dictionary<int, Participant> participants = [];
     private readonly Dictionary<int, int> partyLeaders = [];
     private readonly Dictionary<int, int> pendingPartyLeaders = [];
     private readonly Dictionary<int, LegacyWorldNpc> npcs = [];
+    private readonly Dictionary<int, LegacyWorldItem> groundItems = [];
+    private readonly Dictionary<int, LegacyMapItemState> mapItems = [];
     private readonly Dictionary<(int Level, int PartySlot), LegacyPistaRegistration> pistaRegistrations = [];
     private readonly Dictionary<(int Level, int PartySlot), int> pistaMobCounts = [];
     private static readonly int[] pistaLevel1Runes = [5114, 5113, 5117, 5111, 5115, 5112];
@@ -19,7 +48,10 @@ public sealed class WorldHub
     private DateTime? lastPistaEntrySlot;
     private DateTime? lastPistaExitSlot;
     private DateTime? lastPistaLv6MobLeftAt;
+    private DateTime? lastMapItemMinute;
+    private DateTime? lastGroundItemSecond;
     private DateTime? lastCastleQuestMinute;
+    private DateTime? lastCastleQuestSecond;
     private readonly LegacyMapGrid? mapGrid;
     private readonly LegacyGuildZoneState? guildZones;
     private readonly LegacyMapCollisionMode mapCollisionMode;
@@ -27,12 +59,18 @@ public sealed class WorldHub
     private readonly LegacyItemDataTable? itemData;
     private readonly LegacySkillDataTable? skillData;
     private readonly LegacyNpcGenerationCatalog? npcGenerationCatalog;
+    private LegacyGroundMaskTable? groundMaskTable;
     private readonly LegacyServerModePolicy serverModePolicy;
     private LegacyDonateShopCatalog? donateShopCatalog;
     private LegacyNpcEventDropConfiguration? npcEventDrop;
+    private int castleQuestLevel = -1;
+    private int castleQuestTime = -1;
+    private int castleQuestLeaderConnectionId;
+    private readonly HashSet<int> castleQuestParty = [];
     private IReadOnlyList<LegacyCastleQuestDefinition> castleQuests =
         [new LegacyCastleQuestDefinition(1559, 1604, 0, 3, new LegacyItem[LegacyCastleQuestConfiguration.MaxCarry], 0, new int[6], false, 500)];
     private int npcEventCurrentIndex;
+    private int nextGroundItemId = 1;
     private LegacyPistaLv6State? pistaLv6State;
     private LegacyCombatWorldState combatWorldState = new();
     private readonly Dictionary<int, LegacySummonedMob> summons = [];
@@ -95,6 +133,313 @@ public sealed class WorldHub
 
         lock (gate)
             castleQuests = definitions.ToArray();
+    }
+
+    /// <summary>
+    /// Installs the static InitItem.bin entries in the authoritative world.
+    /// The legacy server creates them in slots 1..N and immediately locks
+    /// entries whose EF_KEYID is in the protected gate range.
+    /// </summary>
+    public void ConfigureMapItems(IReadOnlyList<LegacyMapItemState> definitions, LegacyGroundMaskTable? groundMasks = null)
+    {
+        ArgumentNullException.ThrowIfNull(definitions);
+        if (definitions.Count > LegacyMapItemCatalog.MaxMapItems)
+            throw new ArgumentOutOfRangeException(nameof(definitions), definitions.Count, $"Map item count cannot exceed {LegacyMapItemCatalog.MaxMapItems}.");
+
+        lock (gate)
+        {
+            mapItems.Clear();
+            lastMapItemMinute = null;
+            groundMaskTable = groundMasks ?? LegacyGroundMaskTable.CreateOfficial();
+            foreach (var definition in definitions)
+            {
+                if (definition.ItemId <= 0 || definition.ItemId >= LegacyMapItemCatalog.MaxMapItems)
+                    throw new ArgumentOutOfRangeException(nameof(definitions), definition.ItemId, "Map item IDs must match the legacy pItem slot range.");
+                if (!mapItems.TryAdd(definition.ItemId, definition))
+                    throw new ArgumentException($"Duplicate map item ID {definition.ItemId}.", nameof(definitions));
+
+                var keyId = itemData?.GetItemAbility(definition.Item, LegacyItemEffect.KeyId) ?? 0;
+                if (keyId is > 0 and < 15 && definition.State == LegacyMapItemStateCodes.Open)
+                {
+                    var height = definition.Height;
+                    if (groundMaskTable is not null && mapGrid is not null)
+                        groundMaskTable.TryApply(mapGrid, definition.GridCharge, definition.State, LegacyMapItemStateCodes.Locked, definition.PositionX, definition.PositionY, definition.Rotate, out height);
+                    mapItems[definition.ItemId] = definition with
+                    {
+                        State = LegacyMapItemStateCodes.Locked,
+                        Height = height,
+                        Delay = 0,
+                    };
+                }
+            }
+        }
+    }
+
+    public bool TryGetMapItem(int wireItemId, out LegacyMapItemState? state)
+    {
+        lock (gate)
+        {
+            state = mapItems.TryGetValue(wireItemId - LegacyMapItemStateCodes.WireIdOffset, out var mapItem)
+                ? mapItem
+                : null;
+            return state is not null;
+        }
+    }
+
+    public IReadOnlyList<LegacyMapItemState> GetMapItemStates()
+    {
+        lock (gate)
+            return mapItems.Values.OrderBy(static item => item.ItemId).ToArray();
+    }
+
+    /// <summary>
+    /// Reproduces the static-gate branch of the legacy <c>ProcessMinTimer</c>.
+    /// InitItem rows 0..16 are intentionally excluded; the C++ loop starts at
+    /// row 17. An opened keyed gate spends one minute moving Delay 0 -> 1 and
+    /// closes on the following minute, broadcasting MSG_CreateItem.
+    /// </summary>
+    public bool TryProcessMapItemMinute(DateTime localNow, out LegacyMapItemMinutePlan? plan)
+    {
+        lock (gate)
+        {
+            plan = null;
+            if (localNow.Second != 0)
+                return false;
+
+            var minuteSlot = new DateTime(localNow.Year, localNow.Month, localNow.Day, localNow.Hour, localNow.Minute, 0, localNow.Kind);
+            if (lastMapItemMinute == minuteSlot)
+                return false;
+            lastMapItemMinute = minuteSlot;
+
+            var closedItems = new List<LegacyMapItemState>();
+            foreach (var mapItem in mapItems.Values.OrderBy(static item => item.ItemId).ToArray())
+            {
+                if (mapItem.ItemId <= 17 || mapItem.State != LegacyMapItemStateCodes.Open)
+                    continue;
+
+                var keyId = itemData?.GetItemAbility(mapItem.Item, LegacyItemEffect.KeyId) ?? 0;
+                if (keyId is <= 0 or >= 15)
+                    continue;
+
+                if (mapItem.Delay == 0)
+                {
+                    mapItems[mapItem.ItemId] = mapItem with { Delay = 1 };
+                    continue;
+                }
+
+                var nextHeight = mapItem.Height;
+                if (groundMaskTable is not null && mapGrid is not null)
+                    groundMaskTable.TryApply(
+                        mapGrid,
+                        mapItem.GridCharge,
+                        mapItem.State,
+                        LegacyMapItemStateCodes.Locked,
+                        mapItem.PositionX,
+                        mapItem.PositionY,
+                        mapItem.Rotate,
+                        out nextHeight);
+
+                var closedItem = mapItem with
+                {
+                    State = LegacyMapItemStateCodes.Locked,
+                    Height = nextHeight,
+                    Delay = 0,
+                };
+                mapItems[mapItem.ItemId] = closedItem;
+                closedItems.Add(closedItem);
+            }
+
+            if (closedItems.Count > 0)
+                plan = new LegacyMapItemMinutePlan(minuteSlot, closedItems);
+            return true;
+        }
+    }
+
+    public bool TryGetCastleQuestState(out LegacyCastleQuestState? state)
+    {
+        lock (gate)
+        {
+            state = castleQuestLevel < 0 && castleQuestTime < 0
+                ? null
+                : new LegacyCastleQuestState(castleQuestLevel, castleQuestTime, castleQuestLeaderConnectionId, castleQuestParty.ToArray());
+            return state is not null;
+        }
+    }
+
+    /// <summary>Ports the normal-gate branch of Exec_MSG_UpdateItem.</summary>
+    public LegacyUpdateItemResult TryUpdateMapItem(int connectionId, int wireItemId, int requestedState, out LegacyUpdateItemOutcome? outcome)
+    {
+        outcome = null;
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyUpdateItemResult.ParticipantNotFound;
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCurrentScoreOffset + LegacyScore.SizeInBytes)
+                return LegacyUpdateItemResult.CombatStateUnavailable;
+            if (LegacyMobCombatState.Read(participant.Mob).CurrentScore.Hp <= 0)
+                return LegacyUpdateItemResult.AttackerNotAlive;
+            if (requestedState is < 0 or > 5)
+                return LegacyUpdateItemResult.InvalidState;
+            if (wireItemId < LegacyMapItemStateCodes.WireIdOffset || wireItemId >= LegacyMapItemStateCodes.WireIdOffset + LegacyMapItemCatalog.MaxMapItems)
+                return LegacyUpdateItemResult.InvalidItemId;
+
+            var itemId = wireItemId - LegacyMapItemStateCodes.WireIdOffset;
+            if (!mapItems.TryGetValue(itemId, out var mapItem))
+                return LegacyUpdateItemResult.MapItemNotFound;
+
+            if (itemData?.GetItemAbility(mapItem.Item, LegacyItemEffect.KeyId) is >= 10 and <= 14)
+                return TryOpenCastleGateLocked(connectionId, wireItemId, requestedState, participant, mapItem, out outcome);
+
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.MobCarryCount * LegacyItem.SizeInBytes))
+                return LegacyUpdateItemResult.CombatStateUnavailable;
+
+            var keyId = itemData?.GetItemAbility(mapItem.Item, LegacyItemEffect.KeyId) ?? 0;
+            var keySlot = -1;
+            LegacyItem consumedKey = default;
+            if (mapItem.State != LegacyMapItemStateCodes.Locked && requestedState != LegacyMapItemStateCodes.Locked)
+                keyId = 0;
+            if (keyId != 0)
+            {
+                for (var slot = 0; slot < LegacyAccountSnapshot.MobCarryCount; slot++)
+                {
+                    var offset = LegacyAccountSnapshot.MobCarryOffset + (slot * LegacyItem.SizeInBytes);
+                    var candidate = LegacyItem.Read(participant.Mob.AsSpan(offset, LegacyItem.SizeInBytes));
+                    if (itemData?.GetItemAbility(candidate, LegacyItemEffect.KeyId) != keyId)
+                        continue;
+                    keySlot = slot;
+                    consumedKey = candidate;
+                    participant.Mob.AsSpan(offset, LegacyItem.SizeInBytes).Clear();
+                    break;
+                }
+
+                if (keySlot < 0)
+                    return LegacyUpdateItemResult.MissingKey;
+            }
+
+            var nextHeight = mapItem.Height;
+            var stateChanged = mapItem.State != requestedState;
+            if (stateChanged && groundMaskTable is not null && mapGrid is not null)
+                stateChanged = groundMaskTable.TryApply(mapGrid, mapItem.GridCharge, mapItem.State, requestedState, mapItem.PositionX, mapItem.PositionY, mapItem.Rotate, out nextHeight);
+
+            if (stateChanged)
+            {
+                mapItem = mapItem with { State = requestedState, Height = nextHeight, Delay = 0 };
+                mapItems[itemId] = mapItem;
+            }
+
+            outcome = new LegacyUpdateItemOutcome(
+                connectionId,
+                wireItemId,
+                mapItem,
+                stateChanged,
+                keySlot,
+                consumedKey,
+                participant.Mob.ToArray(),
+                SuppressMissingKeyNotice: mapItem.Item.Index == 773);
+            return LegacyUpdateItemResult.Accepted;
+        }
+    }
+
+    private LegacyUpdateItemResult TryOpenCastleGateLocked(
+        int connectionId,
+        int wireItemId,
+        int requestedState,
+        Participant participant,
+        LegacyMapItemState mapItem,
+        out LegacyUpdateItemOutcome? outcome)
+    {
+        outcome = null;
+        var gateKey = itemData!.GetItemAbility(mapItem.Item, LegacyItemEffect.KeyId);
+        var keySlot = -1;
+        var key = default(LegacyItem);
+        var quest = -1;
+        for (var slot = 0; slot < LegacyAccountSnapshot.MobCarryCount; slot++)
+        {
+            var offset = LegacyAccountSnapshot.MobCarryOffset + (slot * LegacyItem.SizeInBytes);
+            var candidate = LegacyItem.Read(participant.Mob.AsSpan(offset, LegacyItem.SizeInBytes));
+            if (itemData.GetItemAbility(candidate, LegacyItemEffect.KeyId) != gateKey)
+                continue;
+
+            var candidateQuest = itemData.GetItemAbility(candidate, LegacyItemEffect.Quest);
+            if (gateKey != 10 && candidateQuest != castleQuestLevel)
+                continue;
+
+            keySlot = slot;
+            key = candidate;
+            quest = candidateQuest;
+            break;
+        }
+
+        if (keySlot < 0)
+            return gateKey is >= 11 and <= 14 ? LegacyUpdateItemResult.MissingCastleQuestKey : LegacyUpdateItemResult.MissingKey;
+
+        List<LegacyWorldNpc>? removed = null;
+        List<LegacyWorldNpc>? spawned = null;
+        LegacyCastleQuestStart? questStart = null;
+        if (gateKey == 10)
+        {
+            if (quest < 0 || quest >= castleQuests.Count)
+                return LegacyUpdateItemResult.InvalidCastleQuest;
+            if (castleQuestTime != -1)
+                return LegacyUpdateItemResult.CastleQuestActive;
+
+            var definition = castleQuests[quest];
+            removed = npcs.Values
+                .Where(static npc => npc.PositionX >= 2180 && npc.PositionX <= 2296 && npc.PositionY >= 1160 && npc.PositionY <= 1269)
+                .ToList();
+            foreach (var npc in removed)
+                npcs.Remove(npc.ConnectionId);
+
+            spawned = [];
+            for (var generateIndex = definition.MobInitial; generateIndex <= definition.MobEnd; generateIndex++)
+            {
+                // The C++ path enables MinuteGenerate here; the C# catalog is already explicit.
+                for (var copy = 0; copy < 2; copy++)
+                    if (TrySpawnGeneratedNpc(generateIndex, out var generated) && generated is not null)
+                        spawned.Add(generated);
+            }
+
+            castleQuestLevel = quest;
+            castleQuestTime = definition.QuestTime - 1;
+            castleQuestLeaderConnectionId = partyLeaders.TryGetValue(connectionId, out var configuredLeader)
+                ? configuredLeader
+                : connectionId;
+            castleQuestParty.Clear();
+            castleQuestParty.Add(castleQuestLeaderConnectionId);
+            foreach (var member in partyLeaders.Where(pair => pair.Value == castleQuestLeaderConnectionId).Select(static pair => pair.Key))
+                castleQuestParty.Add(member);
+            questStart = new LegacyCastleQuestStart(
+                quest,
+                castleQuestTime,
+                castleQuestLeaderConnectionId,
+                castleQuestParty.ToArray(),
+                removed,
+                spawned);
+        }
+
+        var keyOffset = LegacyAccountSnapshot.MobCarryOffset + (keySlot * LegacyItem.SizeInBytes);
+        participant.Mob.AsSpan(keyOffset, LegacyItem.SizeInBytes).Clear();
+        var nextHeight = mapItem.Height;
+        var stateChanged = mapItem.State != LegacyMapItemStateCodes.Open;
+        if (stateChanged && groundMaskTable is not null && mapGrid is not null)
+            stateChanged = groundMaskTable.TryApply(mapGrid, mapItem.GridCharge, mapItem.State, LegacyMapItemStateCodes.Open, mapItem.PositionX, mapItem.PositionY, mapItem.Rotate, out nextHeight);
+        if (stateChanged)
+        {
+            mapItem = mapItem with { State = LegacyMapItemStateCodes.Open, Height = nextHeight, Delay = 0 };
+            mapItems[mapItem.ItemId] = mapItem;
+        }
+
+        outcome = new LegacyUpdateItemOutcome(
+            connectionId,
+            wireItemId,
+            mapItem,
+            stateChanged,
+            keySlot,
+            key,
+            participant.Mob.ToArray(),
+            SuppressMissingKeyNotice: mapItem.Item.Index == 773,
+            CastleQuestStart: questStart);
+        return LegacyUpdateItemResult.Accepted;
     }
 
     public bool TryGetNpcEventDropState(out LegacyNpcEventDropSnapshot? snapshot)
@@ -571,7 +916,7 @@ public sealed class WorldHub
     }
 
     /// <summary>Registers a persistent non-summon NPC using a full legacy STRUCT_MOB snapshot.</summary>
-    public int EnterNpc(ReadOnlyMemory<byte> mob, short positionX, short positionY, ReadOnlyMemory<byte> affect = default, int requestedConnectionId = 0, int generateIndex = -1, int? terrainHeight = null)
+    public int EnterNpc(ReadOnlyMemory<byte> mob, short positionX, short positionY, ReadOnlyMemory<byte> affect = default, int requestedConnectionId = 0, int generateIndex = -1, int? terrainHeight = null, LegacyAutoTradeSnapshot? autoTradeSnapshot = null, string? autoTradeOwnerAccount = null, int autoTradeCharacterSlot = -1)
     {
         if (mob.Length != LegacyAccountSnapshot.CharacterStride)
             throw new ArgumentException("An NPC requires a full STRUCT_MOB snapshot.", nameof(mob));
@@ -591,9 +936,364 @@ public sealed class WorldHub
                 mob.ToArray(),
                 affect.IsEmpty ? new byte[LegacyAccountSnapshot.AffectStride] : affect.ToArray(),
                 GenerateIndex: generateIndex,
-                TerrainHeight: terrainHeight));
+                TerrainHeight: terrainHeight,
+                AutoTradeSnapshot: autoTradeSnapshot is null ? null : autoTradeSnapshot with { ConnectionId = connectionId },
+                AutoTradeOwnerAccount: autoTradeOwnerAccount,
+                AutoTradeCharacterSlot: autoTradeCharacterSlot));
             return connectionId;
         }
+    }
+
+    /// <summary>Removes one persistent NPC and returns its last world snapshot.</summary>
+    public bool TryRemoveNpc(int connectionId, out LegacyWorldNpc? removed)
+    {
+        lock (gate)
+        {
+            if (!npcs.Remove(connectionId, out var current))
+            {
+                removed = null;
+                return false;
+            }
+
+            removed = current;
+            return true;
+        }
+    }
+
+    /// <summary>Registers a server-authoritative item lying on the field.</summary>
+    public int EnterGroundItem(LegacyItem item, short positionX, short positionY, int requestedItemId = 0)
+    {
+        if (item.Index <= 0)
+            throw new ArgumentOutOfRangeException(nameof(item), "A ground item must have a positive legacy index.");
+
+        lock (gate)
+        {
+            var itemId = requestedItemId > 0 ? requestedItemId : nextGroundItemId++;
+            if (groundItems.ContainsKey(itemId))
+                return 0;
+            if (itemId >= nextGroundItemId)
+                nextGroundItemId = itemId + 1;
+            groundItems.Add(itemId, new LegacyWorldItem(itemId, positionX, positionY, item, Delay: 90));
+            return itemId + LegacyWorldItem.WireIdOffset;
+        }
+    }
+
+    /// <summary>
+    /// Reproduces the dynamic-mode portion of legacy <c>ProcessDecayItem</c>.
+    /// Ground drops are runtime-only: Delay starts at 90 and is decremented on
+    /// every even-second slot; the following slot removes the item and sends
+    /// MSG_DecayItem to the players who were inside its 33x33 view.
+    /// </summary>
+    public bool TryProcessGroundItemSecond(DateTime localNow, out LegacyGroundItemDecayPlan? plan)
+    {
+        lock (gate)
+        {
+            plan = null;
+            if ((localNow.Second % 2) != 0)
+                return false;
+
+            var secondSlot = new DateTime(localNow.Year, localNow.Month, localNow.Day, localNow.Hour, localNow.Minute, localNow.Second, localNow.Kind);
+            if (lastGroundItemSecond == secondSlot)
+                return false;
+            lastGroundItemSecond = secondSlot;
+
+            var removedItems = new List<LegacyGroundItemDecay>();
+            foreach (var groundItem in groundItems.Values.OrderBy(static item => item.ItemId).ToArray())
+            {
+                if (groundItem.Delay >= 1)
+                {
+                    groundItems[groundItem.ItemId] = groundItem with { Delay = groundItem.Delay - 1 };
+                    continue;
+                }
+
+                var recipients = participants.Values
+                    .Where(participant => participant.PositionX >= groundItem.PositionX - 16 && participant.PositionX <= groundItem.PositionX + 16 &&
+                                          participant.PositionY >= groundItem.PositionY - 16 && participant.PositionY <= groundItem.PositionY + 16)
+                    .Select(static participant => participant.ConnectionId)
+                    .ToArray();
+                groundItems.Remove(groundItem.ItemId);
+                removedItems.Add(new LegacyGroundItemDecay(groundItem, recipients));
+            }
+
+            if (removedItems.Count > 0)
+                plan = new LegacyGroundItemDecayPlan(secondSlot, removedItems);
+            return true;
+        }
+    }
+
+    /// <summary>Resolves the legacy pickup request and moves exactly one ground item into the requested carry slot.</summary>
+    public LegacyGetItemResult TryGetGroundItem(int connectionId, int destinationType, int destinationSlot, int wireItemId, ushort gridX, ushort gridY, out LegacyGetItemOutcome? outcome)
+    {
+        outcome = null;
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyGetItemResult.ParticipantNotFound;
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.MobCarryCount * LegacyItem.SizeInBytes))
+                return LegacyGetItemResult.CombatStateUnavailable;
+            var currentScore = LegacyMobCombatState.Read(participant.Mob).CurrentScore;
+            if (currentScore.Hp <= 0)
+                return LegacyGetItemResult.AttackerNotAlive;
+            if (destinationType != LegacyWorldItem.CarryDestinationType)
+                return LegacyGetItemResult.InvalidDestinationType;
+            if (destinationSlot is < 0 or >= LegacyAccountSnapshot.MobCarryCount)
+                return LegacyGetItemResult.InvalidDestinationSlot;
+
+            var itemId = wireItemId - LegacyWorldItem.WireIdOffset;
+            if (itemId <= 0 || !groundItems.TryGetValue(itemId, out var groundItem))
+                return LegacyGetItemResult.GroundItemNotFound;
+            if (Math.Abs(participant.PositionX - groundItem.PositionX) > 3 || Math.Abs(participant.PositionY - groundItem.PositionY) > 3)
+                return LegacyGetItemResult.OutOfRange;
+            if (gridX != groundItem.PositionX || gridY != groundItem.PositionY)
+                return LegacyGetItemResult.GridMismatch;
+
+            var destinationOffset = LegacyAccountSnapshot.MobCarryOffset + (destinationSlot * LegacyItem.SizeInBytes);
+            if (LegacyItem.Read(participant.Mob.AsSpan(destinationOffset, LegacyItem.SizeInBytes)).Index != 0)
+                return LegacyGetItemResult.DestinationOccupied;
+
+            groundItem.Item.Write(participant.Mob.AsSpan(destinationOffset, LegacyItem.SizeInBytes));
+            groundItems.Remove(itemId);
+            outcome = new LegacyGetItemOutcome(
+                connectionId,
+                checked((short)wireItemId),
+                groundItem.PositionX,
+                groundItem.PositionY,
+                destinationType,
+                destinationSlot,
+                groundItem.Item,
+                participant.Mob.ToArray());
+            return LegacyGetItemResult.Accepted;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the carry-only portion of legacy <c>Exec_MSG_DropItem</c>.
+    /// Cargo is deliberately rejected until the connected participant carries
+    /// the account cargo state as well as the MOB snapshot.
+    /// </summary>
+    public LegacyDropItemResult TryDropItem(int connectionId, int sourceType, int sourceSlot, int rotate, ushort requestedGridX, ushort requestedGridY, out LegacyDropItemOutcome? outcome)
+    {
+        outcome = null;
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyDropItemResult.ParticipantNotFound;
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.MobCarryCount * LegacyItem.SizeInBytes))
+                return LegacyDropItemResult.CombatStateUnavailable;
+            if (LegacyMobCombatState.Read(participant.Mob).CurrentScore.Hp <= 0)
+                return LegacyDropItemResult.AttackerNotAlive;
+            if (requestedGridX >= LegacyWorldItem.MaxGridCoordinate || requestedGridY >= LegacyWorldItem.MaxGridCoordinate)
+                return LegacyDropItemResult.InvalidGrid;
+            if (sourceType != LegacyWorldItem.CarryDestinationType)
+                return LegacyDropItemResult.UnsupportedSourceType;
+            if (sourceSlot is < 0 or >= LegacyAccountSnapshot.MobCarryCount)
+                return LegacyDropItemResult.InvalidSourceSlot;
+
+            var sourceOffset = LegacyAccountSnapshot.MobCarryOffset + (sourceSlot * LegacyItem.SizeInBytes);
+            var item = LegacyItem.Read(participant.Mob.AsSpan(sourceOffset, LegacyItem.SizeInBytes));
+            if (item.Index <= 0 || item.Index >= LegacyItemDataTable.MaxItemIndex)
+                return LegacyDropItemResult.InvalidItem;
+            if (LegacyWorldItem.ProtectedDropItemIndexes.Contains(item.Index))
+                return LegacyDropItemResult.ProtectedItem;
+            if (!TryFindEmptyGroundGridLocked(requestedGridX, requestedGridY, out var gridX, out var gridY))
+                return LegacyDropItemResult.NoGroundSpace;
+
+            var itemId = nextGroundItemId++;
+            if (itemId + LegacyWorldItem.WireIdOffset > ushort.MaxValue)
+                return LegacyDropItemResult.NoGroundSpace;
+
+            participant.Mob.AsSpan(sourceOffset, LegacyItem.SizeInBytes).Clear();
+            groundItems.Add(itemId, new LegacyWorldItem(itemId, gridX, gridY, item, rotate, Delay: 90));
+            outcome = new LegacyDropItemOutcome(
+                connectionId,
+                sourceType,
+                sourceSlot,
+                rotate,
+                gridX,
+                gridY,
+                itemId + LegacyWorldItem.WireIdOffset,
+                item,
+                participant.Mob.ToArray());
+            return LegacyDropItemResult.Accepted;
+        }
+    }
+
+    /// <summary>Compatibility entry point retained for carry-only callers.</summary>
+    public LegacyTradingItemResult TryTradeCarryItems(int connectionId, int sourceSlot, int destinationSlot, out LegacyTradingItemOutcome? outcome) =>
+        TryTradeItems(connectionId, LegacyItemPlace.Carry, sourceSlot, LegacyItemPlace.Carry, destinationSlot, out outcome);
+
+    /// <summary>
+    /// Resolves the carry/equipment subset of 7.69 <c>Exec_MSG_TradingItem</c>.
+    /// Cargo deliberately remains unavailable: it belongs to the account snapshot,
+    /// not the live MOB participant, and needs explicit persistence before enabling.
+    /// </summary>
+    public LegacyTradingItemResult TryTradeItems(int connectionId, int sourcePlace, int sourceSlot, int destinationPlace, int destinationSlot, out LegacyTradingItemOutcome? outcome)
+    {
+        outcome = null;
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyTradingItemResult.ParticipantNotFound;
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.MobCarryCount * LegacyItem.SizeInBytes))
+                return LegacyTradingItemResult.CombatStateUnavailable;
+            if (LegacyMobCombatState.Read(participant.Mob).CurrentScore.Hp <= 0)
+                return LegacyTradingItemResult.AttackerNotAlive;
+
+            if (sourcePlace == LegacyItemPlace.Cargo || destinationPlace == LegacyItemPlace.Cargo)
+                return LegacyTradingItemResult.CargoUnavailable;
+            if (!IsSupportedLiveItemPlace(sourcePlace) || !IsSupportedLiveItemPlace(destinationPlace))
+                return LegacyTradingItemResult.InvalidPlace;
+            if (!IsValidTradeSlot(participant, sourcePlace, sourceSlot, isSource: true) ||
+                !IsValidTradeSlot(participant, destinationPlace, destinationSlot, isSource: false))
+                return LegacyTradingItemResult.InvalidSlot;
+            if (sourcePlace == destinationPlace && sourceSlot == destinationSlot)
+                return LegacyTradingItemResult.SameSlot;
+
+            var source = ReadLiveItem(participant, sourcePlace, sourceSlot);
+            if (source.Index == 0)
+                return LegacyTradingItemResult.SourceEmpty;
+
+            var destination = ReadLiveItem(participant, destinationPlace, destinationSlot);
+            if ((destinationPlace == LegacyItemPlace.Equip && source.Index != 0) ||
+                (sourcePlace == LegacyItemPlace.Equip && destination.Index != 0))
+            {
+                if (itemData is null)
+                    return LegacyTradingItemResult.ItemDataUnavailable;
+
+                var equipment = ReadEquipment(participant);
+                var state = LegacyMobCombatState.Read(participant.Mob);
+                var mortalFace = participant.MobExtra.Length >= LegacyAccountSnapshot.MobExtraMortalFaceOffset + sizeof(short)
+                    ? BinaryPrimitives.ReadInt16LittleEndian(participant.MobExtra.AsSpan(LegacyAccountSnapshot.MobExtraMortalFaceOffset))
+                    : 0;
+                if (destinationPlace == LegacyItemPlace.Equip && !LegacyEquipmentRules.Evaluate(source, state.CurrentScore, destinationSlot, state.CharacterClass, participant.ClassMaster, mortalFace, equipment, itemData).Allowed ||
+                    sourcePlace == LegacyItemPlace.Equip && !LegacyEquipmentRules.Evaluate(destination, state.CurrentScore, sourceSlot, state.CharacterClass, participant.ClassMaster, mortalFace, equipment, itemData).Allowed)
+                    return LegacyTradingItemResult.EquipmentRejected;
+            }
+
+            var save1 = source;
+            var save2 = destination;
+            var merged = false;
+
+            if (sourcePlace == LegacyItemPlace.Carry && destinationPlace == LegacyItemPlace.Carry &&
+                source.Index == destination.Index && IsLegacyStackableItem(source.Index) &&
+                GetLegacyItemAmount(source) < 120 && GetLegacyItemAmount(destination) < 120)
+            {
+                var sourceAmount = GetLegacyItemAmount(source);
+                var destinationAmount = GetLegacyItemAmount(destination);
+                var totalAmount = (sourceAmount <= 0 ? 1 : sourceAmount) + (destinationAmount <= 0 ? 1 : destinationAmount);
+
+                // The reference forces EF_AMOUNT into effect 0 for save1,
+                // caps it at 120 and leaves any overflow in save2.
+                save1 = source with { Effect1 = 61, Value1 = checked((byte)Math.Min(totalAmount, 120)) };
+                if (totalAmount <= 119)
+                    save2 = default;
+                else
+                {
+                    var overflowAmount = totalAmount - 120;
+                    save2 = overflowAmount >= 1
+                        ? SetLegacyItemAmount(destination, Math.Min(overflowAmount, 120))
+                        : default;
+                }
+                merged = true;
+            }
+
+            var sourceAfter = save2;
+            var destinationAfter = save1;
+            WriteLiveItem(participant, sourcePlace, sourceSlot, sourceAfter);
+            WriteLiveItem(participant, destinationPlace, destinationSlot, destinationAfter);
+            outcome = new LegacyTradingItemOutcome(
+                connectionId,
+                sourcePlace,
+                sourceSlot,
+                destinationPlace,
+                destinationSlot,
+                sourceAfter,
+                destinationAfter,
+                merged,
+                participant.Mob.ToArray());
+            return LegacyTradingItemResult.Accepted;
+        }
+    }
+
+    /// <summary>
+    /// Reproduces the carry-only portion of legacy <c>Exec_MSG_SplitItem</c>.
+    /// The client-provided item index is deliberately not trusted because the
+    /// reference handler also ignores that field and reads the authoritative
+    /// item from the source carry slot.
+    /// </summary>
+    public LegacySplitItemResult TrySplitCarryItem(int connectionId, int sourceSlot, int requestedItemIndex, int quantity, out LegacySplitItemOutcome? outcome)
+    {
+        outcome = null;
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacySplitItemResult.ParticipantNotFound;
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.MobCarryCount * LegacyItem.SizeInBytes))
+                return LegacySplitItemResult.CombatStateUnavailable;
+            if (sourceSlot < 0 || sourceSlot >= LegacyAccountSnapshot.MobCarryCount - 4)
+                return LegacySplitItemResult.InvalidSlot;
+            if (quantity <= 0 || quantity >= 120)
+                return LegacySplitItemResult.InvalidQuantity;
+
+            var source = ReadCarryItem(participant, sourceSlot);
+            if (source.Index == 0)
+                return LegacySplitItemResult.SourceEmpty;
+            if (!IsLegacyStackableItem(source.Index))
+                return LegacySplitItemResult.UnsupportedItem;
+
+            var amount = GetLegacyItemAmount(source);
+            if (amount == 0 || amount == 1 || amount <= quantity)
+                return LegacySplitItemResult.InsufficientAmount;
+            if (!TryFindEmptyCarrySlotLocked(participant, out var destinationSlot))
+                return LegacySplitItemResult.InventoryFull;
+
+            var updatedSource = SetLegacyItemAmount(source, amount - quantity);
+            updatedSource.Write(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (sourceSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+
+            // The legacy code zeroes STRUCT_ITEM before copying only sIndex and
+            // the requested amount. Preserve that behavior instead of cloning
+            // effects from the source item.
+            var splitItem = SetLegacyItemAmount(new LegacyItem(source.Index, 0, 0, 0, 0, 0, 0), quantity);
+            splitItem.Write(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (destinationSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            outcome = new LegacySplitItemOutcome(
+                connectionId,
+                sourceSlot,
+                destinationSlot,
+                requestedItemIndex,
+                quantity,
+                updatedSource,
+                splitItem,
+                participant.Mob.ToArray());
+            return LegacySplitItemResult.Accepted;
+        }
+    }
+
+    private bool TryFindEmptyGroundGridLocked(ushort requestedGridX, ushort requestedGridY, out short gridX, out short gridY)
+    {
+        bool IsAvailable(int x, int y) =>
+            x >= 0 && y >= 0 && x < LegacyWorldItem.MaxGridCoordinate && y < LegacyWorldItem.MaxGridCoordinate &&
+            (mapGrid is null || !mapGrid.IsBlocked(x, y)) &&
+            !groundItems.Values.Any(item => item.PositionX == x && item.PositionY == y);
+
+        if (IsAvailable(requestedGridX, requestedGridY))
+        {
+            gridX = checked((short)requestedGridX);
+            gridY = checked((short)requestedGridY);
+            return true;
+        }
+
+        for (var y = requestedGridY - 1; y <= requestedGridY + 1; y++)
+        for (var x = requestedGridX - 1; x <= requestedGridX + 1; x++)
+            if (IsAvailable(x, y))
+            {
+                gridX = checked((short)x);
+                gridY = checked((short)y);
+                return true;
+            }
+
+        gridX = 0;
+        gridY = 0;
+        return false;
     }
 
     public bool SetNpcCombatState(int connectionId, int mode, int currentTarget, IReadOnlyList<int> enemyList)
@@ -646,6 +1346,56 @@ public sealed class WorldHub
     {
         lock (gate)
             return npcs.Values.OrderBy(static npc => npc.ConnectionId).ToArray();
+    }
+
+    public bool TryGetNpcSnapshot(int connectionId, out LegacyWorldNpc? snapshot)
+    {
+        lock (gate)
+        {
+            if (npcs.TryGetValue(connectionId, out var npc))
+            {
+                snapshot = npc;
+                return true;
+            }
+
+            snapshot = null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Replaces an offline autotrade visual only when its current listing is
+    /// the expected snapshot. This keeps the NPC visual synchronized with the
+    /// book without allowing a stale purchase to overwrite a newer state.
+    /// </summary>
+    public bool TryUpdateAutoTradeNpcSnapshot(
+        int connectionId,
+        LegacyAutoTradeSnapshot expectedSnapshot,
+        LegacyAutoTradeSnapshot updatedSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(expectedSnapshot);
+        ArgumentNullException.ThrowIfNull(updatedSnapshot);
+        if (expectedSnapshot.ConnectionId != connectionId || updatedSnapshot.ConnectionId != connectionId)
+            return false;
+
+        lock (gate)
+        {
+            if (!npcs.TryGetValue(connectionId, out var npc) ||
+                npc.AutoTradeSnapshot is null ||
+                !SameAutoTradeSnapshot(npc.AutoTradeSnapshot, expectedSnapshot))
+                return false;
+
+            npcs[connectionId] = npc with
+            {
+                AutoTradeSnapshot = updatedSnapshot with
+                {
+                    Items = updatedSnapshot.Items.ToArray(),
+                    CarryPositions = updatedSnapshot.CarryPositions.ToArray(),
+                    Prices = updatedSnapshot.Prices.ToArray(),
+                },
+            };
+            return true;
+        }
     }
 
     /// <summary>
@@ -748,11 +1498,21 @@ public sealed class WorldHub
     public bool Leave(int connectionId) => Leave(connectionId, out _);
 
     /// <summary>Removes a player and all NPC summons owned by that player.</summary>
-    public bool Leave(int connectionId, out IReadOnlyList<int> despawnedSummonIds)
+    public bool Leave(int connectionId, out IReadOnlyList<int> despawnedSummonIds) =>
+        Leave(connectionId, out despawnedSummonIds, out _);
+
+    /// <summary>
+    /// Removes a player, all NPC summons owned by that player, and any staged
+    /// bilateral trade. The trade outcome is observational only: staged offers
+    /// have not mutated carry or Gold, so disconnect cleanup must not invent a
+    /// persistence write or a rollback mutation.
+    /// </summary>
+    public bool Leave(int connectionId, out IReadOnlyList<int> despawnedSummonIds, out LegacyTradeCloseOutcome? closedTrade)
     {
         lock (gate)
         {
             despawnedSummonIds = [];
+            closedTrade = null;
             if (!participants.TryGetValue(connectionId, out var participant)) return false;
 
             var despawned = new List<int>(participant.SummonIds.Count);
@@ -770,6 +1530,11 @@ public sealed class WorldHub
                 partyLeaders.Remove(member);
             foreach (var request in pendingPartyLeaders.Where(pair => pair.Key == connectionId || pair.Value == connectionId).Select(pair => pair.Key).ToArray())
                 pendingPartyLeaders.Remove(request);
+            if (tradeStates.TryGetValue(connectionId, out var tradeState))
+            {
+                closedTrade = new LegacyTradeCloseOutcome(connectionId, tradeState.OpponentId);
+                ClearTradePairLocked(connectionId);
+            }
             participants.Remove(connectionId);
             despawnedSummonIds = despawned;
             return true;
@@ -821,6 +1586,69 @@ public sealed class WorldHub
         }
     }
 
+    /// <summary>Returns connected players in the inclusive 33x33 view around a player.</summary>
+    public IReadOnlyList<int> GetParticipantIdsInPlayerView(int connectionId)
+    {
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var origin))
+                return [];
+
+            const int halfView = 16;
+            return participants.Values
+                .Where(participant => participant.PositionX >= origin.PositionX - halfView && participant.PositionX <= origin.PositionX + halfView &&
+                                      participant.PositionY >= origin.PositionY - halfView && participant.PositionY <= origin.PositionY + halfView)
+                .Select(static participant => participant.ConnectionId)
+                .ToArray();
+        }
+    }
+
+    /// <summary>Returns players inside the legacy 33x33 GridMulticast view around a map item.</summary>
+    public IReadOnlyList<int> GetParticipantIdsInMapItemView(int wireItemId)
+    {
+        lock (gate)
+        {
+            if (!mapItems.TryGetValue(wireItemId - LegacyMapItemStateCodes.WireIdOffset, out var mapItem))
+                return [];
+
+            const int halfView = 16;
+            return participants.Values
+                .Where(participant => participant.PositionX >= mapItem.PositionX - halfView && participant.PositionX <= mapItem.PositionX + halfView &&
+                                      participant.PositionY >= mapItem.PositionY - halfView && participant.PositionY <= mapItem.PositionY + halfView)
+                .Select(static participant => participant.ConnectionId)
+                .ToArray();
+        }
+    }
+
+    /// <summary>Finds a connected character by the exact legacy character name.</summary>
+    public bool TryGetParticipantIdByCharacterName(string characterName, out int connectionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(characterName);
+        lock (gate)
+        {
+            var participant = participants.Values.FirstOrDefault(candidate =>
+                string.Equals(ReadMobName(candidate.Mob), characterName, StringComparison.Ordinal));
+            connectionId = participant?.ConnectionId ?? 0;
+            return participant is not null;
+        }
+    }
+
+    /// <summary>Reads the character name for a connected participant.</summary>
+    public bool TryGetParticipantCharacterName(int connectionId, out string? characterName)
+    {
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+            {
+                characterName = null;
+                return false;
+            }
+
+            characterName = ReadMobName(participant.Mob);
+            return true;
+        }
+    }
+
     /// <summary>Advances the two-step Castle Zakum reset driven by ProcessMinTimer.</summary>
     public bool TryProcessCastleQuestMinute(DateTime localNow, out LegacyCastleQuestPlan? plan)
     {
@@ -857,6 +1685,48 @@ public sealed class WorldHub
                 npcs.Remove(npc.ConnectionId);
             combatWorldState = combatWorldState with { CastleQuestClear = 0 };
             plan = new LegacyCastleQuestPlan(minuteSlot, PreviousState: 2, CurrentState: 0, AreaNotices: [], RemovedNpcs: removed);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Advances the Castle Zakum countdown at the same two-second cadence as
+    /// <c>CCastleZakum::ProcessSecTimer</c>. The reference decrements only
+    /// when <c>SecCounter % 2 == 0</c>; the slot guard keeps the 100 ms host
+    /// scheduler from applying the same legacy tick more than once.
+    /// </summary>
+    public bool TryProcessCastleQuestSecond(DateTime localNow, out LegacyCastleQuestSecondPlan? plan)
+    {
+        lock (gate)
+        {
+            plan = null;
+            if ((localNow.Second % 2) != 0)
+                return false;
+
+            var secondSlot = new DateTime(localNow.Year, localNow.Month, localNow.Day, localNow.Hour, localNow.Minute, localNow.Second, localNow.Kind);
+            if (lastCastleQuestSecond == secondSlot)
+                return false;
+            lastCastleQuestSecond = secondSlot;
+
+            if (castleQuestTime < 0)
+                return false;
+
+            var previousTimeRemaining = castleQuestTime;
+            if (castleQuestTime == 0)
+            {
+                castleQuestTime = -1;
+                var removed = npcs.Values
+                    .Where(static npc => npc.PositionX >= 2180 && npc.PositionX <= 2296 && npc.PositionY >= 1160 && npc.PositionY <= 1269)
+                    .ToArray();
+                foreach (var npc in removed)
+                    npcs.Remove(npc.ConnectionId);
+
+                plan = new LegacyCastleQuestSecondPlan(secondSlot, previousTimeRemaining, castleQuestTime, Expired: true, removed);
+                return true;
+            }
+
+            castleQuestTime--;
+            plan = new LegacyCastleQuestSecondPlan(secondSlot, previousTimeRemaining, castleQuestTime, Expired: false, RemovedNpcs: []);
             return true;
         }
     }
@@ -1060,6 +1930,26 @@ public sealed class WorldHub
         => SetCharacterState(connectionId, characterSlot, guildId, clan, guildLevel, coin, positionX, positionY, mob, classMaster, affect, ReadOnlyMemory<byte>.Empty);
 
     public bool SetCharacterState(int connectionId, int characterSlot, int guildId, int clan, int guildLevel, int coin, short positionX, short positionY, ReadOnlyMemory<byte> mob, short classMaster, ReadOnlyMemory<byte> affect, ReadOnlyMemory<byte> mobExtra)
+        => SetCharacterState(connectionId, characterSlot, guildId, clan, guildLevel, coin, positionX, positionY, mob, classMaster, affect, mobExtra, clientEquipment: null);
+
+    /// <summary>
+    /// Registers the legacy MOB plus the independent 7.69 eighteen-slot equipment state.
+    /// The latter is copied into the session and is never appended to the W2PP MOB blob.
+    /// </summary>
+    public bool SetCharacterState(
+        int connectionId,
+        int characterSlot,
+        int guildId,
+        int clan,
+        int guildLevel,
+        int coin,
+        short positionX,
+        short positionY,
+        ReadOnlyMemory<byte> mob,
+        short classMaster,
+        ReadOnlyMemory<byte> affect,
+        ReadOnlyMemory<byte> mobExtra,
+        IReadOnlyList<LegacyItem>? clientEquipment)
     {
         lock (gate)
         {
@@ -1072,6 +1962,7 @@ public sealed class WorldHub
             participant.PositionX = positionX;
             participant.PositionY = positionY;
             participant.Mob = mob.ToArray();
+            participant.ClientEquipment = CreateClientEquipment(participant.Mob, clientEquipment);
             participant.ClassMaster = classMaster;
             participant.ExperienceSegment = 0;
             participant.Affect = affect.Length == LegacyAccountSnapshot.AffectStride ? affect.ToArray() : new byte[LegacyAccountSnapshot.AffectStride];
@@ -1084,6 +1975,40 @@ public sealed class WorldHub
                 ? System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentMpOffset))
                 : 0;
             return true;
+        }
+    }
+
+    /// <summary>Resolves the live grid position used by TMSrv when a character enters the world.</summary>
+    public (short X, short Y) ResolveCharacterLoginPosition(
+        int connectionId,
+        ReadOnlySpan<byte> mob,
+        short classMaster,
+        int cityRandomX = -1,
+        int cityRandomY = -1,
+        int newbieRandomX = -1,
+        int newbieRandomY = -1)
+    {
+        if (mob.Length < LegacyAccountSnapshot.CharacterStride)
+            throw new ArgumentException($"A full {LegacyAccountSnapshot.CharacterStride}-byte STRUCT_MOB is required.", nameof(mob));
+
+        var state = LegacyMobCombatState.Read(mob);
+        var guildId = BinaryPrimitives.ReadUInt16LittleEndian(mob.Slice(LegacyAccountSnapshot.MobGuildOffset, sizeof(ushort)));
+        lock (gate)
+        {
+            return GetLegacyPosition(
+                connectionId,
+                guildId,
+                classMaster,
+                state,
+                cityRandomX,
+                cityRandomY,
+                newbieRandomX,
+                newbieRandomY,
+                // TMSrv's character-entry branch (ProcessDBMessage.cpp) sends
+                // mortal newcomers to Armia around (2100,2100). The (2112,2042)
+                // point belongs to DoRecall, not the initial world entry.
+                newbieOriginX: 2100,
+                newbieOriginY: 2100);
         }
     }
 
@@ -1145,11 +2070,7 @@ public sealed class WorldHub
 
             var grouped = IsDonateGroupedItem(entry.ItemIndex);
             var requiredSlots = grouped ? 1 : request.Quantity;
-            var capacity = 30;
-            if (ReadCarryItem(participant, 60).Index == 3467)
-                capacity += 15;
-            if (ReadCarryItem(participant, 61).Index == 3467)
-                capacity += 15;
+            var capacity = GetLegacyMaxCarry(participant);
 
             var freeSlots = new List<int>(requiredSlots);
             for (var slot = 0; slot < Math.Min(capacity, LegacyAccountSnapshot.MobCarryCount); slot++)
@@ -1211,6 +2132,82 @@ public sealed class WorldHub
 
     private static LegacyItem ReadCarryItem(Participant participant, int slot) =>
         LegacyItem.Read(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+
+    private static bool IsSupportedLiveItemPlace(int place) => place is LegacyItemPlace.Equip or LegacyItemPlace.Carry;
+
+    private static bool IsValidTradeSlot(Participant participant, int place, int slot, bool isSource)
+    {
+        if (place == LegacyItemPlace.Carry)
+        {
+            var tradeCarryCount = LegacyAccountSnapshot.MobCarryCount - 4;
+            if (slot < 0 || slot >= tradeCarryCount) return false;
+            return isSource || slot < GetLegacyMaxCarry(participant);
+        }
+
+        // The target client owns eighteen entries. Slot 0 remains protected as a
+        // source (face), while slots 15..17 are kept in the versioned extension.
+        var equipmentCount = participant.ClientEquipment.Length;
+        return isSource ? slot > 0 && slot < equipmentCount
+                        : slot >= 0 && slot < equipmentCount;
+    }
+
+    private static LegacyItem ReadLiveItem(Participant participant, int place, int slot) =>
+        place == LegacyItemPlace.Carry ? ReadCarryItem(participant, slot) : participant.ClientEquipment[slot];
+
+    private static void WriteLiveItem(Participant participant, int place, int slot, LegacyItem item)
+    {
+        if (place == LegacyItemPlace.Carry)
+        {
+            item.Write(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            return;
+        }
+
+        participant.ClientEquipment[slot] = item;
+        if (slot < LegacyCharacterSelection.EquipmentCount)
+            item.Write(participant.Mob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+    }
+
+    private static LegacyItem[] ReadEquipment(Participant participant)
+        => participant.ClientEquipment.ToArray();
+
+    private static LegacyItem[] CreateClientEquipment(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment)
+    {
+        if (clientEquipment is not null)
+        {
+            if (clientEquipment.Count != CharacterMobV769.EquipmentCount)
+                throw new ArgumentException($"Client equipment requires exactly {CharacterMobV769.EquipmentCount} entries.", nameof(clientEquipment));
+            return clientEquipment.ToArray();
+        }
+
+        var equipment = new LegacyItem[CharacterMobV769.EquipmentCount];
+        if (mob.Length >= LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        {
+            for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+                equipment[slot] = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+        }
+        return equipment;
+    }
+
+    private static void SyncClientEquipmentFromLegacyMob(Participant participant)
+    {
+        if (participant.Mob.Length < LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+            return;
+        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+            participant.ClientEquipment[slot] = LegacyItem.Read(participant.Mob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+    }
+
+    private static int GetLegacyMaxCarry(Participant participant)
+    {
+        var capacity = LegacyBaseCarryCapacity;
+        if (ReadCarryItem(participant, LegacyFirstCarryExpansionSlot).Index == LegacyCarryExpansionItemIndex)
+            capacity += LegacyCarryExpansionSize;
+        if (ReadCarryItem(participant, LegacySecondCarryExpansionSlot).Index == LegacyCarryExpansionItemIndex)
+            capacity += LegacyCarryExpansionSize;
+        return capacity;
+    }
+
+    private static void WriteCarryItem(Participant participant, int slot, LegacyItem item) =>
+        item.Write(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
 
     private static bool IsDonateGroupedItem(int itemIndex) => itemIndex is
         3314 or 4140 or 3312 or 3343 or 3336 or 3310 or 3311 or
@@ -2196,7 +3193,7 @@ public sealed class WorldHub
             // TMSrv resolves player parry before applying the clan-4 NPC reduction.
             if (!mapBlocked)
             {
-                damage = ResolveLegacyParry(target.Mob, summonState, targetState, itemData, skillId: -1, parryRandomRoll, damage);
+                damage = ResolveLegacyParry(target.Mob, target.ClientEquipment, summonState, targetState, itemData, skillId: -1, parryRandomRoll: parryRandomRoll, damage: damage);
                 if (damage > 0 && summon.MobSnapshot[LegacyAccountSnapshot.MobClanOffset] == 4)
                     damage = (2 * damage) / 5;
                 if (damage == 0) damage = 1;
@@ -2284,20 +3281,237 @@ public sealed class WorldHub
         => TryGetCharacterSnapshot(connectionId, out mob, out positionX, out positionY, out _);
 
     public bool TryGetCharacterSnapshot(int connectionId, out byte[]? mob, out short positionX, out short positionY, out byte[]? mobExtra)
+        => TryGetCharacterSnapshot(connectionId, out mob, out positionX, out positionY, out mobExtra, out _);
+
+    public bool TryGetCharacterSnapshot(int connectionId, out byte[]? mob, out short positionX, out short positionY, out byte[]? mobExtra, out byte[]? affect)
+        => TryGetCharacterSnapshot(connectionId, out mob, out positionX, out positionY, out mobExtra, out affect, out _);
+
+    public bool TryGetCharacterSnapshot(
+        int connectionId,
+        out byte[]? mob,
+        out short positionX,
+        out short positionY,
+        out byte[]? mobExtra,
+        out byte[]? affect,
+        out IReadOnlyList<LegacyItem>? clientEquipment)
     {
         lock (gate)
         {
             mob = null;
             mobExtra = null;
+            affect = null;
+            clientEquipment = null;
             positionX = 0;
             positionY = 0;
             if (!participants.TryGetValue(connectionId, out var participant) || participant.Mob.Length < WorldHubLegacyOffsets.LegacyAccountMobSize)
                 return false;
 
+            SyncClientEquipmentFromLegacyMob(participant);
             mob = participant.Mob.ToArray();
             mobExtra = participant.MobExtra.ToArray();
+            affect = participant.Affect.ToArray();
+            clientEquipment = participant.ClientEquipment.ToArray();
             positionX = participant.PositionX;
             positionY = participant.PositionY;
+            return true;
+        }
+    }
+
+    /// <summary>Returns the authoritative city/tax pair used by autotrade start.</summary>
+    public bool TryGetAutoTradeLocation(int connectionId, out int village, out int cityTax)
+    {
+        lock (gate)
+        {
+            village = -1;
+            cityTax = LegacyAutoTradeLocationRules.DefaultCityTax;
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return false;
+
+            return LegacyAutoTradeLocationRules.TryResolve(
+                participant.PositionX,
+                participant.PositionY,
+                guildZones?.CityTaxes,
+                out village,
+                out cityTax);
+        }
+    }
+
+    /// <summary>Returns the legacy kill-mark/PK value currently held by a playing character.</summary>
+    public bool TryGetCharacterPkPoint(int connectionId, out int pkPoint)
+    {
+        lock (gate)
+        {
+            pkPoint = 0;
+            if (!participants.TryGetValue(connectionId, out var participant) || participant.Mob.Length < WorldHubLegacyOffsets.LegacyAccountMobSize)
+                return false;
+
+            pkPoint = ReadLegacyPkPoint(participant.Mob);
+            return true;
+        }
+    }
+
+    private static bool SameAutoTradeSnapshot(LegacyAutoTradeSnapshot left, LegacyAutoTradeSnapshot right) =>
+        left.ConnectionId == right.ConnectionId &&
+        left.PositionX == right.PositionX && left.PositionY == right.PositionY &&
+        string.Equals(left.Title, right.Title, StringComparison.Ordinal) && left.Tax == right.Tax &&
+        left.Items.SequenceEqual(right.Items) &&
+        left.CarryPositions.SequenceEqual(right.CarryPositions) &&
+        left.Prices.SequenceEqual(right.Prices);
+
+    /// <summary>
+    /// Evaluates the target-cell map restrictions from the legacy action handler.
+    /// This method is deliberately non-mutating: recall and its client notification
+    /// require a separate wire/position step in the listener.
+    /// </summary>
+    public LegacyMovementMapRestriction EvaluateMovementMapTarget(int connectionId, short targetX, short targetY)
+    {
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant) || (participant.PositionX == targetX && participant.PositionY == targetY))
+                return LegacyMovementMapRestriction.None;
+
+            if (mapGrid is null && !participant.HasMapAttribute)
+                return LegacyMovementMapRestriction.None;
+
+            var mapAttribute = mapGrid?.GetAttribute(targetX, targetY) ?? participant.MapAttribute;
+            var level = participant.Mob.Length >= LegacyAccountSnapshot.MobCurrentScoreOffset + LegacyScore.SizeInBytes
+                ? LegacyMobCombatState.Read(participant.Mob).CurrentScore.Level
+                : 0;
+            return LegacyMovementMapRules.GetRestriction(mapAttribute, level, participant.ClassMaster, participant.GuildId, targetX, targetY, guildZones);
+        }
+    }
+
+    /// <summary>
+    /// Applies the legacy <c>DoRecall</c> position change after a movement map gate.
+    /// The caller owns the client frame and any user-facing notice.
+    /// </summary>
+    public bool TryRecallForMovementRestriction(
+        int connectionId,
+        out LegacyMovementRecallOutcome? outcome,
+        int cityRandomX = -1,
+        int cityRandomY = -1,
+        int newbieRandomX = -1,
+        int newbieRandomY = -1)
+    {
+        lock (gate)
+        {
+            outcome = null;
+            if (!participants.TryGetValue(connectionId, out var participant)
+                || participant.Mob.Length < LegacyAccountSnapshot.MobCurrentScoreOffset + LegacyScore.SizeInBytes)
+                return false;
+
+            var state = LegacyMobCombatState.Read(participant.Mob);
+            var fromX = participant.PositionX;
+            var fromY = participant.PositionY;
+            var (toX, toY) = GetLegacyPosition(
+                connectionId,
+                participant.GuildId,
+                participant.ClassMaster,
+                state,
+                cityRandomX,
+                cityRandomY,
+                newbieRandomX,
+                newbieRandomY,
+                newbieOriginX: 2112,
+                newbieOriginY: 2042);
+            participant.PositionX = toX;
+            participant.PositionY = toY;
+            outcome = new LegacyMovementRecallOutcome(fromX, fromY, toX, toY);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Reproduces the carry-slot mutation from 7.69 <c>Exec_MSG_DeleteItem</c>.
+    /// Unlike the reference handler, the requested item index must match the authoritative slot,
+    /// preventing a stale client request from deleting a replacement item.
+    /// </summary>
+    public LegacyDeleteItemResult TryDeleteCarryItem(int connectionId, int slot, int requestedItemIndex)
+    {
+        lock (gate)
+        {
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyDeleteItemResult.ParticipantNotFound;
+            if (participant.Mob.Length < LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.MobCarryCount * LegacyItem.SizeInBytes))
+                return LegacyDeleteItemResult.CombatStateUnavailable;
+            if (slot < 0 || slot >= LegacyAccountSnapshot.MobCarryCount - 4)
+                return LegacyDeleteItemResult.InvalidSlot;
+            if (requestedItemIndex <= 0 || requestedItemIndex >= LegacyItemDataTable.MaxItemIndex)
+                return LegacyDeleteItemResult.InvalidItemIndex;
+
+            var current = ReadCarryItem(participant, slot);
+            if (current.Index == 0)
+                return LegacyDeleteItemResult.SourceEmpty;
+            if (current.Index != requestedItemIndex)
+                return LegacyDeleteItemResult.ItemChanged;
+
+            WriteCarryItem(participant, slot, default);
+            return LegacyDeleteItemResult.Accepted;
+        }
+    }
+
+    /// <summary>
+    /// Applies the buyer half of an autotrade plan to the connected MOB. The
+    /// current coin and destination slot are compared again while holding the
+    /// world lock, so a stale request cannot overwrite a newer inventory state.
+    /// </summary>
+    public LegacyAutoTradeBuyerPurchaseResult TryApplyAutoTradeBuyerPurchase(
+        int connectionId,
+        LegacyAutoTradePurchasePlan plan,
+        out LegacyAutoTradeBuyerPurchaseOutcome? outcome)
+        => TryApplyAutoTradeBuyerPurchase(connectionId, plan, expectedMob: null, out outcome);
+
+    /// <summary>
+    /// Applies the buyer half only if the caller's full MOB snapshot is still
+    /// current. The full compare prevents a later rollback from erasing an
+    /// unrelated inventory or combat mutation made between read and commit.
+    /// </summary>
+    public LegacyAutoTradeBuyerPurchaseResult TryApplyAutoTradeBuyerPurchase(
+        int connectionId,
+        LegacyAutoTradePurchasePlan plan,
+        ReadOnlyMemory<byte>? expectedMob,
+        out LegacyAutoTradeBuyerPurchaseOutcome? outcome)
+    {
+        lock (gate)
+        {
+            outcome = null;
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyAutoTradeBuyerPurchaseResult.ParticipantNotFound;
+            if (expectedMob is not null && !participant.Mob.AsSpan().SequenceEqual(expectedMob.Value.Span))
+                return LegacyAutoTradeBuyerPurchaseResult.StateChanged;
+
+            var validation = LegacyAutoTradeRuntimePurchaseRules.ValidateBuyerPlan(plan, participant.Mob, out _);
+            if (validation != LegacyAutoTradeBuyerPurchaseResult.Accepted)
+                return validation;
+
+            var previousMob = participant.Mob.ToArray();
+            WriteCarryItem(participant, plan.BuyerDestinationSlot, plan.PurchasedItem);
+            BinaryPrimitives.WriteInt32LittleEndian(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCoinOffset), plan.BuyerCoin);
+            participant.Coin = plan.BuyerCoin;
+            outcome = new LegacyAutoTradeBuyerPurchaseOutcome(
+                connectionId,
+                plan.BuyerDestinationSlot,
+                plan.PurchasedItem,
+                plan.BuyerCoin,
+                participant.Mob.ToArray(),
+                previousMob);
+            return LegacyAutoTradeBuyerPurchaseResult.Accepted;
+        }
+    }
+
+    /// <summary>Restores the buyer snapshot when a later persistence gate rejects the sale.</summary>
+    public bool TryRollbackAutoTradeBuyerPurchase(LegacyAutoTradeBuyerPurchaseOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        lock (gate)
+        {
+            if (!participants.TryGetValue(outcome.ConnectionId, out var participant) ||
+                participant.Mob.Length != outcome.PreviousMob.Length ||
+                !participant.Mob.AsSpan().SequenceEqual(outcome.MobSnapshot))
+                return false;
+
+            outcome.PreviousMob.AsSpan().CopyTo(participant.Mob);
+            participant.Coin = BinaryPrimitives.ReadInt32LittleEndian(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCoinOffset));
             return true;
         }
     }
@@ -2439,19 +3653,19 @@ public sealed class WorldHub
                 damage /= 4; // TMSrv's player-target penetration step for physical attacks.
             if (damage <= 0) damage = 1;
 
-            damage = ResolveLegacyParry(targetMob, attackerState, targetState, itemData, skillId: 0, parryRandomRoll, damage);
+            damage = ResolveLegacyParry(targetMob, targetParticipant?.ClientEquipment, attackerState, targetState, itemData, skillId: 0, parryRandomRoll, damage);
 
             var forceDamage = 0;
             var pvpDamage = 0;
             if (damage > 0)
             {
-                forceDamage = GetLegacyForceDamage(attacker.Mob, itemData);
+                forceDamage = GetLegacyForceDamage(attacker.Mob, attacker.ClientEquipment, itemData);
                 if (forceDamage != 0)
                     damage = damage <= 1 ? forceDamage : damage + forceDamage;
 
                 if (targetParticipant is not null)
                 {
-                    pvpDamage = GetLegacyPvpDamage(attacker.Mob, itemData);
+                    pvpDamage = GetLegacyPvpDamage(attacker.Mob, attacker.ClientEquipment, itemData);
                     if (pvpDamage != 0)
                         damage = damage <= 1
                             ? damage + (damage * pvpDamage / 100)
@@ -2503,8 +3717,8 @@ public sealed class WorldHub
             var reflectPvp = 0;
             if (targetParticipant is not null && damage > 0)
             {
-                reflectDamage = GetLegacyReflectDamage(targetMob, targetState, itemData);
-                reflectPvp = GetLegacyReflectPvp(targetMob, itemData);
+                reflectDamage = GetLegacyReflectDamage(targetMob, targetParticipant.ClientEquipment, targetState, itemData);
+                reflectPvp = GetLegacyReflectPvp(targetMob, targetParticipant.ClientEquipment, itemData);
                 if (reflectDamage > 0)
                 {
                     damage -= reflectDamage;
@@ -3009,7 +4223,7 @@ public sealed class WorldHub
                 damage = ((150 - resistance) * damage) / 100;
             }
 
-            damage = ResolveLegacyParry(target.Mob, attackerState, targetState, itemData, skill.Id, parryRandomRoll, damage);
+            damage = ResolveLegacyParry(target.Mob, target.ClientEquipment, attackerState, targetState, itemData, skill.Id, parryRandomRoll, damage);
 
             var remainingHp = damage <= 0 ? targetState.CurrentScore.Hp : Math.Max(0, targetState.CurrentScore.Hp - damage);
             BinaryPrimitives.WriteInt32LittleEndian(target.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), remainingHp);
@@ -3296,7 +4510,7 @@ public sealed class WorldHub
                 ? randomFactor
                 : System.Security.Cryptography.RandomNumberGenerator.GetInt32(physicalCombat + 99, physicalCombat + 99 + (12 - physicalCombat));
             var damage = LegacySkillCombatMath.GetPhysicalDamage(baseDamage, defense, combat, physicalRandomFactor) / 2;
-            damage = ResolveLegacyParry(targetMob, attackerState, targetState, itemData, skill.Id, parryRandomRoll, damage);
+            damage = ResolveLegacyParry(targetMob, null, attackerState, targetState, itemData, skill.Id, parryRandomRoll, damage);
             return FinishNpcSkillAttackLocked(attacker, npc, targetConnectionId, attackerState, targetState, targetMob, baseDamage, damage, 0, specialDropRoll, specialItemRoll, eventDropRoll, runeRoll, runeChanceRoll, pistaRandomRoll, out outcome);
         }
 
@@ -3310,7 +4524,7 @@ public sealed class WorldHub
         else if (skill.InstanceType is >= 2 and <= 5)
             resistance = unchecked((sbyte)targetMob[LegacyAccountSnapshot.MobResistOffset + resistanceIndex]) / 2;
         skillDamage = ((150 - resistance) * skillDamage) / 100;
-        skillDamage = ResolveLegacyParry(targetMob, attackerState, targetState, itemData, skill.Id, parryRandomRoll, skillDamage);
+        skillDamage = ResolveLegacyParry(targetMob, null, attackerState, targetState, itemData, skill.Id, parryRandomRoll, skillDamage);
         return FinishNpcSkillAttackLocked(attacker, npc, targetConnectionId, attackerState, targetState, targetMob, baseDamage, skillDamage, resistance, specialDropRoll, specialItemRoll, eventDropRoll, runeRoll, runeChanceRoll, pistaRandomRoll, out outcome);
     }
 
@@ -3793,20 +5007,31 @@ public sealed class WorldHub
 
     private static bool TryInsertItemLocked(Participant participant, LegacyItem item, out int carrySlot)
     {
+        if (!TryFindEmptyCarrySlotLocked(participant, out carrySlot))
+            return false;
+
+        item.Write(participant.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (carrySlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+        return true;
+    }
+
+    private static bool TryFindEmptyCarrySlotLocked(Participant participant, out int carrySlot)
+    {
         carrySlot = -1;
-        for (var slot = 0; slot < LegacyAccountSnapshot.MobCarryCount; slot++)
+        var maxCarry = GetLegacyMaxCarry(participant);
+        for (var slot = 0; slot < Math.Min(maxCarry, LegacyAccountSnapshot.MobCarryCount); slot++)
         {
             var offset = LegacyAccountSnapshot.MobCarryOffset + (slot * LegacyItem.SizeInBytes);
             if (LegacyItem.Read(participant.Mob.AsSpan(offset, LegacyItem.SizeInBytes)).Index == 0)
             {
                 carrySlot = slot;
-                item.Write(participant.Mob.AsSpan(offset, LegacyItem.SizeInBytes));
                 return true;
             }
         }
 
         return false;
     }
+
+    private static bool IsLegacyStackableItem(short itemIndex) => legacyStackableItemIndices.Contains(itemIndex);
 
     private static bool TryConsumeResurrectionScroll(Participant participant, out int slot, out LegacyItem consumedItem)
     {
@@ -3850,15 +5075,15 @@ public sealed class WorldHub
         return hpAbs;
     }
 
-    private static int GetLegacyForceDamage(ReadOnlySpan<byte> mob, LegacyItemDataTable? itemData)
+    private static int GetLegacyForceDamage(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment, LegacyItemDataTable? itemData)
     {
-        if (itemData is null || mob.Length < LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        if (itemData is null || !HasEquipmentLayout(mob, clientEquipment))
             return 0;
 
         var forceDamage = 0;
-        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+        for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
         {
-            var item = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var item = ReadEquipmentItem(mob, clientEquipment, slot);
             if (item.Index <= 0 || item.Index >= LegacyItemDataTable.MaxItemIndex)
                 continue;
 
@@ -3886,32 +5111,32 @@ public sealed class WorldHub
         return forceDamage;
     }
 
-    private static int GetLegacyPvpDamage(ReadOnlySpan<byte> mob, LegacyItemDataTable? itemData)
+    private static int GetLegacyPvpDamage(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment, LegacyItemDataTable? itemData)
     {
-        if (itemData is null || mob.Length < LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        if (itemData is null || !HasEquipmentLayout(mob, clientEquipment))
             return 0;
 
         var attackPvp = 0;
-        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+        for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
         {
-            var item = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var item = ReadEquipmentItem(mob, clientEquipment, slot);
             attackPvp += itemData.GetItemAbility(item, LegacyItemEffect.PvpAttack);
         }
 
         return (attackPvp + 1) / 10;
     }
 
-    private static int GetLegacyReflectDamage(ReadOnlySpan<byte> mob, LegacyMobCombatState state, LegacyItemDataTable? itemData)
+    private static int GetLegacyReflectDamage(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment, LegacyMobCombatState state, LegacyItemDataTable? itemData)
     {
         var reflectDamage = state.CharacterClass == 2 && (state.LearnedSkill & (1u << 17)) != 0
             ? (state.CurrentScore.Special4 + 1) / 6
             : 0;
-        if (itemData is null || mob.Length < LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        if (itemData is null || !HasEquipmentLayout(mob, clientEquipment))
             return reflectDamage;
 
-        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+        for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
         {
-            var item = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var item = ReadEquipmentItem(mob, clientEquipment, slot);
             var grade = itemData.GetItemGrade(item);
             if (grade == 8)
                 reflectDamage += 20;
@@ -3935,15 +5160,15 @@ public sealed class WorldHub
         return reflectDamage;
     }
 
-    private static int GetLegacyReflectPvp(ReadOnlySpan<byte> mob, LegacyItemDataTable? itemData)
+    private static int GetLegacyReflectPvp(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment, LegacyItemDataTable? itemData)
     {
-        if (itemData is null || mob.Length < LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        if (itemData is null || !HasEquipmentLayout(mob, clientEquipment))
             return 0;
 
         var reflectPvp = 0;
-        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+        for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
         {
-            var item = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var item = ReadEquipmentItem(mob, clientEquipment, slot);
             reflectPvp += itemData.GetItemAbility(item, LegacyItemEffect.PvpDefense);
         }
 
@@ -3982,8 +5207,23 @@ public sealed class WorldHub
         item.Effect1 == LegacyItemEffect.Sanctuary || item.Effect2 == LegacyItemEffect.Sanctuary || item.Effect3 == LegacyItemEffect.Sanctuary ||
         item.Effect1 is >= 116 and <= 125 || item.Effect2 is >= 116 and <= 125 || item.Effect3 is >= 116 and <= 125;
 
+    private static int GetEquipmentCount(IReadOnlyList<LegacyItem>? clientEquipment) =>
+        clientEquipment?.Count == CharacterMobV769.EquipmentCount
+            ? CharacterMobV769.EquipmentCount
+            : LegacyCharacterSelection.EquipmentCount;
+
+    private static bool HasEquipmentLayout(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment) =>
+        clientEquipment?.Count == CharacterMobV769.EquipmentCount ||
+        mob.Length >= LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes);
+
+    private static LegacyItem ReadEquipmentItem(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment, int slot) =>
+        clientEquipment?.Count == CharacterMobV769.EquipmentCount
+            ? clientEquipment[slot]
+            : LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+
     private static int ResolveLegacyParry(
         ReadOnlySpan<byte> targetMob,
+        IReadOnlyList<LegacyItem>? clientEquipment,
         LegacyMobCombatState attackerState,
         LegacyMobCombatState targetState,
         LegacyItemDataTable? itemData,
@@ -3995,9 +5235,9 @@ public sealed class WorldHub
             return damage;
 
         var targetParry = 0;
-        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+        for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
         {
-            var item = LegacyItem.Read(targetMob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var item = ReadEquipmentItem(targetMob, clientEquipment, slot);
             if (item.Index != 0 || slot == 7)
                 targetParry += itemData.GetItemAbility(item, LegacyItemEffect.Parry);
         }
@@ -4027,6 +5267,31 @@ public sealed class WorldHub
         int newbieRandomX,
         int newbieRandomY)
     {
+        return GetLegacyPosition(
+            participant.ConnectionId,
+            participant.GuildId,
+            participant.ClassMaster,
+            state,
+            cityRandomX,
+            cityRandomY,
+            newbieRandomX,
+            newbieRandomY,
+            newbieOriginX: 2100,
+            newbieOriginY: 2100);
+    }
+
+    private (short X, short Y) GetLegacyPosition(
+        int connectionId,
+        int guildId,
+        short classMaster,
+        LegacyMobCombatState state,
+        int cityRandomX,
+        int cityRandomY,
+        int newbieRandomX,
+        int newbieRandomY,
+        int newbieOriginX,
+        int newbieOriginY)
+    {
         var cityId = (state.CurrentScore.Merchant & 0xC0) >> 6;
         var zone = LegacyRecallData.Zones[Math.Clamp(cityId, 0, LegacyRecallData.Zones.Length - 1)];
         var x = zone.CitySpawnX + (cityRandomX >= 0 ? Math.Clamp(cityRandomX, 0, 14) : System.Security.Cryptography.RandomNumberGenerator.GetInt32(15));
@@ -4035,7 +5300,7 @@ public sealed class WorldHub
         for (var zoneIndex = 0; zoneIndex < LegacyRecallData.Zones.Length; zoneIndex++)
         {
             var guildZone = LegacyRecallData.Zones[zoneIndex];
-            if (participant.GuildId > 0 && participant.GuildId == guildZones?.GetChargeGuild(zoneIndex))
+            if (guildId > 0 && guildId == guildZones?.GetChargeGuild(zoneIndex))
             {
                 x = guildZone.GuildSpawnX;
                 y = guildZone.GuildSpawnY;
@@ -4043,17 +5308,17 @@ public sealed class WorldHub
             }
         }
 
-        if (participant.ClassMaster == LegacyAccountSnapshot.ClassMasterMortal && state.CurrentScore.Level < LegacyRecallData.LegacyFreeExp)
+        if (classMaster == LegacyAccountSnapshot.ClassMasterMortal && state.CurrentScore.Level < LegacyRecallData.LegacyFreeExp)
         {
-            x = 2100 + (newbieRandomX >= 0 ? Math.Clamp(newbieRandomX, 0, 4) : System.Security.Cryptography.RandomNumberGenerator.GetInt32(5)) - 2;
-            y = 2100 + (newbieRandomY >= 0 ? Math.Clamp(newbieRandomY, 0, 4) : System.Security.Cryptography.RandomNumberGenerator.GetInt32(5)) - 2;
+            x = newbieOriginX + (newbieRandomX >= 0 ? Math.Clamp(newbieRandomX, 0, 4) : System.Security.Cryptography.RandomNumberGenerator.GetInt32(5)) - 2;
+            y = newbieOriginY + (newbieRandomY >= 0 ? Math.Clamp(newbieRandomY, 0, 4) : System.Security.Cryptography.RandomNumberGenerator.GetInt32(5)) - 2;
         }
 
         var gridX = x;
         var gridY = y;
         Func<int, int, bool> blockedAt = mapGrid is null ? static (_, _) => false : mapGrid.IsBlocked;
         LegacyMobGridSearch.TryFindEmpty(
-            participant.ConnectionId,
+            connectionId,
             ref gridX,
             ref gridY,
             GetParticipantAtPosition,
@@ -4563,7 +5828,18 @@ public sealed class WorldHub
         {
             frame = null;
             if (!participants.TryGetValue(connectionId, out var participant) || participant.Mob.Length < WorldHubLegacyOffsets.LegacyAccountMobSize) return false;
-            frame = new CreateMobConfirmation((ushort)connectionId, participant.PositionX, participant.PositionY, participant.Mob).ToFrame(codec, clientTick, keywordIndex);
+            SyncClientEquipmentFromLegacyMob(participant);
+            var sourcePayload = new CreateMobConfirmation(
+                (ushort)connectionId,
+                participant.PositionX,
+                participant.PositionY,
+                participant.Mob,
+                participant.Affect,
+                npc: false)
+                .ToPayload();
+            var appearance = LegacyAutoTradeVisualRelay.BuildEquipmentAppearance(participant.Mob, participant.ClientEquipment);
+            frame = W2ppCreateMobV1Adapter.AdaptPayload(sourcePayload, appearance.VisualEquipment, appearance.AncientCodes)
+                .ToFrame(codec, clientTick, keywordIndex);
             return true;
         }
     }
@@ -4575,8 +5851,38 @@ public sealed class WorldHub
         {
             frame = null;
             if (!participants.TryGetValue(connectionId, out var participant) || participant.Mob.Length < WorldHubLegacyOffsets.LegacyAccountMobSize) return false;
-            frame = new UpdateEtcConfirmation(participant.Mob, participant.MobExtra).ToFrame(codec, clientTick, keywordIndex, (ushort)connectionId);
+            var sourcePayload = new UpdateEtcConfirmation(participant.Mob, participant.MobExtra).ToPayload();
+            frame = W2ppUpdateEtcV1Adapter.AdaptPayload(sourcePayload.AsSpan(0, W2ppUpdateEtcV1Adapter.SourcePayloadSize))
+                .ToFrame(codec, clientTick, keywordIndex, (ushort)connectionId);
             return true;
+        }
+    }
+
+    public bool TryBuildUpdateEquipFrame(int connectionId, LegacyFrameCodec codec, uint clientTick, byte keywordIndex, out byte[]? frame)
+    {
+        ArgumentNullException.ThrowIfNull(codec);
+        lock (gate)
+        {
+            frame = null;
+            if (!participants.TryGetValue(connectionId, out var participant) ||
+                participant.Mob.Length < WorldHubLegacyOffsets.LegacyAccountMobSize)
+                return false;
+
+            try
+            {
+                SyncClientEquipmentFromLegacyMob(participant);
+                frame = LegacyAutoTradeVisualRelay.BuildEquipmentAppearance(participant.Mob, participant.ClientEquipment)
+                    .ToFrame(codec, clientTick, keywordIndex, checked((ushort)connectionId));
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
         }
     }
 
@@ -4617,6 +5923,7 @@ public sealed class WorldHub
         public byte MapAttribute { get; set; }
         public bool HasMapAttribute { get; set; }
         public byte[] Mob { get; set; } = [];
+        public LegacyItem[] ClientEquipment { get; set; } = new LegacyItem[CharacterMobV769.EquipmentCount];
         public short ClassMaster { get; set; } = LegacyAccountSnapshot.ClassMasterMortal;
         public int ExperienceSegment { get; set; }
         public byte[] Affect { get; set; } = new byte[LegacyAccountSnapshot.AffectStride];
@@ -4791,6 +6098,182 @@ public sealed record LegacyExperienceAward(int ConnectionId, int Experience, byt
 
 public sealed record LegacyItemDrop(int ConnectionId, int InventorySlot, LegacyItem Item);
 
+public sealed record LegacyWorldItem(int ItemId, short PositionX, short PositionY, LegacyItem Item, int Rotate = 0, int Delay = 90)
+{
+    public const int WireIdOffset = 10_000;
+    public const int CarryDestinationType = 1;
+    public const int MaxGridCoordinate = 4096;
+    public static readonly IReadOnlySet<short> ProtectedDropItemIndexes = new HashSet<short> { 446, 508, 509, 522, 526, 527, 528, 529, 530, 531, 532, 533, 534, 535, 536, 537, 747, 3993, 3994 };
+}
+
+public sealed record LegacyGroundItemDecay(
+    LegacyWorldItem Item,
+    IReadOnlyList<int> RecipientConnectionIds);
+
+public sealed record LegacyGroundItemDecayPlan(
+    DateTime SecondSlot,
+    IReadOnlyList<LegacyGroundItemDecay> RemovedItems);
+
+public sealed record LegacyUpdateItemOutcome(
+    int ConnectionId,
+    int WireItemId,
+    LegacyMapItemState MapItem,
+    bool StateChanged,
+    int ConsumedKeySlot,
+    LegacyItem ConsumedKey,
+    byte[] MobSnapshot,
+    bool SuppressMissingKeyNotice,
+    LegacyCastleQuestStart? CastleQuestStart = null);
+
+public sealed record LegacyMapItemMinutePlan(
+    DateTime MinuteSlot,
+    IReadOnlyList<LegacyMapItemState> ClosedItems);
+
+public sealed record LegacyCastleQuestState(
+    int QuestLevel,
+    int TimeRemaining,
+    int LeaderConnectionId,
+    IReadOnlyList<int> PartyConnectionIds);
+
+public sealed record LegacyCastleQuestStart(
+    int QuestLevel,
+    int TimeRemaining,
+    int LeaderConnectionId,
+    IReadOnlyList<int> PartyConnectionIds,
+    IReadOnlyList<LegacyWorldNpc> RemovedNpcs,
+    IReadOnlyList<LegacyWorldNpc> SpawnedNpcs);
+
+public enum LegacyUpdateItemResult
+{
+    Accepted,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    AttackerNotAlive,
+    InvalidState,
+    InvalidItemId,
+    MapItemNotFound,
+    MissingKey,
+    MissingCastleQuestKey,
+    InvalidCastleQuest,
+    CastleQuestActive,
+}
+
+public sealed record LegacyGetItemOutcome(
+    int ConnectionId,
+    short WireItemId,
+    short PositionX,
+    short PositionY,
+    int DestinationType,
+    int DestinationSlot,
+    LegacyItem Item,
+    byte[] MobSnapshot);
+
+public enum LegacyGetItemResult
+{
+    Accepted,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    AttackerNotAlive,
+    InvalidDestinationType,
+    InvalidDestinationSlot,
+    GroundItemNotFound,
+    OutOfRange,
+    GridMismatch,
+    DestinationOccupied,
+}
+
+public sealed record LegacyDropItemOutcome(
+    int ConnectionId,
+    int SourceType,
+    int SourceSlot,
+    int Rotate,
+    short PositionX,
+    short PositionY,
+    int WireItemId,
+    LegacyItem Item,
+    byte[] MobSnapshot);
+
+public enum LegacyTradingItemResult
+{
+    Accepted,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    AttackerNotAlive,
+    InvalidSlot,
+    SameSlot,
+    SourceEmpty,
+    InvalidPlace,
+    CargoUnavailable,
+    ItemDataUnavailable,
+    EquipmentRejected,
+}
+
+public enum LegacyDeleteItemResult
+{
+    Accepted,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    InvalidSlot,
+    InvalidItemIndex,
+    SourceEmpty,
+    ItemChanged,
+}
+
+public sealed record LegacyTradingItemOutcome(
+    int ConnectionId,
+    int SourcePlace,
+    int SourceSlot,
+    int DestinationPlace,
+    int DestinationSlot,
+    LegacyItem SourceSlotItem,
+    LegacyItem DestinationSlotItem,
+    bool WasMerged,
+    byte[] MobSnapshot);
+
+public static class LegacyItemPlace
+{
+    public const int Equip = 0;
+    public const int Carry = 1;
+    public const int Cargo = 2;
+}
+
+public enum LegacySplitItemResult
+{
+    Accepted,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    InvalidSlot,
+    InvalidQuantity,
+    SourceEmpty,
+    UnsupportedItem,
+    InsufficientAmount,
+    InventoryFull,
+}
+
+public sealed record LegacySplitItemOutcome(
+    int ConnectionId,
+    int SourceSlot,
+    int DestinationSlot,
+    int RequestedItemIndex,
+    int Quantity,
+    LegacyItem UpdatedSourceItem,
+    LegacyItem SplitItem,
+    byte[] MobSnapshot);
+
+public enum LegacyDropItemResult
+{
+    Accepted,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    AttackerNotAlive,
+    InvalidGrid,
+    UnsupportedSourceType,
+    InvalidSourceSlot,
+    InvalidItem,
+    ProtectedItem,
+    NoGroundSpace,
+}
+
 public sealed record LegacyCoinUpdate(int ConnectionId, int Coin, int AddedCoin, byte[] MobSnapshot);
 
 public sealed record LegacyPrivateNotice(int ConnectionId, string Message);
@@ -4804,6 +6287,13 @@ public sealed record LegacyCastleQuestPlan(
     int PreviousState,
     int CurrentState,
     IReadOnlyList<LegacyAreaNotice> AreaNotices,
+    IReadOnlyList<LegacyWorldNpc> RemovedNpcs);
+
+public sealed record LegacyCastleQuestSecondPlan(
+    DateTime SecondSlot,
+    int PreviousTimeRemaining,
+    int CurrentTimeRemaining,
+    bool Expired,
     IReadOnlyList<LegacyWorldNpc> RemovedNpcs);
 
 internal sealed record LegacyNpcDropResult(IReadOnlyList<LegacyItemDrop> ItemDrops, IReadOnlyList<LegacyGlobalNotice> GlobalNotices);
@@ -4952,7 +6442,10 @@ public sealed record LegacyWorldNpc(
     int CurrentTarget = LegacyNpcMode.EmptyTarget,
     IReadOnlyList<int>? initialEnemyList = null,
     int GenerateIndex = -1,
-    int? TerrainHeight = null)
+    int? TerrainHeight = null,
+    LegacyAutoTradeSnapshot? AutoTradeSnapshot = null,
+    string? AutoTradeOwnerAccount = null,
+    int AutoTradeCharacterSlot = -1)
 {
     public IReadOnlyList<int> EnemyList { get; init; } = initialEnemyList ?? [];
 }

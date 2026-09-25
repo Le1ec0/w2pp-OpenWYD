@@ -1,0 +1,53 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Cur SpeedRun final AttackRun composition",
+  "cases": [
+    {
+      "name": "accumulated-bonuses-dexterity-and-packed-value",
+      "input": { "attackSpeedBeforeFinal": 55, "runBeforeFinal": 2, "attackSpeedBonus": 12, "runSpeedBonus": 3, "dexterity": 37, "face": 2, "eligibleMountRunFloor": 0 },
+      "targetExpected": { "attack": 7, "run": 5, "packedAttackRun": 117 },
+      "w2ppExpected": { "attack": 7, "run": 5, "packedAttackRun": 117 }
+    },
+    {
+      "name": "dexterity-division-truncates-before-attack-clamp",
+      "input": { "attackSpeedBeforeFinal": 9, "runBeforeFinal": 1, "attackSpeedBonus": 0, "runSpeedBonus": 0, "dexterity": 4, "face": 5, "eligibleMountRunFloor": 4 },
+      "targetExpected": { "attack": 0, "run": 1, "packedAttackRun": 1 },
+      "w2ppExpected": { "attack": 0, "run": 1, "packedAttackRun": 1 }
+    },
+    {
+      "name": "attack-and-run-lower-clamps",
+      "input": { "attackSpeedBeforeFinal": -20, "runBeforeFinal": -5, "attackSpeedBonus": 0, "runSpeedBonus": 1, "dexterity": 0, "face": 5, "eligibleMountRunFloor": 0 },
+      "targetExpected": { "attack": 0, "run": 0, "packedAttackRun": 0 },
+      "w2ppExpected": { "attack": 0, "run": 0, "packedAttackRun": 0 }
+    },
+    {
+      "name": "attack-and-run-upper-clamps",
+      "input": { "attackSpeedBeforeFinal": 145, "runBeforeFinal": 5, "attackSpeedBonus": 10, "runSpeedBonus": 8, "dexterity": 0, "face": 4, "eligibleMountRunFloor": 0 },
+      "targetExpected": { "attack": 15, "run": 6, "packedAttackRun": 246 },
+      "w2ppExpected": { "attack": 15, "run": 6, "packedAttackRun": 246 }
+    },
+    {
+      "name": "mount-floor-applies-at-cached-face-four",
+      "input": { "attackSpeedBeforeFinal": 0, "runBeforeFinal": 1, "attackSpeedBonus": 0, "runSpeedBonus": 0, "dexterity": 0, "face": 4, "eligibleMountRunFloor": 4 },
+      "targetExpected": { "attack": 0, "run": 4, "packedAttackRun": 4 },
+      "w2ppExpected": { "attack": 0, "run": 4, "packedAttackRun": 4 }
+    },
+    {
+      "name": "mount-floor-ignored-above-cached-face-four",
+      "input": { "attackSpeedBeforeFinal": 0, "runBeforeFinal": 1, "attackSpeedBonus": 0, "runSpeedBonus": 0, "dexterity": 0, "face": 5, "eligibleMountRunFloor": 4 },
+      "targetExpected": { "attack": 0, "run": 1, "packedAttackRun": 1 },
+      "w2ppExpected": { "attack": 0, "run": 1, "packedAttackRun": 1 }
+    },
+    {
+      "name": "eligible-mount-floor-is-applied-before-run-cap",
+      "input": { "attackSpeedBeforeFinal": 0, "runBeforeFinal": 1, "attackSpeedBonus": 0, "runSpeedBonus": 0, "dexterity": 0, "face": 0, "eligibleMountRunFloor": 9 },
+      "targetExpected": { "attack": 0, "run": 6, "packedAttackRun": 6 },
+      "w2ppExpected": { "attack": 0, "run": 6, "packedAttackRun": 6 }
+    },
+    {
+      "name": "mount-floor-does-not-reduce-existing-run",
+      "input": { "attackSpeedBeforeFinal": 0, "runBeforeFinal": 5, "attackSpeedBonus": 0, "runSpeedBonus": 0, "dexterity": 0, "face": 3, "eligibleMountRunFloor": 4 },
+      "targetExpected": { "attack": 0, "run": 5, "packedAttackRun": 5 },
+      "w2ppExpected": { "attack": 0, "run": 5, "packedAttackRun": 5 }
+    }
+  ]
+}

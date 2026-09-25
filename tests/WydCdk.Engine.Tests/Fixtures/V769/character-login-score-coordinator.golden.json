@@ -1,0 +1,102 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore audited-block coordinator",
+  "cases": [
+    {
+      "name": "mortal-wolf-soul-and-haste-order",
+      "characterClass": 2,
+      "learnedSkill": 131072,
+      "classMaster": 2,
+      "soul": 3,
+      "isSummon": false,
+      "resist": [10, 20, 30, 40],
+      "headItem": { "index": 7, "effect1": 0, "value1": 0, "effect2": 0, "value2": 0, "effect3": 0, "value3": 0 },
+      "baseScore": { "level": 400, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "currentScore": { "level": 999, "ac": 999, "damage": 999, "attackRun": 0, "maxHp": 2000, "maxMp": 900, "hp": 800, "mp": 300, "strength": 99, "intelligence": 99, "dexterity": 99, "constitution": 99, "special1": 99, "special2": 99, "special3": 99, "special4": 99 },
+      "records": [{ "slot": 0, "type": 16, "value": 1, "level": 100 }, { "slot": 1, "type": 2, "value": 2, "level": 0 }, { "slot": 2, "type": 11, "value": 7, "level": 10 }, { "slot": 3, "type": 29, "value": 0, "level": 0 }, { "slot": 4, "type": 9, "value": 3, "level": 20 }, { "slot": 5, "type": 15, "value": 5, "level": 100 }, { "slot": 6, "type": 5, "value": 10, "level": 0 }, { "slot": 7, "type": 6, "value": 25, "level": 0 }, { "slot": 8, "type": 12, "value": 25, "level": 0 }],
+      "expected": {
+        "transformation": { "attackSpeedBonus": 15, "runSpeedBonus": 1, "damageAddition": 10, "damageMultiplierAdjustment": 45, "armorClass": 105, "maxHp": 1000, "criticalAddition": 5, "headItemIndex": 22, "resistance": [15, 25, 35, 45] },
+        "afterTransformation": { "level": 400, "ac": 105, "damage": 60, "maxHp": 1000, "maxMp": 500, "hp": 800, "mp": 300 },
+        "magicShield": { "armorClassAddition": 9 },
+        "afterMagicShield": { "level": 400, "ac": 114, "damage": 60, "maxHp": 1000, "maxMp": 500, "hp": 800, "mp": 300 },
+        "magicWeapon": { "damageAddition": 12, "damageMultiplierAdjustment": 5, "magicAddition": 0 },
+        "afterMagicWeapon": { "level": 400, "ac": 114, "damage": 72, "maxHp": 1000, "maxMp": 500, "hp": 800, "mp": 300 },
+        "athenaTouch": [15, 15, 15, 15],
+        "afterAthenaTouch": { "level": 400, "ac": 114, "damage": 72, "maxHp": 1000, "maxMp": 500, "hp": 800, "mp": 300, "specials": [15, 15, 15, 15] },
+        "fanaticism": 27,
+        "dexterity": 33,
+        "armorClassReduction": 85,
+        "afterSoul": { "maxHp": 1000, "maxMp": 572, "strength": 10, "intelligence": 20, "constitution": 40 },
+        "afterKibita": { "maxHp": 1000, "maxMp": 572, "strength": 10, "intelligence": 20 },
+        "haste": { "runAddition": 2, "rsvFlagsToAdd": 32 },
+        "resistance": [15, 25, 35, 45],
+        "rsvWithAffects": 32
+      }
+    },
+    {
+      "name": "celestial-eden-soul-after-transformation",
+      "characterClass": 2,
+      "learnedSkill": 0,
+      "classMaster": 3,
+      "soul": 3,
+      "isSummon": false,
+      "resist": [95, 90, 100, 0],
+      "headItem": { "index": 7, "effect1": 0, "value1": 0, "effect2": 0, "value2": 0, "effect3": 0, "value3": 0 },
+      "baseScore": { "level": 400, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 1000, "mp": 500, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "currentScore": { "level": 400, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 1000, "mp": 500, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "records": [{ "slot": 0, "type": 16, "value": 5, "level": 200 }, { "slot": 1, "type": 29, "value": 0, "level": 0 }],
+      "expected": {
+        "transformation": { "attackSpeedBonus": 180, "runSpeedBonus": 3, "damageAddition": 0, "damageMultiplierAdjustment": 40, "armorClass": 130, "maxHp": 1250, "criticalAddition": 10, "headItemIndex": 32, "resistance": [115, 110, 120, 20] },
+        "afterTransformation": { "level": 400, "ac": 130, "damage": 50, "maxHp": 1250, "maxMp": 500, "hp": 1000, "mp": 500 },
+        "afterSoul": { "maxHp": 1250, "maxMp": 588, "strength": 10, "intelligence": 20, "constitution": 40 },
+        "afterKibita": { "maxHp": 1250, "maxMp": 588, "strength": 10, "intelligence": 20 },
+        "haste": { "runAddition": 0, "rsvFlagsToAdd": 0 },
+        "resistance": [100, 100, 100, 20],
+        "rsvWithAffects": 0
+      }
+    },
+    {
+      "name": "mortal-kibita-override-follows-soul-gate",
+      "characterClass": 2,
+      "learnedSkill": 0,
+      "classMaster": 2,
+      "soul": 0,
+      "isSummon": false,
+      "resist": [10, 20, 30, 40],
+      "headItem": { "index": 7, "effect1": 0, "value1": 0, "effect2": 0, "value2": 0, "effect3": 0, "value3": 0 },
+      "baseScore": { "level": 100, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "currentScore": { "level": 100, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "records": [{ "slot": 0, "type": 29, "value": 0, "level": 0 }],
+      "expected": {
+        "transformation": { "attackSpeedBonus": 0, "runSpeedBonus": 0, "damageAddition": 0, "damageMultiplierAdjustment": 0, "armorClass": 100, "maxHp": 1000, "criticalAddition": 0, "headItemIndex": 7, "resistance": [10, 20, 30, 40] },
+        "afterTransformation": { "level": 100, "ac": 100, "damage": 50, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400 },
+        "afterSoul": { "maxHp": 1000, "maxMp": 500, "strength": 10, "intelligence": 20, "constitution": 40 },
+        "afterKibita": { "maxHp": 10000, "maxMp": 540, "strength": 2000, "intelligence": 2000 },
+        "haste": { "runAddition": 0, "rsvFlagsToAdd": 0 },
+        "resistance": [10, 20, 30, 40],
+        "rsvWithAffects": 0
+      }
+    },
+    {
+      "name": "non-beastmaster-rejects-transformation-without-losing-base-order",
+      "characterClass": 1,
+      "learnedSkill": 2097152,
+      "classMaster": 2,
+      "soul": 0,
+      "isSummon": false,
+      "resist": [0, 100, 0, 100],
+      "headItem": { "index": 7, "effect1": 0, "value1": 0, "effect2": 0, "value2": 0, "effect3": 0, "value3": 0 },
+      "baseScore": { "level": 100, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "currentScore": { "level": 100, "ac": 100, "damage": 50, "attackRun": 0, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "records": [{ "slot": 0, "type": 16, "value": 5, "level": 200 }],
+      "expected": {
+        "transformation": { "attackSpeedBonus": 0, "runSpeedBonus": 0, "damageAddition": 0, "damageMultiplierAdjustment": 0, "armorClass": 100, "maxHp": 1000, "criticalAddition": 0, "headItemIndex": 7, "resistance": [0, 100, 0, 100] },
+        "afterTransformation": { "level": 100, "ac": 100, "damage": 50, "maxHp": 1000, "maxMp": 500, "hp": 900, "mp": 400 },
+        "afterSoul": { "maxHp": 1000, "maxMp": 500, "strength": 10, "intelligence": 20, "constitution": 40 },
+        "afterKibita": { "maxHp": 1000, "maxMp": 500, "strength": 10, "intelligence": 20 },
+        "haste": { "runAddition": 0, "rsvFlagsToAdd": 0 },
+        "resistance": [0, 100, 0, 100],
+        "rsvWithAffects": 0
+      }
+    }
+  ]
+}

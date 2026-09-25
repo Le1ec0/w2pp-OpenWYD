@@ -1,0 +1,65 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=13",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=13",
+  "cases": [
+    {
+      "name": "no-assault-affect",
+      "startingDamage": 1000,
+      "startingMaxHp": 1000,
+      "records": [],
+      "targetExpected": { "damageMultiplierAdjustment": 0, "damage": 1000, "maxHp": 1000 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 0, "damage": 1000, "maxHp": 1000 }
+    },
+    {
+      "name": "basic-level-and-value",
+      "startingDamage": 1000,
+      "startingMaxHp": 1001,
+      "records": [{ "slot": 0, "type": 13, "value": 5, "level": 100 }],
+      "targetExpected": { "damageMultiplierAdjustment": 15, "damage": 1000, "maxHp": 1001 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 15, "damage": 1150, "maxHp": 900 }
+    },
+    {
+      "name": "integer-division-before-value",
+      "startingDamage": 1001,
+      "startingMaxHp": 1000,
+      "records": [{ "slot": 1, "type": 13, "value": 3, "level": 19 }],
+      "targetExpected": { "damageMultiplierAdjustment": 4, "damage": 1001, "maxHp": 1000 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 4, "damage": 1151, "maxHp": 900 }
+    },
+    {
+      "name": "repeated-affects-are-sequential-in-w2pp",
+      "startingDamage": 1000,
+      "startingMaxHp": 1000,
+      "records": [
+        { "slot": 0, "type": 13, "value": 5, "level": 100 },
+        { "slot": 1, "type": 13, "value": 0, "level": 20 }
+      ],
+      "targetExpected": { "damageMultiplierAdjustment": 17, "damage": 1000, "maxHp": 1000 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 17, "damage": 1315, "maxHp": 810 }
+    },
+    {
+      "name": "w2pp-damage-cap-is-not-target-behavior",
+      "startingDamage": 1000000000,
+      "startingMaxHp": 2000,
+      "records": [{ "slot": 2, "type": 13, "value": 0, "level": 100 }],
+      "targetExpected": { "damageMultiplierAdjustment": 10, "damage": 1000000000, "maxHp": 2000 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 10, "damage": 1000000000, "maxHp": 1800 }
+    },
+    {
+      "name": "zero-value-assault-is-observable",
+      "startingDamage": 77,
+      "startingMaxHp": 99,
+      "records": [{ "slot": 3, "type": 13, "value": 0, "level": 0 }],
+      "targetExpected": { "damageMultiplierAdjustment": 0, "damage": 77, "maxHp": 99 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 0, "damage": 77, "maxHp": 89 }
+    },
+    {
+      "name": "other-affects-are-ignored",
+      "startingDamage": 1000,
+      "startingMaxHp": 1000,
+      "records": [{ "slot": 4, "type": 5, "value": 25, "level": 100 }],
+      "targetExpected": { "damageMultiplierAdjustment": 0, "damage": 1000, "maxHp": 1000 },
+      "w2ppExpected": { "damageMultiplierAdjustment": 0, "damage": 1000, "maxHp": 1000 }
+    }
+  ]
+}

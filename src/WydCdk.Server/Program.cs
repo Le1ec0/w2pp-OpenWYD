@@ -29,6 +29,11 @@ var templates = Directory.Exists(templateRoot) ? new LegacyCharacterTemplateStor
 var skills = LoadSkillData(options.SkillDataPath);
 var itemData = LoadItemData(options.ItemDataPath);
 var mapGrid = options.HeightMapPath is null ? null : LegacyMapGrid.Load(options.HeightMapPath, options.AttributeMapPath!);
+var mapItems = options.InitItemPath is null
+    ? null
+    : itemData is null
+        ? throw new ArgumentException("--init-item requires --item-data so EF_GROUND and EF_KEYID can be resolved.")
+        : LegacyMapItemCatalog.CreateInitialStates(LegacyMapItemCatalog.LoadDefinitions(options.InitItemPath), itemData, mapGrid);
 var guildZones = options.GuildDataPath is null ? null : LegacyGuildZoneState.Load(options.GuildDataPath);
 var summonCatalog = options.SummonRoot is null ? null : LegacySummonCatalog.Load(options.SummonRoot);
 var npcGenerationCatalog = options.NpcGenerationPath is null ? null : LegacyNpcGenerationCatalog.Load(options.NpcGenerationPath, options.NpcRoot!);
@@ -44,6 +49,28 @@ if (options.DonateDatabaseConfigPath is not null)
         ?? throw new InvalidDataException("MariaDB Donate Shop catalog is empty.");
 }
 var world = new WorldHub(mapGrid, guildZones, options.MapCollisionMode, summonCatalog, itemData, skills, npcGenerationCatalog, donateShopCatalog, options.ServerMode);
+var autoTradeBook = new LegacyAutoTradeBook();
+ILegacyAutoTradeStateStore? autoTradeStateStore = options.AutoTradeStatePath is not null
+    ? new LegacyAutoTradeFileStore(options.AutoTradeStatePath, options.WorldKey, options.AccountRoot)
+    : options.AccountDatabaseConfigPath is not null
+        ? new MariaDbAutoTradeStateStore(MariaDbConnectionFactory.FromJson(options.AccountDatabaseConfigPath), options.WorldKey)
+        : null;
+var autoTradePurchaseCommitStore = accounts as ILegacyAutoTradePurchaseCommitStore ??
+    autoTradeStateStore as ILegacyAutoTradePurchaseCommitStore;
+var autoTradeRehydrateReport = new LegacyAutoTradeRehydrateReport(0, []);
+if (accounts is not null && autoTradeStateStore is not null)
+{
+    autoTradeRehydrateReport = await LegacyAutoTradeRehydrator.RestoreAsync(
+        world,
+        autoTradeBook,
+        accounts,
+        autoTradeStateStore,
+        CancellationToken.None);
+    foreach (var issue in autoTradeRehydrateReport.Issues)
+        Console.WriteLine($"Autotrade rehydration skipped: account={issue.AccountName}, slot={issue.CharacterSlot}, reason={issue.Reason}.");
+}
+if (mapItems is not null)
+    world.ConfigureMapItems(mapItems);
 var cityNpcs = options.SpawnCityNpcs && npcGenerationCatalog is not null
     ? SpawnReferenceCityPerzens(world)
     : [];
@@ -55,6 +82,9 @@ if (options.CastleQuestPath is not null)
 var bindAddress = IPAddress.Parse(options.BindAddress);
 var listener = new TcpListener(bindAddress, options.Port);
 listener.Start();
+var statusPublisher = options.StatusFilePath is null || options.StatusSlot is null
+    ? null
+    : new ServerStatusFilePublisher(options.StatusFilePath, options.StatusSlot.Value);
 Console.WriteLine($"WydCdk listener: {options.BindAddress}:{options.Port}");
 Console.WriteLine($"World: {options.WorldKey} (shared account/character base; world rules are server-authoritative).");
 Console.WriteLine(accountAuthenticator is null
@@ -64,6 +94,7 @@ Console.WriteLine(accountAuthenticator is null
         : $"MariaDB account/world mode: authentication configured by {options.AccountDatabaseConfigPath}; character blobs are stored by account_name and world_key in MariaDB.");
 Console.WriteLine(skills is null ? "Skill data: disabled; attack frames are not processed." : $"Skill data: loaded from {options.SkillDataPath}; attack metadata gate enabled.");
 Console.WriteLine(itemData is null ? "Item data: disabled; skill combat inputs are not derived from ItemList.bin." : $"Item data: loaded from {options.ItemDataPath}; Magic and WeaponDamage inputs enabled.");
+Console.WriteLine(mapItems is null ? "Static map items: disabled; use --init-item <InitItem.bin> with --item-data to load InitItem.bin." : $"Static map items: loaded from {options.InitItemPath}; {mapItems.Count} authoritative entries enabled.");
 Console.WriteLine(summonCatalog is null ? "Summon data: disabled; InstanceType 11 will refund mana without creating NPCs." : $"Summon data: loaded from {options.SummonRoot}; BaseSummon catalog enabled.");
 Console.WriteLine(npcGenerationCatalog is null ? "NPC generation data: disabled; generated respawns remain requests only." : $"NPC generation data: loaded from {options.NpcGenerationPath}; generated NPC catalog enabled.");
 Console.WriteLine(options.SpawnCityNpcs
@@ -83,14 +114,31 @@ Console.WriteLine(options.DonateDatabaseConfigPath is not null
     : options.AccountDatabaseConfigPath is not null
         ? "Donate persistence: legacy Donate field inside the MariaDB world account blob; optional accounts.donate is not queried."
         : "Donate persistence: legacy account file.");
+Console.WriteLine(autoTradeStateStore is null
+    ? "Autotrade state persistence: disabled; use --autotrade-state <path> for the versioned local adapter."
+    : options.AutoTradeStatePath is not null
+        ? $"Autotrade state persistence: local versioned file at {options.AutoTradeStatePath}; offline MOB rehydrated={autoTradeRehydrateReport.RestoredCount}."
+        : $"Autotrade state persistence: MariaDB world table; offline MOB rehydrated={autoTradeRehydrateReport.RestoredCount}.");
 Console.WriteLine($"Map collision: {options.MapCollisionMode}.");
+Console.WriteLine(statusPublisher is null
+    ? "HTTP status file: disabled."
+    : $"HTTP status file: {options.StatusFilePath}; slot {options.StatusSlot} publishes player count and -1 on shutdown.");
 Console.WriteLine("Press Ctrl+C to stop.");
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; shutdown.Cancel(); };
+// Console.In can expose a synchronous ReadLineAsync implementation under the
+// Windows PTY used by the local smoke. Keep that watcher off the listener
+// startup path so AcceptTcpClientAsync is reached immediately.
+var standardInputShutdown = Task.Run(() => RunStandardInputShutdownAsync(shutdown));
 var nextConnectionId = 0;
 var summonBattleLoop = RunSummonBattleLoopAsync(world, shutdown.Token);
 var pistaScheduleLoop = RunPistaScheduleLoopAsync(world, shutdown.Token);
+// Do not let the optional legacy status file delay the network gate. The
+// heartbeat refreshes the real count after startup; the initial value is
+// necessarily zero and is published off the accept-loop path.
+_ = Task.Run(() => TryPublishStatus(statusPublisher, 0, "online"));
+var statusLoop = RunStatusPublicationLoopAsync(statusPublisher, world, shutdown.Token);
 
 try
 {
@@ -98,7 +146,7 @@ try
     {
         var client = await listener.AcceptTcpClientAsync(shutdown.Token);
         var connectionId = Interlocked.Increment(ref nextConnectionId);
-        _ = InspectConnectionAsync(client, connectionId, accounts, accountAuthenticator, templates, skills, itemData, donateBalances, world, options.DonateDatabaseConfigPath is not null, serverLog, shutdown.Token);
+        _ = InspectConnectionAsync(client, connectionId, accounts, accountAuthenticator, templates, skills, itemData, donateBalances, world, autoTradeBook, autoTradeStateStore, autoTradePurchaseCommitStore, options.DonateDatabaseConfigPath is not null, serverLog, shutdown.Token);
     }
 }
 catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
@@ -108,17 +156,77 @@ finally
 {
     listener.Stop();
     shutdown.Cancel();
+    try { await standardInputShutdown; }
+    catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
+    try { await statusLoop; }
+    catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
     try { await summonBattleLoop; }
     catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
     try { await pistaScheduleLoop; }
     catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
+    TryPublishStatus(statusPublisher, -1, "offline");
 }
 
-static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICharacterStore? accounts, IAccountStore? accountAuthenticator, LegacyCharacterTemplateStore? templates, LegacySkillDataTable? skills, LegacyItemDataTable? itemData, IDonateBalanceStore? donateBalances, WorldHub world, bool explicitDonateDatabase, ServerWireLog? serverLog, CancellationToken cancellationToken)
+static async Task RunStandardInputShutdownAsync(CancellationTokenSource shutdown)
+{
+    try
+    {
+        while (await Console.In.ReadLineAsync(shutdown.Token) is { } line)
+        {
+            if (!string.Equals(line.Trim(), "stop", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(line.Trim(), "shutdown", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            Console.WriteLine("Cooperative shutdown requested through standard input.");
+            shutdown.Cancel();
+            return;
+        }
+    }
+    catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+    {
+    }
+}
+
+static async Task RunStatusPublicationLoopAsync(ServerStatusFilePublisher? publisher, WorldHub world, CancellationToken cancellationToken)
+{
+    if (publisher is null)
+        return;
+
+    using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+    try
+    {
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+            TryPublishStatus(publisher, world.Count, "heartbeat");
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+    }
+}
+
+static void TryPublishStatus(ServerStatusFilePublisher? publisher, int playerCount, string reason)
+{
+    if (publisher is null)
+        return;
+
+    try
+    {
+        if (playerCount < 0)
+            publisher.PublishOffline();
+        else
+            publisher.PublishOnline(playerCount);
+        Console.WriteLine($"HTTP status updated: value={(playerCount < 0 ? -1 : playerCount)} reason={reason}.");
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"HTTP status update failed: {exception.GetType().Name}: {exception.Message}");
+    }
+}
+
+static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICharacterStore? accounts, IAccountStore? accountAuthenticator, LegacyCharacterTemplateStore? templates, LegacySkillDataTable? skills, LegacyItemDataTable? itemData, IDonateBalanceStore? donateBalances, WorldHub world, LegacyAutoTradeBook autoTradeBook, ILegacyAutoTradeStateStore? autoTradeStateStore, ILegacyAutoTradePurchaseCommitStore? autoTradePurchaseCommitStore, bool explicitDonateDatabase, ServerWireLog? serverLog, CancellationToken cancellationToken)
 {
     using (client)
     {
-        using var stream = client.GetStream();
+        using var stream = new SerializedNetworkStream(client.GetStream());
         var decoder = new LegacyFrameStream(LegacyFrameCodec.CreateDefault());
         var sessions = new LoginSessionRegistry();
         var donateShopRateLimiter = new LegacyDonateShopRateLimiter();
@@ -151,6 +259,15 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                     if (AccountLoginRequest.TryParse(frame, out var login) && login is not null)
                     {
                         Console.WriteLine($"Account login frame: account={login.AccountName}, clientVersion={login.ClientVersion}, dbNeedSave={login.DbNeedSave}");
+                        if (!ClientReleasePolicy.IsSupported(login.ClientVersion))
+                        {
+                            var failure = new MessagePanelConfirmation($"Cliente incompativel. Use a versao {ClientReleasePolicy.RequiredClientVersion / 1000.0:F3}.")
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, failure, cancellationToken, "account-login-failure-client-version");
+                            Console.WriteLine($"Account login rejected: unsupported clientVersion={login.ClientVersion}; required={ClientReleasePolicy.RequiredClientVersion}.");
+                            return;
+                        }
+
                         if (accountAuthenticator is null)
                         {
                             Console.WriteLine("Account authentication is disabled; no response sent.");
@@ -172,7 +289,8 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             ? await snapshotStore.ReadSnapshotAsync(login.AccountName, cancellationToken)
                             : null;
                         var confirmation = snapshot?.ToConfirmation() ?? AccountLoginConfirmation.CreateEmpty(login.AccountName);
-                        var response = confirmation.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                        var response = W2ppAccountLoginV1Adapter.Adapt(confirmation)
+                            .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
                         await WriteLoggedFrameAsync(stream, serverLog, connectionId, response, cancellationToken, "account-login-confirmation");
                         Console.WriteLine(snapshot is null
                             ? $"Account login accepted: account={login.AccountName}; sent empty character-selection response (snapshot unavailable)."
@@ -189,11 +307,18 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             continue;
                         }
 
+                        if (sessions.BeginCharacterWait(connectionId) != LoginTransitionResult.Accepted)
+                        {
+                            Console.WriteLine("Rejected create-character frame: could not enter character wait state.");
+                            continue;
+                        }
+
                         var outcome = await new CreateCharacterCoordinator(accounts, templates).HandleAsync(session.AccountName!, createCharacter, session.SecureVerified, cancellationToken);
                         if (outcome.IsSuccess)
                         {
-                            var confirmation = new NewCharacterConfirmation(outcome.Characters!);
-                            var response = confirmation.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                            var selection = W2ppCharacterSelectionV1Adapter.Adapt(outcome.Characters!);
+                            var response = new NewCharacterConfirmationV769(selection)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
                             await WriteLoggedFrameAsync(stream, serverLog, connectionId, response, cancellationToken, $"new-character-selection account={session.AccountName} slot={createCharacter.Slot} name={createCharacter.CharacterName} class={createCharacter.CharacterClass}");
                             Console.WriteLine($"Character created: account={session.AccountName}, slot={createCharacter.Slot}, name={createCharacter.CharacterName}, class={createCharacter.CharacterClass}.");
                         }
@@ -207,6 +332,8 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             await WriteLoggedFrameAsync(stream, serverLog, connectionId, NewCharacterFailSignal.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken, $"new-character-failure account={session.AccountName} slot={createCharacter.Slot} reason={outcome.Status}");
                             Console.WriteLine($"Character creation rejected: account={session.AccountName}, slot={createCharacter.Slot}, name={createCharacter.CharacterName}, reason={outcome.Status}.");
                         }
+                        if (sessions.TryGet(connectionId, out var createCompletedSession) && createCompletedSession!.State == LoginSessionState.CharacterWait)
+                            sessions.CompleteCharacterRefresh(connectionId);
                         continue;
                     }
 
@@ -219,10 +346,19 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             continue;
                         }
 
+                        if (sessions.BeginCharacterWait(connectionId) != LoginTransitionResult.Accepted)
+                        {
+                            Console.WriteLine("Rejected delete-character frame: could not enter character wait state.");
+                            continue;
+                        }
+
                         var outcome = await new DeleteCharacterCoordinator(accounts).HandleAsync(deleteSession.AccountName!, deleteCharacter, deleteSession.SecureVerified, cancellationToken);
                         if (outcome.IsSuccess && outcome.Snapshot is not null)
                         {
-                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, new DeleteCharacterConfirmation(outcome.Snapshot.Characters).ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken, $"delete-character-confirmation account={deleteSession.AccountName} slot={deleteCharacter.Slot}");
+                            var selection = W2ppCharacterSelectionV1Adapter.Adapt(outcome.Snapshot.Characters);
+                            var response = new DeleteCharacterConfirmationV769(selection)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, response, cancellationToken, $"delete-character-confirmation account={deleteSession.AccountName} slot={deleteCharacter.Slot}");
                             Console.WriteLine($"Character deleted: account={deleteSession.AccountName}, slot={deleteCharacter.Slot}.");
                         }
                         else if (outcome.Status == DeleteCharacterStatus.SecureNotVerified)
@@ -235,6 +371,8 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             await WriteLoggedFrameAsync(stream, serverLog, connectionId, DeleteCharacterFailSignal.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken, $"delete-character-failure account={deleteSession.AccountName} slot={deleteCharacter.Slot} reason={outcome.Status}");
                             Console.WriteLine($"Character deletion rejected: account={deleteSession.AccountName}, slot={deleteCharacter.Slot}, reason={outcome.Status}.");
                         }
+                        if (sessions.TryGet(connectionId, out var deleteCompletedSession) && deleteCompletedSession!.State == LoginSessionState.CharacterWait)
+                            sessions.CompleteCharacterRefresh(connectionId);
                         continue;
                     }
 
@@ -275,10 +413,20 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             continue;
                         }
 
+                        if (sessions.BeginCharacterWait(connectionId) != LoginTransitionResult.Accepted)
+                        {
+                            Console.WriteLine("Rejected character-login frame: could not enter character wait state.");
+                            continue;
+                        }
+
                         var outcome = await new CharacterLoginCoordinator(accounts).HandleAsync(loginSession.AccountName!, characterLogin, loginSession.SecureVerified, cancellationToken);
                         if (outcome.IsSuccess)
                         {
                             var data = outcome.Data!;
+                            var classMaster = data.MobExtra.Length >= sizeof(short)
+                                ? BinaryPrimitives.ReadInt16LittleEndian(data.MobExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset))
+                                : (short)LegacyAccountSnapshot.ClassMasterMortal;
+                            var loginPosition = world.ResolveCharacterLoginPosition(connectionId, data.Mob, classMaster);
                             var donate = data.Donate;
                             // The character-login payload already carries the legacy account Donate field
                             // from the world blob. Only override it when the explicit Donate DB adapter was
@@ -290,26 +438,103 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                 if (persistedDonate is not null)
                                     donate = persistedDonate.Value;
                             }
-                            var confirmation = new CharacterLoginConfirmation(
-                                (ushort)characterLogin.Slot, data.Mob, data.ShortSkill, data.Affect, data.MobExtra, donate,
-                                data.SavedPositionX, data.SavedPositionY, clientId: (ushort)connectionId, weather: 0);
-                            var loginResponse = confirmation.ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
-                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, loginResponse, cancellationToken, $"character-login-confirmation account={loginSession.AccountName} slot={characterLogin.Slot} position=({data.SavedPositionX},{data.SavedPositionY})");
-                            sessions.CompleteCharacterLogin(connectionId, characterLogin.Slot, data.SavedPositionX, data.SavedPositionY);
-                            var spawnFrame = new CreateMobConfirmation((ushort)connectionId, data.SavedPositionX, data.SavedPositionY, data.Mob)
+
+                            if (autoTradeStateStore is not null)
+                            {
+                                try
+                                {
+                                    var reconnect = await LegacyAutoTradeReconnectCoordinator.CloseAsync(
+                                        world,
+                                        autoTradeBook,
+                                        autoTradeStateStore,
+                                        loginSession.AccountName!,
+                                        characterLogin.Slot,
+                                        cancellationToken);
+                                    if (reconnect.Result == LegacyAutoTradeReconnectResult.PersistenceUnavailable)
+                                    {
+                                        sessions.CompleteCharacterRefresh(connectionId);
+                                        Console.WriteLine($"Character login rejected: account={loginSession.AccountName}, slot={characterLogin.Slot}, reason=AutotradeReconnectPersistenceUnavailable.");
+                                        continue;
+                                    }
+
+                                    foreach (var closedListing in reconnect.ClosedListings)
+                                        await BroadcastClosedAutoTradeRemovalAsync(world, closedListing, cancellationToken);
+
+                                    if (reconnect.Result == LegacyAutoTradeReconnectResult.Closed)
+                                    {
+                                        Console.WriteLine($"Persisted autotrade closed on character login: account={loginSession.AccountName}, slot={characterLogin.Slot}, listings={reconnect.ClosedListings.Count}.");
+                                    }
+                                }
+                                catch (Exception error)
+                                {
+                                    sessions.CompleteCharacterRefresh(connectionId);
+                                    Console.WriteLine($"Character login rejected: account={loginSession.AccountName}, slot={characterLogin.Slot}, reason=AutotradeReconnectFailed, error={error.GetType().Name}: {error.Message}.");
+                                    continue;
+                                }
+                            }
+
+                            var loginResponse = W2ppCharacterLoginV1Adapter.Adapt(
+                                    data,
+                                    loginPosition.X,
+                                    loginPosition.Y,
+                                    (ushort)characterLogin.Slot,
+                                    (ushort)connectionId,
+                                    weather: 0)
                                 .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, loginResponse, cancellationToken, $"character-login-confirmation account={loginSession.AccountName} slot={characterLogin.Slot} saved=({data.SavedPositionX},{data.SavedPositionY}) live=({loginPosition.X},{loginPosition.Y})");
+                            sessions.CompleteCharacterLogin(connectionId, characterLogin.Slot, loginPosition.X, loginPosition.Y);
+                            var spawnFrame = BuildClientV769CreateMobFrame(
+                                (ushort)connectionId,
+                                loginPosition.X,
+                                loginPosition.Y,
+                                data.Mob,
+                                data.Affect,
+                                npc: false,
+                                clientEquipment: data.ClientEquipment);
                             await world.EnterAsync(connectionId, loginSession.AccountName!, (frame, token) => WriteLoggedFrameAsync(stream, serverLog, connectionId, frame, token, "world-enter"), spawnFrame, cancellationToken);
                             foreach (var npc in world.GetNpcSnapshots())
                             {
-                                var npcFrame = new CreateMobConfirmation(
-                                    (ushort)npc.ConnectionId,
-                                    npc.PositionX,
-                                    npc.PositionY,
-                                    npc.MobSnapshot,
-                                    npc.AffectSnapshot,
-                                    npc: true)
+                                byte[] npcFrame;
+                                var npcLabel = "npc-spawn";
+                                if (npc.AutoTradeSnapshot is not null &&
+                                    LegacyAutoTradeVisualRelay.TryBuild(
+                                        npc.AutoTradeSnapshot,
+                                        npc.MobSnapshot,
+                                        npc.AffectSnapshot,
+                                        LegacyFrameCodec.CreateDefault(),
+                                        unchecked((uint)Environment.TickCount64),
+                                        (byte)RandomNumberGenerator.GetInt32(256),
+                                        out var autoTradeVisual) &&
+                                    autoTradeVisual is not null)
+                                {
+                                    npcFrame = autoTradeVisual.Frame;
+                                    npcLabel = "autotrade-spawn";
+                                }
+                                else
+                                {
+                                    npcFrame = BuildClientV769CreateMobFrame(
+                                        (ushort)npc.ConnectionId,
+                                        npc.PositionX,
+                                        npc.PositionY,
+                                        npc.MobSnapshot,
+                                        npc.AffectSnapshot,
+                                        npc: true);
+                                }
+
+                                await WriteLoggedFrameAsync(stream, serverLog, connectionId, npcFrame, cancellationToken, $"{npcLabel} npc={npc.ConnectionId}");
+                            }
+                            foreach (var mapItem in world.GetMapItemStates())
+                            {
+                                var mapItemFrame = new CreateItemConfirmation(
+                                        checked((ushort)mapItem.PositionX),
+                                        checked((ushort)mapItem.PositionY),
+                                        checked((ushort)(mapItem.ItemId + LegacyMapItemStateCodes.WireIdOffset)),
+                                        mapItem.Item,
+                                        mapItem.Rotate,
+                                        checked((byte)mapItem.State),
+                                        checked((byte)Math.Clamp(mapItem.Height, 0, byte.MaxValue)))
                                     .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
-                                await WriteLoggedFrameAsync(stream, serverLog, connectionId, npcFrame, cancellationToken, $"npc-spawn npc={npc.ConnectionId}");
+                                await WriteLoggedFrameAsync(stream, serverLog, connectionId, mapItemFrame, cancellationToken, $"map-item-spawn item={mapItem.ItemId}");
                             }
                             world.SetCharacterState(
                                 connectionId, characterLogin.Slot,
@@ -317,19 +542,34 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                 data.Mob[LegacyAccountSnapshot.MobClanOffset],
                                 data.Mob[LegacyAccountSnapshot.MobGuildLevelOffset],
                                  BinaryPrimitives.ReadInt32LittleEndian(data.Mob.AsSpan(LegacyAccountSnapshot.MobCoinOffset)),
-                                 data.SavedPositionX, data.SavedPositionY, data.Mob,
-                                 data.MobExtra.Length >= sizeof(short)
-                                     ? BinaryPrimitives.ReadInt16LittleEndian(data.MobExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset))
-                                     : (short)LegacyAccountSnapshot.ClassMasterMortal,
+                                 loginPosition.X, loginPosition.Y, data.Mob,
+                                 classMaster,
                                  data.Affect,
-                                 data.MobExtra);
+                                 data.MobExtra,
+                                 data.ClientEquipment);
                             world.SetDonateBalance(connectionId, donate);
-                            var etcFrame = new UpdateEtcConfirmation(data.Mob, data.MobExtra)
-                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
-                            var scoreFrame = new UpdateScoreConfirmation(data.Mob)
-                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                            var etcFrame = BuildClientV769UpdateEtcFrame(
+                                data.Mob,
+                                data.MobExtra,
+                                (ushort)connectionId);
+                            var scoreFrame = BuildClientV769UpdateScoreFrame(
+                                data.Mob,
+                                data.Affect,
+                                (ushort)connectionId);
                             await WriteLoggedFrameAsync(stream, serverLog, connectionId, etcFrame, cancellationToken, "character-update-etc");
                             await WriteLoggedFrameAsync(stream, serverLog, connectionId, scoreFrame, cancellationToken, "character-update-score");
+                            if (TryBuildClientV769UpdateAffectFrame(
+                                    data.Affect,
+                                    (ushort)connectionId,
+                                    unchecked((uint)Environment.TickCount64),
+                                    (byte)RandomNumberGenerator.GetInt32(256),
+                                    out var loginAffectFrame))
+                                await WriteLoggedFrameAsync(stream, serverLog, connectionId, loginAffectFrame, cancellationToken, "character-update-affect");
+                            else
+                                Console.WriteLine($"Character login affect relay skipped: account={loginSession.AccountName}, reason=7.69-narrowing");
+                            var pkInfoFrame = new PkInfoConfirmation(connectionId, state: 0)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, pkInfoFrame, cancellationToken, "pk-info state=0");
                             if (world.TryGetDonateBalance(connectionId, out var loginDonate))
                             {
                                 var loginPix = await ReadDonatePixAsync(donateBalances, loginSession.AccountName!, cancellationToken);
@@ -342,6 +582,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         else
                         {
                             // The reference handler sends no response at all on these rejections (CFileDB.cpp logs and returns) - match that silence.
+                            sessions.CompleteCharacterRefresh(connectionId);
                             Console.WriteLine($"Character login rejected: account={loginSession.AccountName}, slot={characterLogin.Slot}, reason={outcome.Status}.");
                         }
                         continue;
@@ -619,13 +860,20 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         {
                             if (experienceConsumableResult == LegacyUseItemResult.Accepted && experienceConsumableOutcome is not null)
                             {
-                                var etcFrame = new UpdateEtcConfirmation(experienceConsumableOutcome.MobSnapshot)
-                                    .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                var etcFrame = BuildClientV769UpdateEtcFrame(
+                                    experienceConsumableOutcome.MobSnapshot,
+                                    ReadOnlySpan<byte>.Empty,
+                                    (ushort)connectionId,
+                                    frame.Header.ClientTick,
+                                    (byte)RandomNumberGenerator.GetInt32(256));
                                 await stream.WriteAsync(etcFrame, cancellationToken);
                                 if (experienceConsumableOutcome.Stage > 0 && (experienceConsumableOutcome.Volatile == 7 || experienceConsumableOutcome.LeveledUp))
                                 {
-                                    var scoreFrame = new UpdateScoreConfirmation(experienceConsumableOutcome.MobSnapshot)
-                                        .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                    var scoreFrame = BuildClientV769UpdateScoreWithoutAffectFrame(
+                                        experienceConsumableOutcome.MobSnapshot,
+                                        (ushort)connectionId,
+                                        frame.Header.ClientTick,
+                                        (byte)RandomNumberGenerator.GetInt32(256));
                                     await stream.WriteAsync(scoreFrame, cancellationToken);
                                 }
                                 Console.WriteLine($"Experience consumable applied: account={useItemSession.AccountName}, volatile={experienceConsumableOutcome.Volatile}, source={experienceConsumableOutcome.SourceSlot}, level={experienceConsumableOutcome.Level}.");
@@ -640,9 +888,20 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         {
                             if (affectConsumableResult == LegacyUseItemResult.Accepted && affectConsumableOutcome is not null)
                             {
-                                var scoreFrame = new UpdateScoreConfirmation(affectConsumableOutcome.MobSnapshot, affectConsumableOutcome.AffectSnapshot)
-                                    .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                var scoreFrame = BuildClientV769UpdateScoreFrame(
+                                    affectConsumableOutcome.MobSnapshot,
+                                    affectConsumableOutcome.AffectSnapshot,
+                                    (ushort)connectionId,
+                                    frame.Header.ClientTick,
+                                    (byte)RandomNumberGenerator.GetInt32(256));
                                 await stream.WriteAsync(scoreFrame, cancellationToken);
+                                if (TryBuildClientV769UpdateAffectFrame(
+                                        affectConsumableOutcome.AffectSnapshot,
+                                        (ushort)connectionId,
+                                        frame.Header.ClientTick,
+                                        frame.Header.KeywordIndex,
+                                        out var affectFrame))
+                                    await stream.WriteAsync(affectFrame, cancellationToken);
                                 Console.WriteLine($"Affect consumable applied: account={useItemSession.AccountName}, source={affectConsumableOutcome.SourceSlot}, affect={affectConsumableOutcome.AffectValue}, time={affectConsumableOutcome.AffectTime}.");
                             }
                             else
@@ -655,9 +914,20 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         {
                             if (pvpJewelryResult == LegacyUseItemResult.Accepted && pvpJewelryOutcome is not null)
                             {
-                                var scoreFrame = new UpdateScoreConfirmation(pvpJewelryOutcome.MobSnapshot, pvpJewelryOutcome.AffectSnapshot)
-                                    .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                var scoreFrame = BuildClientV769UpdateScoreFrame(
+                                    pvpJewelryOutcome.MobSnapshot,
+                                    pvpJewelryOutcome.AffectSnapshot,
+                                    (ushort)connectionId,
+                                    frame.Header.ClientTick,
+                                    (byte)RandomNumberGenerator.GetInt32(256));
                                 await stream.WriteAsync(scoreFrame, cancellationToken);
+                                if (TryBuildClientV769UpdateAffectFrame(
+                                        pvpJewelryOutcome.AffectSnapshot,
+                                        (ushort)connectionId,
+                                        frame.Header.ClientTick,
+                                        frame.Header.KeywordIndex,
+                                        out var jewelryAffectFrame))
+                                    await stream.WriteAsync(jewelryAffectFrame, cancellationToken);
                                 Console.WriteLine($"PvP jewelry applied: account={useItemSession.AccountName}, source={pvpJewelryOutcome.SourceSlot}, affect={pvpJewelryOutcome.AffectSlot}, level={pvpJewelryOutcome.AffectLevel}, time={pvpJewelryOutcome.AffectTime}.");
                             }
                             else
@@ -700,6 +970,17 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                 var destinationFrame = new SendItemConfirmation(0, checked((short)mountCatalystOutcome.DestinationSlot), mountCatalystOutcome.DestinationItem)
                                     .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
                                 await stream.WriteAsync(destinationFrame, cancellationToken);
+                                if (world.TryBuildUpdateEquipFrame(
+                                        connectionId,
+                                        LegacyFrameCodec.CreateDefault(),
+                                        frame.Header.ClientTick,
+                                        frame.Header.KeywordIndex,
+                                        out var mountEquipFrame) &&
+                                    mountEquipFrame is not null)
+                                {
+                                    await stream.WriteAsync(mountEquipFrame, cancellationToken);
+                                    await world.BroadcastAsync(connectionId, mountEquipFrame, cancellationToken);
+                                }
                                 Console.WriteLine($"Mount catalyst applied: account={useItemSession.AccountName}, source={mountCatalystOutcome.SourceSlot}, destination={mountCatalystOutcome.DestinationSlot}, restored={mountCatalystOutcome.Restored}.");
                             }
                             else
@@ -764,6 +1045,649 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         }
                         else
                             Console.WriteLine($"Use-item rejected: account={useItemSession.AccountName}, source={useItem.SourceSlot}, destination={useItem.DestinationSlot}, reason={useResult}.");
+                        continue;
+                    }
+
+                    if (DeleteItemRequest.TryParse(frame, out var deleteItemRequest) && deleteItemRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var deleteSession) || deleteSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected delete-item frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var deleteResult = world.TryDeleteCarryItem(
+                            connectionId,
+                            deleteItemRequest.Slot,
+                            deleteItemRequest.ItemIndex);
+                        if (deleteResult == LegacyDeleteItemResult.Accepted)
+                            Console.WriteLine($"Carry item deleted: account={deleteSession.AccountName}, slot={deleteItemRequest.Slot}, item={deleteItemRequest.ItemIndex}.");
+                        else
+                            Console.WriteLine($"Carry item deletion rejected: account={deleteSession.AccountName}, slot={deleteItemRequest.Slot}, item={deleteItemRequest.ItemIndex}, reason={deleteResult}.");
+                        continue;
+                    }
+
+                    if (TradingItemRequest.TryParse(frame, out var tradingItemRequest) && tradingItemRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var tradingSession) || tradingSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected trading-item frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var tradingResult = world.TryTradeItems(
+                            connectionId,
+                            tradingItemRequest.SourcePlace,
+                            tradingItemRequest.SourceSlot,
+                            tradingItemRequest.DestinationPlace,
+                            tradingItemRequest.DestinationSlot,
+                            out var tradingOutcome);
+                        if (tradingResult == LegacyTradingItemResult.Accepted && tradingOutcome is not null)
+                        {
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            var confirmation = tradingItemRequest.ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, frame.Header.Id);
+                            await stream.WriteAsync(confirmation, cancellationToken);
+
+                            var sourceFrame = new SendItemConfirmation(checked((short)tradingOutcome.SourcePlace), checked((short)tradingOutcome.SourceSlot), tradingOutcome.SourceSlotItem)
+                                .ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                            await stream.WriteAsync(sourceFrame, cancellationToken);
+                            var destinationFrame = new SendItemConfirmation(checked((short)tradingOutcome.DestinationPlace), checked((short)tradingOutcome.DestinationSlot), tradingOutcome.DestinationSlotItem)
+                                .ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                            await stream.WriteAsync(destinationFrame, cancellationToken);
+                            if ((tradingOutcome.SourcePlace == LegacyItemPlace.Equip || tradingOutcome.DestinationPlace == LegacyItemPlace.Equip) &&
+                                world.TryBuildUpdateEquipFrame(connectionId, codec, frame.Header.ClientTick, frame.Header.KeywordIndex, out var equipFrame) &&
+                                equipFrame is not null)
+                            {
+                                await stream.WriteAsync(equipFrame, cancellationToken);
+                                await world.BroadcastAsync(connectionId, equipFrame, cancellationToken);
+                            }
+                            Console.WriteLine($"Items {(tradingOutcome.WasMerged ? "merged" : "swapped")}: account={tradingSession.AccountName}, source={tradingOutcome.SourcePlace}:{tradingOutcome.SourceSlot}, destination={tradingOutcome.DestinationPlace}:{tradingOutcome.DestinationSlot}.");
+                        }
+                        else
+                            Console.WriteLine($"Item swap rejected: account={tradingSession.AccountName}, source={tradingItemRequest.SourcePlace}:{tradingItemRequest.SourceSlot}, destination={tradingItemRequest.DestinationPlace}:{tradingItemRequest.DestinationSlot}, reason={tradingResult}.");
+                        continue;
+                    }
+
+                    if (AutoTradeStartRequest.TryParse(frame, out var autoTradeRequest) && autoTradeRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var autoTradeSession) || autoTradeSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected autotrade-start frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var combatStateAvailable = world.TryGetCombatState(connectionId, out var autoTradeCombatState) && autoTradeCombatState is not null;
+                        var characterPositionAvailable = world.TryGetCharacterSnapshot(connectionId, out _, out var autoTradeX, out var autoTradeY);
+                        var locationAvailable = world.TryGetAutoTradeLocation(connectionId, out _, out var cityTax);
+                        var accountSnapshot = autoTradeSession.AccountName is not null && accounts is IAccountSnapshotStore snapshotStore
+                            ? await snapshotStore.ReadSnapshotAsync(autoTradeSession.AccountName, cancellationToken)
+                            : null;
+                        var cargo = accountSnapshot?.Cargo.Take(LegacyAutoTradeBook.CargoSlotCount).ToArray()
+                            ?? Array.Empty<LegacyItem>();
+                        var nonTradeableIndices = itemData is null
+                            ? new HashSet<short>()
+                            : autoTradeRequest.Items
+                                .Where(static item => item.Index != 0)
+                                .Where(item => itemData.GetItemAbility(item, LegacyItemEffect.NoTrade) != 0)
+                                .Select(static item => item.Index)
+                                .ToHashSet();
+                        var autoTradeContext = new LegacyAutoTradeStartContext(
+                            InPlay: autoTradeSession.State == LoginSessionState.Playing && characterPositionAvailable,
+                            CurrentHp: combatStateAvailable ? autoTradeCombatState!.CurrentScore.Hp : 0,
+                            LiveTradeActive: world.IsLiveTradeActive(connectionId),
+                            InAllowedVillage: locationAvailable,
+                            CityTax: cityTax,
+                            PositionX: autoTradeX,
+                            PositionY: autoTradeY,
+                            Cargo: cargo,
+                            NonTradeableItemIndices: nonTradeableIndices,
+                            AccountBlocked: accountSnapshot?.IsBlocked ?? false,
+                            ItemDataAvailable: itemData is not null);
+                        var autoTradeResult = autoTradeBook.TryStart(connectionId, autoTradeRequest, autoTradeContext, out var autoTradeSnapshot);
+                        var autoTradeStateSaved = true;
+                        if (autoTradeResult == LegacyAutoTradeStartResult.Accepted && autoTradeSnapshot is not null && autoTradeStateStore is not null)
+                        {
+                            if (autoTradeSession.AccountName is null || autoTradeSession.CharacterSlot < 0)
+                                autoTradeStateSaved = false;
+                            else
+                            {
+                                try
+                                {
+                                    autoTradeStateSaved = await autoTradeStateStore.SaveAsync(
+                                        autoTradeSession.AccountName,
+                                        autoTradeSession.CharacterSlot,
+                                        autoTradeSnapshot,
+                                        cancellationToken) == LegacyAutoTradeStateResult.Saved;
+                                }
+                                catch (Exception error)
+                                {
+                                    autoTradeStateSaved = false;
+                                    Console.WriteLine($"Autotrade state persistence failed: account={autoTradeSession.AccountName}, error={error.GetType().Name}: {error.Message}.");
+                                }
+                            }
+
+                            if (!autoTradeStateSaved)
+                            {
+                                autoTradeBook.TryStop(connectionId, out _);
+                                Console.WriteLine($"Autotrade start rejected: account={autoTradeSession.AccountName}, reason=StatePersistenceUnavailable.");
+                                continue;
+                            }
+                        }
+
+                        if (autoTradeResult == LegacyAutoTradeStartResult.Accepted && autoTradeSnapshot is not null &&
+                            LegacyAutoTradeListRelay.TryBuild(connectionId, autoTradeSnapshot, LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, out var autoTradeRelay) &&
+                            autoTradeRelay is not null)
+                        {
+                            await stream.WriteAsync(autoTradeRelay.ResponseFrame, cancellationToken);
+                            if (world.TryGetCharacterSnapshot(connectionId, out var autoTradeVisualMob, out _, out _, out _, out var autoTradeVisualAffect) &&
+                                autoTradeVisualMob is not null && autoTradeVisualAffect is not null &&
+                                LegacyAutoTradeVisualRelay.TryBuild(
+                                    autoTradeSnapshot,
+                                    autoTradeVisualMob,
+                                    autoTradeVisualAffect,
+                                    LegacyFrameCodec.CreateDefault(),
+                                    frame.Header.ClientTick,
+                                    frame.Header.KeywordIndex,
+                                    out var autoTradeVisualRelay) &&
+                                autoTradeVisualRelay is not null)
+                            {
+                                await stream.WriteAsync(autoTradeVisualRelay.Frame, cancellationToken);
+                                foreach (var recipient in world.GetParticipantIdsInPlayerView(connectionId).Where(id => id != connectionId))
+                                    await world.SendAsync(recipient, autoTradeVisualRelay.Frame, cancellationToken);
+                            }
+                            Console.WriteLine($"Autotrade started: account={autoTradeSession.AccountName}, position=({autoTradeX},{autoTradeY}), tax={autoTradeSnapshot.Tax}, title={autoTradeSnapshot.Title}.");
+                        }
+                        else
+                            Console.WriteLine($"Autotrade start rejected: account={autoTradeSession.AccountName}, reason={autoTradeResult}, location={locationAvailable}, cargo={cargo.Length}.");
+                        continue;
+                    }
+
+                    if (TradeListRequest.TryParse(frame, out var tradeListRequest) && tradeListRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var tradeListSession) || tradeListSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected autotrade-list frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        if (!autoTradeBook.TryGet(tradeListRequest.TargetId, out var shopSnapshot) || shopSnapshot is null)
+                        {
+                            Console.WriteLine($"Autotrade list rejected: requester={tradeListSession.AccountName}, target={tradeListRequest.TargetId}, reason=TargetNotInAutoTrade.");
+                            continue;
+                        }
+
+                        var requesterStateAvailable = world.TryGetCombatState(connectionId, out var requesterState) && requesterState is not null;
+                        var requesterPositionAvailable = world.TryGetCharacterSnapshot(connectionId, out _, out var requesterX, out var requesterY);
+                        var targetIsOnline = world.TryGetCharacterSnapshot(tradeListRequest.TargetId, out _, out var targetX, out var targetY);
+                        var targetIsOfflineAutoTrade = world.TryGetNpcSnapshot(tradeListRequest.TargetId, out var targetNpc) &&
+                            targetNpc is not null && targetNpc.AutoTradeSnapshot is not null;
+                        if (!targetIsOnline && targetIsOfflineAutoTrade)
+                        {
+                            targetX = targetNpc!.PositionX;
+                            targetY = targetNpc.PositionY;
+                        }
+                        var targetPositionAvailable = targetIsOnline || targetIsOfflineAutoTrade;
+                        var listContext = new LegacyAutoTradeListContext(
+                            requesterStateAvailable ? requesterState!.CurrentScore.Hp : 0,
+                            tradeListSession.State == LoginSessionState.Playing && requesterPositionAvailable,
+                            targetPositionAvailable,
+                            targetIsOnline,
+                            TargetAutoTradeActive: true,
+                            requesterX,
+                            requesterY,
+                            targetX,
+                            targetY,
+                            TargetOfflineAutoTrade: targetIsOfflineAutoTrade);
+                        var listResult = LegacyAutoTradeListRules.Validate(tradeListRequest.TargetId, listContext);
+                        if (listResult == LegacyAutoTradeListResult.Accepted &&
+                            LegacyAutoTradeListRelay.TryBuild(connectionId, shopSnapshot, LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, out var listRelay) &&
+                            listRelay is not null)
+                        {
+                            await stream.WriteAsync(listRelay.ResponseFrame, cancellationToken);
+                            var targetVisualAvailable = world.TryGetCharacterSnapshot(tradeListRequest.TargetId, out var targetVisualMob, out _, out _, out _, out var targetVisualAffect);
+                            if (!targetVisualAvailable && targetIsOfflineAutoTrade)
+                            {
+                                targetVisualMob = targetNpc!.MobSnapshot;
+                                targetVisualAffect = targetNpc.AffectSnapshot;
+                                targetVisualAvailable = true;
+                            }
+                            if (targetVisualAvailable && targetVisualMob is not null && targetVisualAffect is not null &&
+                                LegacyAutoTradeVisualRelay.TryBuild(
+                                    shopSnapshot,
+                                    targetVisualMob,
+                                    targetVisualAffect,
+                                    LegacyFrameCodec.CreateDefault(),
+                                    frame.Header.ClientTick,
+                                    frame.Header.KeywordIndex,
+                                    out var targetVisualRelay) &&
+                                targetVisualRelay is not null)
+                            {
+                                await stream.WriteAsync(targetVisualRelay.Frame, cancellationToken);
+                            }
+                            Console.WriteLine($"Autotrade list sent: requester={tradeListSession.AccountName}, target={tradeListRequest.TargetId}, title={shopSnapshot.Title}.");
+                        }
+                        else
+                            Console.WriteLine($"Autotrade list rejected: requester={tradeListSession.AccountName}, target={tradeListRequest.TargetId}, reason={listResult}.");
+                        continue;
+                    }
+
+                    if (AutoTradePurchaseRequest.TryParse(frame, out var autoTradePurchaseRequest) && autoTradePurchaseRequest is not null)
+                    {
+                        var hostPurchase = await LegacyAutoTradePurchaseCoordinator.ExecuteAsync(
+                            connectionId,
+                            autoTradePurchaseRequest,
+                            sessions,
+                            world,
+                            autoTradeBook,
+                            accounts as IAccountSnapshotStore,
+                            accounts as ILegacyCharacterLoginDataStore,
+                            autoTradePurchaseCommitStore,
+                            cancellationToken);
+                        if (hostPurchase.Result == LegacyAutoTradePurchaseHostResult.Accepted &&
+                            hostPurchase.Execution?.Outcome is not null)
+                        {
+                            var purchaseOutcome = hostPurchase.Execution.Outcome;
+                            var targetOnline = hostPurchase.TargetOnline;
+                            var targetOffline = hostPurchase.TargetOffline;
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            LegacyWorldNpc? updatedNpc = null;
+                            var updatedNpcAvailable = targetOffline &&
+                                world.TryGetNpcSnapshot(autoTradePurchaseRequest.TargetId, out updatedNpc) &&
+                                updatedNpc is not null;
+                            var offlineMob = updatedNpcAvailable ? updatedNpc!.MobSnapshot : [];
+                            var offlineAffect = updatedNpcAvailable ? updatedNpc!.AffectSnapshot : [];
+                            if (!LegacyAutoTradePurchaseRelay.TryBuild(
+                                    purchaseOutcome,
+                                    codec,
+                                    frame.Header.ClientTick,
+                                    frame.Header.KeywordIndex,
+                                    targetOffline,
+                                    offlineMob,
+                                    offlineAffect,
+                                    out var relay) ||
+                                relay is null)
+                            {
+                                Console.WriteLine($"Autotrade purchase relay rejected after commit: connection={connectionId}, target={autoTradePurchaseRequest.TargetId}, position={autoTradePurchaseRequest.Position}.");
+                                continue;
+                            }
+
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, relay.BuyerCarryFrame, cancellationToken, $"autotrade-purchase-carry target={autoTradePurchaseRequest.TargetId} position={autoTradePurchaseRequest.Position}");
+                            var sellerViewRecipients = targetOnline
+                                ? world.GetParticipantIdsInPlayerView(autoTradePurchaseRequest.TargetId)
+                                : world.GetParticipantIdsInNpcView(autoTradePurchaseRequest.TargetId);
+                            foreach (var recipient in sellerViewRecipients)
+                                await world.SendAsync(recipient, relay.ItemSoldFrame, cancellationToken);
+                            if (!sellerViewRecipients.Contains(connectionId))
+                                await world.SendAsync(connectionId, relay.ItemSoldFrame, cancellationToken);
+
+                            if (relay.OfflineVisualFrame is not null)
+                            {
+                                foreach (var recipient in world.GetParticipantIdsInNpcView(autoTradePurchaseRequest.TargetId))
+                                    await world.SendAsync(recipient, relay.OfflineVisualFrame, cancellationToken);
+                            }
+
+                            Console.WriteLine($"Autotrade purchase accepted: connection={connectionId}, seller={hostPurchase.SellerAccountName}, target={autoTradePurchaseRequest.TargetId}, position={autoTradePurchaseRequest.Position}, price={purchaseOutcome.Plan.Settlement.ItemPrice}, tax={purchaseOutcome.Plan.Settlement.TaxAmount}.");
+                        }
+                        else
+                            Console.WriteLine($"Autotrade purchase rejected: connection={connectionId}, target={autoTradePurchaseRequest.TargetId}, position={autoTradePurchaseRequest.Position}, reason={hostPurchase.Execution?.Result.ToString() ?? hostPurchase.Result.ToString()}.");
+                        continue;
+                    }
+
+                    if (TradeOfferRequest.TryParse(frame, out var tradeOffer) && tradeOffer is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var tradeSession) || tradeSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected trade-offer frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var tradeResult = world.TryStageTradeOffer(connectionId, tradeOffer, out var tradeOutcome);
+                        if (tradeResult == LegacyTradeOfferResult.BothChecked)
+                        {
+                            var completionResult = world.TryCompleteTrade(connectionId, out var completion);
+                            if (completionResult == LegacyTradeCompletionResult.Accepted && completion is not null)
+                            {
+                                var tradeReadyToRelay = true;
+                                if (completion.RequiresPersistence)
+                                {
+                                    if (!LegacyTradePersistence.TryBuild(completion, out var persistencePlan) || persistencePlan is null)
+                                    {
+                                        tradeReadyToRelay = false;
+                                        Console.WriteLine($"Trade rolled back: persistence plan unavailable; first={completion.FirstConnectionId}, second={completion.SecondConnectionId}, runtimeRollback={world.TryRollbackTradeCompletion(completion)}.");
+                                    }
+                                    else if (accounts is not IAtomicCharacterStateStore atomicStore)
+                                    {
+                                        tradeReadyToRelay = false;
+                                        Console.WriteLine($"Trade rolled back: atomic store unavailable; first={completion.FirstAccountName}, second={completion.SecondAccountName}, runtimeRollback={world.TryRollbackTradeCompletion(completion)}.");
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            var persistenceResult = await atomicStore.TrySaveCharacterStatesAtomicallyAsync(
+                                                persistencePlan.First,
+                                                persistencePlan.Second,
+                                                cancellationToken);
+                                            Console.WriteLine($"Trade persistence: first={completion.FirstAccountName}, second={completion.SecondAccountName}, result={persistenceResult}.");
+                                            if (persistenceResult != AtomicCharacterStateSaveResult.Success)
+                                            {
+                                                tradeReadyToRelay = false;
+                                                Console.WriteLine($"Trade rolled back after persistence rejection: first={completion.FirstAccountName}, second={completion.SecondAccountName}, reason={persistenceResult}, runtimeRollback={world.TryRollbackTradeCompletion(completion)}.");
+                                            }
+                                        }
+                                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                                        {
+                                            var runtimeRollback = world.TryRollbackTradeCompletion(completion);
+                                            Console.WriteLine($"Trade rolled back on cancellation: first={completion.FirstAccountName}, second={completion.SecondAccountName}, runtimeRollback={runtimeRollback}.");
+                                            throw;
+                                        }
+                                        catch (Exception exception)
+                                        {
+                                            tradeReadyToRelay = false;
+                                            Console.Error.WriteLine($"Trade rolled back after persistence error: first={completion.FirstAccountName}, second={completion.SecondAccountName}, error={exception.GetType().Name}, runtimeRollback={world.TryRollbackTradeCompletion(completion)}.");
+                                        }
+                                    }
+                                }
+
+                                if (!tradeReadyToRelay)
+                                    continue;
+
+                                var codec = LegacyFrameCodec.CreateDefault();
+                                if (LegacyTradeCompletionRelay.TryBuild(completion, codec, frame.Header.ClientTick, frame.Header.KeywordIndex, out var relayPlan) && relayPlan is not null)
+                                {
+                                    await world.SendAsync(completion.FirstConnectionId, relayPlan.FirstCarryFrame, cancellationToken);
+                                    await world.SendAsync(completion.SecondConnectionId, relayPlan.SecondCarryFrame, cancellationToken);
+                                    Console.WriteLine($"Trade completed: first={completion.FirstConnectionId}, second={completion.SecondConnectionId}, coin={completion.FirstCoin}/{completion.SecondCoin}.");
+                                }
+                                else
+                                    Console.WriteLine($"Trade completion relay rejected: first={completion.FirstConnectionId}, second={completion.SecondConnectionId}.");
+                            }
+                            else
+                                Console.WriteLine($"Trade completion rejected after both checks: connection={connectionId}, reason={completionResult}.");
+
+                            continue;
+                        }
+
+                        if (tradeResult == LegacyTradeOfferResult.Accepted && tradeOutcome is not null &&
+                            LegacyTradeOfferRelay.TryBuild(tradeOutcome, LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, out var tradeRelay) && tradeRelay is not null)
+                        {
+                            await world.SendAsync(tradeRelay.RecipientConnectionId, tradeRelay.OfferFrame, cancellationToken);
+                            if (tradeRelay.RequiresCheckConfirmation)
+                            {
+                                var checkFrame = TradeCheckConfirmation.ToFrame(
+                                    LegacyFrameCodec.CreateDefault(),
+                                    frame.Header.ClientTick,
+                                    frame.Header.KeywordIndex,
+                                    checked((ushort)connectionId));
+                                await world.SendAsync(connectionId, checkFrame, cancellationToken);
+                            }
+
+                            Console.WriteLine($"Trade offer relayed: account={tradeSession.AccountName}, recipient={tradeRelay.RecipientConnectionId}, paired={tradeOutcome.Paired}, checked={tradeOutcome.OwnState.MyCheck == 1}.");
+                        }
+                        else
+                            Console.WriteLine($"Trade offer rejected: account={tradeSession.AccountName}, opponent={tradeOffer.OpponentId}, reason={tradeResult}.");
+                        continue;
+                    }
+
+                    if (TradeCloseRequest.IsValid(frame))
+                    {
+                        if (!sessions.TryGet(connectionId, out var closeTradeSession) || closeTradeSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected trade-close frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var closeResult = world.TryCloseTrade(connectionId, out var closeOutcome);
+                        Console.WriteLine(closeResult == LegacyTradeCloseResult.Accepted
+                            ? $"Trade closed: account={closeTradeSession.AccountName}, opponent={closeOutcome!.OpponentId}."
+                            : $"Trade close ignored: account={closeTradeSession.AccountName}, reason={closeResult}.");
+                        continue;
+                    }
+
+                    if (SplitItemRequest.TryParse(frame, out var splitItemRequest) && splitItemRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var splitSession) || splitSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected split-item frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var splitResult = world.TrySplitCarryItem(
+                            connectionId,
+                            splitItemRequest.Slot,
+                            splitItemRequest.ItemIndex,
+                            splitItemRequest.Quantity,
+                            out var splitOutcome);
+                        if (splitResult == LegacySplitItemResult.Accepted && splitOutcome is not null)
+                        {
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            var destinationFrame = new SendItemConfirmation(
+                                    LegacyWorldItem.CarryDestinationType,
+                                    checked((short)splitOutcome.DestinationSlot),
+                                    splitOutcome.SplitItem)
+                                .ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                            await stream.WriteAsync(destinationFrame, cancellationToken);
+
+                            var sourceFrame = new SendItemConfirmation(
+                                    LegacyWorldItem.CarryDestinationType,
+                                    checked((short)splitOutcome.SourceSlot),
+                                    splitOutcome.UpdatedSourceItem)
+                                .ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                            await stream.WriteAsync(sourceFrame, cancellationToken);
+                            Console.WriteLine($"Carry item split: account={splitSession.AccountName}, source={splitOutcome.SourceSlot}, destination={splitOutcome.DestinationSlot}, quantity={splitOutcome.Quantity}, requestedIndex={splitOutcome.RequestedItemIndex}.");
+                        }
+                        else
+                            Console.WriteLine($"Carry item split rejected: account={splitSession.AccountName}, source={splitItemRequest.Slot}, quantity={splitItemRequest.Quantity}, reason={splitResult}.");
+                        continue;
+                    }
+
+                    if (UpdateItemRequest.TryParse(frame, out var updateItemRequest) && updateItemRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var updateItemSession) || updateItemSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected update-item frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var updateItemResult = world.TryUpdateMapItem(
+                            connectionId,
+                            updateItemRequest.ItemId,
+                            updateItemRequest.State,
+                            out var updateItemOutcome);
+                        if (updateItemResult == LegacyUpdateItemResult.Accepted && updateItemOutcome is not null)
+                        {
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            var clientTick = frame.Header.ClientTick;
+                            if (updateItemOutcome.CastleQuestStart is { } castleStart)
+                            {
+                                if (castleStart.RemovedNpcs.Count > 0)
+                                    await BroadcastRemovedNpcsInAreaAsync(world, castleStart.RemovedNpcs, 2176, 1160, 2300, 1276, cancellationToken);
+                                if (castleStart.SpawnedNpcs.Count > 0)
+                                    await BroadcastPistaGeneratedNpcsAsync(world, castleStart.SpawnedNpcs, cancellationToken);
+                                var startTimeFrame = new StartTimeConfirmation(castleStart.TimeRemaining + 1)
+                                    .ToFrame(codec, clientTick, frame.Header.KeywordIndex);
+                                foreach (var partyConnectionId in castleStart.PartyConnectionIds.Distinct())
+                                    await world.SendAsync(partyConnectionId, startTimeFrame, cancellationToken);
+                                Console.WriteLine($"Castle quest started: level={castleStart.QuestLevel}, leader={castleStart.LeaderConnectionId}, time={castleStart.TimeRemaining + 1}, spawnedNpcs={castleStart.SpawnedNpcs.Count}.");
+                            }
+                            if (updateItemOutcome.ConsumedKeySlot >= 0)
+                            {
+                                var emptyKeySlot = new SendItemConfirmation(
+                                        LegacyWorldItem.CarryDestinationType,
+                                        checked((short)updateItemOutcome.ConsumedKeySlot),
+                                        default)
+                                    .ToFrame(codec, clientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                                await stream.WriteAsync(emptyKeySlot, cancellationToken);
+                            }
+
+                            if (updateItemOutcome.StateChanged)
+                            {
+                                var updateFrame = new UpdateItemConfirmation(
+                                        updateItemOutcome.WireItemId,
+                                        updateItemOutcome.MapItem.State)
+                                    .ToFrame(codec, clientTick, frame.Header.KeywordIndex, 30_000);
+                                foreach (var recipient in world.GetParticipantIdsInMapItemView(updateItemOutcome.WireItemId))
+                                    await world.SendAsync(recipient, updateFrame, cancellationToken);
+                            }
+
+                            Console.WriteLine($"Map item updated: account={updateItemSession.AccountName}, wireId={updateItemOutcome.WireItemId}, state={updateItemOutcome.MapItem.State}, changed={updateItemOutcome.StateChanged}, keySlot={updateItemOutcome.ConsumedKeySlot}.");
+                        }
+                        else
+                            Console.WriteLine($"Map item update rejected: account={updateItemSession.AccountName}, wireId={updateItemRequest.ItemId}, state={updateItemRequest.State}, reason={updateItemResult}.");
+                        continue;
+                    }
+
+                    if (DropItemRequest.TryParse(frame, out var dropItemRequest) && dropItemRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var dropItemSession) || dropItemSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected drop-item frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var dropItemResult = world.TryDropItem(
+                            connectionId,
+                            dropItemRequest.SourceType,
+                            dropItemRequest.SourceSlot,
+                            dropItemRequest.Rotate,
+                            dropItemRequest.GridX,
+                            dropItemRequest.GridY,
+                            out var dropItemOutcome);
+                        if (dropItemResult == LegacyDropItemResult.Accepted && dropItemOutcome is not null)
+                        {
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            var clientTick = frame.Header.ClientTick;
+                            var confirmation = new DropItemConfirmation(
+                                    dropItemOutcome.SourceType,
+                                    dropItemOutcome.SourceSlot,
+                                    dropItemOutcome.Rotate,
+                                    checked((ushort)dropItemOutcome.PositionX),
+                                    checked((ushort)dropItemOutcome.PositionY))
+                                .ToFrame(codec, clientTick, frame.Header.KeywordIndex, 30_000);
+                            await stream.WriteAsync(confirmation, cancellationToken);
+
+                            var create = new CreateItemConfirmation(
+                                    checked((ushort)dropItemOutcome.PositionX),
+                                    checked((ushort)dropItemOutcome.PositionY),
+                                    checked((ushort)dropItemOutcome.WireItemId),
+                                    dropItemOutcome.Item,
+                                    dropItemOutcome.Rotate)
+                                .ToFrame(codec, clientTick, frame.Header.KeywordIndex, 30_000);
+                            foreach (var recipient in world.GetParticipantIdsInPlayerView(connectionId))
+                                await world.SendAsync(recipient, create, cancellationToken);
+                            Console.WriteLine($"Ground item dropped: account={dropItemSession.AccountName}, item={dropItemOutcome.Item.Index}, wireId={dropItemOutcome.WireItemId}, grid={dropItemOutcome.PositionX},{dropItemOutcome.PositionY}.");
+                        }
+                        else
+                            Console.WriteLine($"Ground item drop rejected: account={dropItemSession.AccountName}, source={dropItemRequest.SourceType}:{dropItemRequest.SourceSlot}, reason={dropItemResult}.");
+                        continue;
+                    }
+
+                    if (GetItemRequest.TryParse(frame, out var getItemRequest) && getItemRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var getItemSession) || getItemSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected get-item frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        var getItemResult = world.TryGetGroundItem(
+                            connectionId,
+                            getItemRequest.DestinationType,
+                            getItemRequest.DestinationSlot,
+                            getItemRequest.ItemId,
+                            getItemRequest.GridX,
+                            getItemRequest.GridY,
+                            out var getItemOutcome);
+                        if (getItemResult == LegacyGetItemResult.Accepted && getItemOutcome is not null)
+                        {
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            var clientTick = frame.Header.ClientTick;
+                            var confirmation = new GetItemConfirmation(
+                                    getItemOutcome.DestinationType,
+                                    getItemOutcome.DestinationSlot,
+                                    getItemOutcome.Item)
+                                .ToFrame(codec, clientTick, frame.Header.KeywordIndex, 30_000);
+                            await stream.WriteAsync(confirmation, cancellationToken);
+
+                            var decay = new DecayItemConfirmation(getItemOutcome.WireItemId)
+                                .ToFrame(codec, clientTick, frame.Header.KeywordIndex, 30_000);
+                            foreach (var recipient in world.GetParticipantIdsInPlayerView(connectionId))
+                                await world.SendAsync(recipient, decay, cancellationToken);
+
+                            var itemFrame = new SendItemConfirmation(
+                                    LegacyWorldItem.CarryDestinationType,
+                                    checked((short)getItemOutcome.DestinationSlot),
+                                    getItemOutcome.Item)
+                                .ToFrame(codec, clientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                            await stream.WriteAsync(itemFrame, cancellationToken);
+                            Console.WriteLine($"Ground item collected: account={getItemSession.AccountName}, item={getItemOutcome.Item.Index}, wireId={getItemOutcome.WireItemId}, slot={getItemOutcome.DestinationSlot}.");
+                        }
+                        else
+                            Console.WriteLine($"Ground item rejected: account={getItemSession.AccountName}, wireId={getItemRequest.ItemId}, reason={getItemResult}.");
+                        continue;
+                    }
+
+                    if (MessageChatRequest.TryParse(frame, out var chatRequest) && chatRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var chatSession) || chatSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected chat frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        // Exec_MSG_MessageChat sets ID to the sender and calls GridMulticast
+                        // around the sender, excluding the sender itself. Keep the original
+                        // tick/keyword and only rebuild the encrypted header with that ID.
+                        var chatFrame = new MessageChatConfirmation(chatRequest.Message)
+                            .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                        foreach (var recipient in world.GetParticipantIdsInPlayerView(connectionId).Where(id => id != connectionId))
+                            await world.SendAsync(recipient, chatFrame, cancellationToken);
+                        Console.WriteLine($"Chat relayed: account={chatSession.AccountName}, recipients={world.GetParticipantIdsInPlayerView(connectionId).Count}, messageLength={chatRequest.Message.Length}.");
+                        continue;
+                    }
+
+                    if (MessageWhisperRequest.TryParse(frame, out var whisperRequest) && whisperRequest is not null)
+                    {
+                        if (!sessions.TryGet(connectionId, out var whisperSession) || whisperSession!.State != LoginSessionState.Playing)
+                        {
+                            Console.WriteLine("Rejected whisper frame: session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        // The retail /cp command uses the whisper-shaped wire frame with
+                        // MobName="cp" and an empty String.  TMSrv handles this before
+                        // looking up a player target and reports GetPKPoint(conn)-75.
+                        if (string.Equals(whisperRequest.TargetName, "cp", StringComparison.Ordinal))
+                        {
+                            if (!world.TryGetCharacterPkPoint(connectionId, out var pkPoint))
+                            {
+                                Console.WriteLine($"PK points query rejected: connection={connectionId}.");
+                                continue;
+                            }
+
+                            var cpFrame = new MessagePanelConfirmation($"CP {pkPoint - 75}")
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex);
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, cpFrame, cancellationToken, $"pk-points value={pkPoint - 75}");
+                            Console.WriteLine($"PK points queried: account={whisperSession.AccountName}, value={pkPoint - 75}.");
+                            continue;
+                        }
+
+                        if (!world.TryGetParticipantIdByCharacterName(whisperRequest.TargetName, out var targetConnectionId))
+                        {
+                            Console.WriteLine($"Whisper target not found: account={whisperSession.AccountName}, target={whisperRequest.TargetName}.");
+                            continue;
+                        }
+
+                        if (!world.TryGetParticipantCharacterName(connectionId, out var senderName) || string.IsNullOrEmpty(senderName))
+                        {
+                            Console.WriteLine($"Whisper sender name unavailable: connection={connectionId}.");
+                            continue;
+                        }
+
+                        var whisperFrame = new MessageWhisperConfirmation(senderName, whisperRequest.Message)
+                            .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)targetConnectionId));
+                        await world.SendAsync(targetConnectionId, whisperFrame, cancellationToken);
+                        Console.WriteLine($"Whisper delivered: account={whisperSession.AccountName}, target={whisperRequest.TargetName}, messageLength={whisperRequest.Message.Length}.");
                         continue;
                     }
 
@@ -966,6 +1890,38 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         if (world.TryGetCharacterSnapshot(connectionId, out _, out var authoritativeX, out var authoritativeY))
                             sessions.SetServerPosition(connectionId, authoritativeX, authoritativeY);
 
+                        var mapRestriction = world.EvaluateMovementMapTarget(connectionId, action.TargetX, action.TargetY);
+                        if (mapRestriction != LegacyMovementMapRestriction.None)
+                        {
+                            var restrictionNotice = LegacyMovementMapNotice.For(mapRestriction);
+                            if (restrictionNotice is not null)
+                            {
+                                var noticeFrame = new MessagePanelConfirmation(restrictionNotice)
+                                    .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                                await stream.WriteAsync(noticeFrame, cancellationToken);
+                            }
+
+                            if (world.TryRecallForMovementRestriction(connectionId, out var recall) && recall is not null)
+                            {
+                                sessions.SetServerPosition(connectionId, recall.ToX, recall.ToY);
+                                var recallFrame = new ActionRequest(
+                                    recall.FromX,
+                                    recall.FromY,
+                                    Effect: 1,
+                                    Speed: 2,
+                                    Route: new byte[24],
+                                    recall.ToX,
+                                    recall.ToY)
+                                    .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                await stream.WriteAsync(recallFrame, cancellationToken);
+                                await world.BroadcastAsync(connectionId, recallFrame, cancellationToken);
+                                Console.WriteLine($"Movement recalled: account={actionSession.AccountName}, reason={mapRestriction}, from=({recall.FromX},{recall.FromY}), to=({recall.ToX},{recall.ToY}).");
+                            }
+                            else
+                                Console.WriteLine($"Movement rejected: account={actionSession.AccountName}, reason={mapRestriction}, recall unavailable.");
+                            continue;
+                        }
+
                         var movement = sessions.TryApplyMovement(connectionId, action);
                         if (movement == MovementResult.Accepted)
                         {
@@ -1004,6 +1960,20 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         if (!sessions.TryGet(connectionId, out var motionSession) || motionSession!.State != LoginSessionState.Playing)
                         {
                             Console.WriteLine($"Rejected motion: connection={connectionId}, session is not in USER_PLAY.");
+                            continue;
+                        }
+
+                        // TMSrv::_MSG_Motion sends MSG_SetHpMode and stops before GridMulticast for a dead player.
+                        if (world.TryGetResourceState(connectionId, out var motionResources, out _, out _)
+                            && motionResources is not null
+                            && motionResources.CurrentScore.Hp == 0)
+                        {
+                            var hpModeFrame = new SetHpModeConfirmation(
+                                motionResources.CurrentScore.Hp,
+                                (short)motionSession.State)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                            await stream.WriteAsync(hpModeFrame, cancellationToken);
+                            Console.WriteLine($"Rejected motion: account={motionSession.AccountName}, character HP is zero.");
                             continue;
                         }
 
@@ -1130,8 +2100,10 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                 {
                                     foreach (var award in physicalExperienceAwards.Where(award => award.ConnectionId != connectionId))
                                     {
-                                        var experienceFrame = new UpdateEtcConfirmation(award.MobSnapshot)
-                                            .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)award.ConnectionId);
+                                        var experienceFrame = BuildClientV769UpdateEtcFrame(
+                                            award.MobSnapshot,
+                                            ReadOnlySpan<byte>.Empty,
+                                            (ushort)award.ConnectionId);
                                         await world.SendAsync(award.ConnectionId, experienceFrame, cancellationToken);
                                     }
                                 }
@@ -1150,8 +2122,10 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                     {
                                         if (update.ConnectionId == connectionId && physicalOutcome.AttackerMobSnapshot is not null)
                                             continue;
-                                        var coinFrame = new UpdateEtcConfirmation(update.MobSnapshot)
-                                            .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)update.ConnectionId);
+                                        var coinFrame = BuildClientV769UpdateEtcFrame(
+                                            update.MobSnapshot,
+                                            ReadOnlySpan<byte>.Empty,
+                                            (ushort)update.ConnectionId);
                                         await world.SendAsync(update.ConnectionId, coinFrame, cancellationToken);
                                     }
                                 }
@@ -1163,29 +2137,52 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                     await BroadcastAreaNoticesAsync(world, physicalAreaNotices, cancellationToken);
                                 if (physicalOutcome.MountOwnerConnectionId > 0 && physicalOutcome.UpdatedMountItem is { } updatedMountItem)
                                 {
+                                    var mountTick = unchecked((uint)Environment.TickCount64);
+                                    var mountKeyword = (byte)RandomNumberGenerator.GetInt32(256);
                                     var mountFrame = new SendItemConfirmation(0, 14, updatedMountItem)
-                                        .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)physicalOutcome.MountOwnerConnectionId);
+                                        .ToFrame(LegacyFrameCodec.CreateDefault(), mountTick, mountKeyword, (ushort)physicalOutcome.MountOwnerConnectionId);
                                     await world.SendAsync(physicalOutcome.MountOwnerConnectionId, mountFrame, cancellationToken);
+                                    if (world.TryBuildUpdateEquipFrame(
+                                            physicalOutcome.MountOwnerConnectionId,
+                                            LegacyFrameCodec.CreateDefault(),
+                                            mountTick,
+                                            mountKeyword,
+                                            out var mountEquipFrame) &&
+                                        mountEquipFrame is not null)
+                                    {
+                                        await world.SendAsync(physicalOutcome.MountOwnerConnectionId, mountEquipFrame, cancellationToken);
+                                        await world.BroadcastAsync(physicalOutcome.MountOwnerConnectionId, mountEquipFrame, cancellationToken);
+                                    }
                                 }
                                 if (physicalOutcome.CrimeStateUpdates is { Count: > 0 } crimeStateUpdates)
                                 {
                                     foreach (var crimeState in crimeStateUpdates)
                                     {
-                                        var crimeFrame = new CreateMobConfirmation(
+                                        var crimeFrame = BuildClientV769CreateMobFrame(
                                             (ushort)crimeState.ConnectionId,
                                             crimeState.PositionX,
                                             crimeState.PositionY,
-                                            crimeState.MobSnapshot)
-                                            .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                                            crimeState.MobSnapshot,
+                                            ReadOnlySpan<byte>.Empty,
+                                            npc: false);
                                         await world.SendAsync(crimeState.ConnectionId, crimeFrame, cancellationToken);
                                         await world.BroadcastAsync(crimeState.ConnectionId, crimeFrame, cancellationToken);
                                     }
                                 }
                                 if (physicalOutcome.TargetAffectSnapshot is { } physicalTargetAffect)
                                 {
-                                    var scoreFrame = new UpdateScoreConfirmation(physicalOutcome.TargetMobSnapshot, physicalTargetAffect)
-                                        .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)physicalOutcome.TargetConnectionId);
+                                    var scoreFrame = BuildClientV769UpdateScoreFrame(
+                                        physicalOutcome.TargetMobSnapshot,
+                                        physicalTargetAffect,
+                                        (ushort)physicalOutcome.TargetConnectionId);
                                     await world.SendAsync(physicalOutcome.TargetConnectionId, scoreFrame, cancellationToken);
+                                    if (TryBuildClientV769UpdateAffectFrame(
+                                            physicalTargetAffect,
+                                            (ushort)physicalOutcome.TargetConnectionId,
+                                            unchecked((uint)Environment.TickCount64),
+                                            (byte)RandomNumberGenerator.GetInt32(256),
+                                            out var physicalAffectFrame))
+                                        await world.SendAsync(physicalOutcome.TargetConnectionId, physicalAffectFrame, cancellationToken);
                                 }
                                 if (physicalOutcome.TargetRevived && physicalOutcome.ConsumedItem is { } consumedItem)
                                     await SendResurrectionRefreshAsync(world, physicalOutcome.TargetConnectionId, physicalOutcome.TargetMobSnapshot, physicalOutcome.ConsumedItemSlot, consumedItem, includeScoreAndResources: true, cancellationToken);
@@ -1247,8 +2244,10 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                     {
                                         foreach (var award in skillExperienceAwards.Where(award => award.ConnectionId != connectionId))
                                         {
-                                            var experienceFrame = new UpdateEtcConfirmation(award.MobSnapshot)
-                                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)award.ConnectionId);
+                                            var experienceFrame = BuildClientV769UpdateEtcFrame(
+                                                award.MobSnapshot,
+                                                ReadOnlySpan<byte>.Empty,
+                                                (ushort)award.ConnectionId);
                                             await world.SendAsync(award.ConnectionId, experienceFrame, cancellationToken);
                                         }
                                     }
@@ -1267,8 +2266,10 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                         {
                                             if (update.ConnectionId == connectionId && skillOutcome.AttackerMobSnapshot is not null)
                                                 continue;
-                                            var coinFrame = new UpdateEtcConfirmation(update.MobSnapshot)
-                                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)update.ConnectionId);
+                                            var coinFrame = BuildClientV769UpdateEtcFrame(
+                                                update.MobSnapshot,
+                                                ReadOnlySpan<byte>.Empty,
+                                                (ushort)update.ConnectionId);
                                             await world.SendAsync(update.ConnectionId, coinFrame, cancellationToken);
                                         }
                                     }
@@ -1280,12 +2281,23 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                         await BroadcastAreaNoticesAsync(world, skillAreaNotices, cancellationToken);
                                     if (skillOutcome.TargetAffectSnapshot is not null || (skillOutcome.TargetResourceChanged && !skillOutcome.TargetRevived))
                                     {
-                                        var scoreFrame = skillOutcome.TargetAffectSnapshot is not null
-                                            ? new UpdateScoreConfirmation(skillOutcome.TargetMobSnapshot, skillOutcome.TargetAffectSnapshot)
-                                            : new UpdateScoreConfirmation(skillOutcome.TargetMobSnapshot);
-                                        var encodedScoreFrame = scoreFrame
-                                            .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)skillOutcome.TargetConnectionId);
+                                        var encodedScoreFrame = skillOutcome.TargetAffectSnapshot is not null
+                                            ? BuildClientV769UpdateScoreFrame(
+                                                skillOutcome.TargetMobSnapshot,
+                                                skillOutcome.TargetAffectSnapshot,
+                                                (ushort)skillOutcome.TargetConnectionId)
+                                            : BuildClientV769UpdateScoreWithoutAffectFrame(
+                                                skillOutcome.TargetMobSnapshot,
+                                                (ushort)skillOutcome.TargetConnectionId);
                                         await world.SendAsync(skillOutcome.TargetConnectionId, encodedScoreFrame, cancellationToken);
+                                        if (skillOutcome.TargetAffectSnapshot is { } skillTargetAffect &&
+                                            TryBuildClientV769UpdateAffectFrame(
+                                                skillTargetAffect,
+                                                (ushort)skillOutcome.TargetConnectionId,
+                                                unchecked((uint)Environment.TickCount64),
+                                                (byte)RandomNumberGenerator.GetInt32(256),
+                                                out var skillAffectFrame))
+                                            await world.SendAsync(skillOutcome.TargetConnectionId, skillAffectFrame, cancellationToken);
                                     }
                                     if (skillOutcome.TargetResourceChanged && !skillOutcome.TargetRevived && world.TryGetResourceState(skillOutcome.TargetConnectionId, out var targetResourceState, out var targetRequestedHp, out var targetRequestedMp) && targetResourceState is not null)
                                     {
@@ -1324,8 +2336,9 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                             await stream.WriteAsync(recallFrame, cancellationToken);
                                             await world.BroadcastAsync(connectionId, recallFrame, cancellationToken);
                                         }
-                                        var scoreFrame = new UpdateScoreConfirmation(skillOutcome.TargetMobSnapshot)
-                                            .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                        var scoreFrame = BuildClientV769UpdateScoreWithoutAffectFrame(
+                                            skillOutcome.TargetMobSnapshot,
+                                            (ushort)connectionId);
                                         await stream.WriteAsync(scoreFrame, cancellationToken);
                                         var hpMpFrame = new SetHpMpConfirmation(revivedState.CurrentScore.Hp, revivedState.CurrentMana, revivedHp, revivedMp)
                                             .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
@@ -1349,15 +2362,14 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                     {
                                         foreach (var summonedMob in skillOutcome.SummonedMobs)
                                         {
-                                            var createFrame = new CreateMobConfirmation(
+                                            var createFrame = BuildClientV769CreateMobFrame(
                                                 (ushort)summonedMob.ConnectionId,
                                                 summonedMob.PositionX,
                                                 summonedMob.PositionY,
                                                 summonedMob.MobSnapshot,
                                                 summonedMob.AffectSnapshot,
                                                 npc: true,
-                                                summon: true)
-                                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                                                summon: true);
                                             await stream.WriteAsync(createFrame, cancellationToken);
                                             await world.BroadcastAsync(connectionId, createFrame, cancellationToken);
                                         }
@@ -1384,14 +2396,13 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         }
                         foreach (var spawnedNpc in spawnedNpcs)
                         {
-                            var generatedFrame = new CreateMobConfirmation(
+                            var generatedFrame = BuildClientV769CreateMobFrame(
                                 (ushort)spawnedNpc.ConnectionId,
                                 spawnedNpc.PositionX,
                                 spawnedNpc.PositionY,
                                 spawnedNpc.MobSnapshot,
                                 spawnedNpc.AffectSnapshot,
-                                npc: true)
-                                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                                npc: true);
                             await stream.WriteAsync(generatedFrame, cancellationToken);
                             await world.BroadcastAsync(connectionId, generatedFrame, cancellationToken);
                         }
@@ -1411,11 +2422,17 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                         if (accounts is not null && logoutSession.CharacterSlot >= 0 && logoutSession.AccountName is not null)
                         {
-                            if (world.TryGetCharacterSnapshot(connectionId, out var mobSnapshot, out var positionX, out var positionY, out var mobExtraSnapshot) && mobSnapshot is not null)
+                            if (world.TryGetCharacterSnapshot(connectionId, out var mobSnapshot, out var positionX, out var positionY, out var mobExtraSnapshot, out _, out var clientEquipmentSnapshot) && mobSnapshot is not null)
                             {
                                 var saveResult = await accounts.TrySaveCharacterStateAsync(
                                     logoutSession.AccountName, logoutSession.CharacterSlot, mobSnapshot, positionX, positionY, cancellationToken, mobExtraSnapshot);
                                 Console.WriteLine($"Character state save: account={logoutSession.AccountName}, slot={logoutSession.CharacterSlot}, position=({positionX},{positionY}), result={saveResult}.");
+                                if (accounts is IClientEquipmentStateStore clientEquipmentStore && clientEquipmentSnapshot is not null)
+                                {
+                                    var equipmentResult = await clientEquipmentStore.TrySaveClientEquipmentAsync(
+                                        logoutSession.AccountName, logoutSession.CharacterSlot, clientEquipmentSnapshot, cancellationToken);
+                                    Console.WriteLine($"Client 7.69 equipment save: account={logoutSession.AccountName}, slot={logoutSession.CharacterSlot}, result={equipmentResult}.");
+                                }
                             }
                             else
                             {
@@ -1426,6 +2443,9 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         }
 
                         sessions.CompleteCharacterLogout(connectionId);
+                        autoTradeBook.TryStop(connectionId, out var logoutAutoTrade);
+                        await RemoveAutoTradeStateAsync(autoTradeStateStore, logoutSession.AccountName, logoutSession.CharacterSlot, logoutAutoTrade, cancellationToken);
+                        await BroadcastAutoTradeRemovalAsync(world, logoutAutoTrade, cancellationToken);
                         world.Leave(connectionId, out var logoutSummons);
                         await BroadcastSummonDespawnsAsync(world, logoutSummons, cancellationToken);
                         await stream.WriteAsync(CharacterLogoutConfirmation.ToFrame(LegacyFrameCodec.CreateDefault(), connectionId, unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
@@ -1452,11 +2472,17 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
             serverLog?.Write($"CONNECTION FINALLY connection={connectionId} state={(sessions.TryGet(connectionId, out var finalSession) ? finalSession!.State : LoginSessionState.Closed)}");
             if (accounts is not null && sessions.TryGet(connectionId, out var disconnectedSession) && disconnectedSession!.State == LoginSessionState.Playing && disconnectedSession.AccountName is not null && disconnectedSession.CharacterSlot >= 0)
             {
-                if (world.TryGetCharacterSnapshot(connectionId, out var mobSnapshot, out var positionX, out var positionY, out var mobExtraSnapshot) && mobSnapshot is not null)
+                if (world.TryGetCharacterSnapshot(connectionId, out var mobSnapshot, out var positionX, out var positionY, out var mobExtraSnapshot, out _, out var clientEquipmentSnapshot) && mobSnapshot is not null)
                 {
                     var saveResult = await accounts.TrySaveCharacterStateAsync(
                         disconnectedSession.AccountName, disconnectedSession.CharacterSlot, mobSnapshot, positionX, positionY, CancellationToken.None, mobExtraSnapshot);
                     Console.WriteLine($"Character disconnect state save: account={disconnectedSession.AccountName}, slot={disconnectedSession.CharacterSlot}, position=({positionX},{positionY}), result={saveResult}.");
+                    if (accounts is IClientEquipmentStateStore clientEquipmentStore && clientEquipmentSnapshot is not null)
+                    {
+                        var equipmentResult = await clientEquipmentStore.TrySaveClientEquipmentAsync(
+                            disconnectedSession.AccountName, disconnectedSession.CharacterSlot, clientEquipmentSnapshot, CancellationToken.None);
+                        Console.WriteLine($"Client 7.69 equipment disconnect save: account={disconnectedSession.AccountName}, slot={disconnectedSession.CharacterSlot}, result={equipmentResult}.");
+                    }
                 }
                 else
                 {
@@ -1466,14 +2492,119 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                 }
             }
 
-            world.Leave(connectionId, out var disconnectedSummons);
+            autoTradeBook.TryStop(connectionId, out var disconnectedAutoTrade);
+            if (sessions.TryGet(connectionId, out var endedSession))
+                await RemoveAutoTradeStateAsync(autoTradeStateStore, endedSession!.AccountName, endedSession.CharacterSlot, disconnectedAutoTrade, CancellationToken.None);
+            await BroadcastAutoTradeRemovalAsync(world, disconnectedAutoTrade, CancellationToken.None);
+            world.Leave(connectionId, out var disconnectedSummons, out var disconnectedTrade);
+            if (disconnectedTrade is not null)
+                Console.WriteLine($"Trade cancelled by disconnect: connection={disconnectedTrade.ConnectionId}, opponent={disconnectedTrade.OpponentId}.");
             await BroadcastSummonDespawnsAsync(world, disconnectedSummons, CancellationToken.None);
             serverLog?.Write($"CONNECTION CLOSED connection={connectionId}");
         }
     }
 }
 
-static async ValueTask WriteLoggedFrameAsync(NetworkStream stream, ServerWireLog? serverLog, int connectionId, ReadOnlyMemory<byte> frame, CancellationToken cancellationToken, string? note = null)
+static byte[] BuildClientV769CreateMobFrame(
+    ushort mobId,
+    short positionX,
+    short positionY,
+    ReadOnlySpan<byte> mob,
+    ReadOnlySpan<byte> affect,
+    bool npc,
+    bool summon = false,
+    IReadOnlyList<LegacyItem>? clientEquipment = null)
+{
+    var sourcePayload = new CreateMobConfirmation(
+        mobId,
+        positionX,
+        positionY,
+        mob,
+        affect,
+        npc,
+        summon).ToPayload();
+    var appearance = clientEquipment is null
+        ? null
+        : LegacyAutoTradeVisualRelay.BuildEquipmentAppearance(mob, clientEquipment);
+    return W2ppCreateMobV1Adapter.AdaptPayload(sourcePayload, appearance?.VisualEquipment, appearance?.AncientCodes)
+        .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+}
+
+static byte[] BuildClientV769UpdateEtcFrame(
+    ReadOnlySpan<byte> mob,
+    ReadOnlySpan<byte> mobExtra,
+    ushort id,
+    uint? clientTick = null,
+    byte? keywordIndex = null)
+{
+    var sourcePayload = new UpdateEtcConfirmation(mob, mobExtra).ToPayload();
+    return W2ppUpdateEtcV1Adapter.AdaptPayload(sourcePayload.AsSpan(0, W2ppUpdateEtcV1Adapter.SourcePayloadSize))
+        .ToFrame(
+            LegacyFrameCodec.CreateDefault(),
+            clientTick ?? unchecked((uint)Environment.TickCount64),
+            keywordIndex ?? (byte)RandomNumberGenerator.GetInt32(256),
+            id);
+}
+
+static byte[] BuildClientV769UpdateScoreFrame(
+    ReadOnlySpan<byte> mob,
+    ReadOnlySpan<byte> affect,
+    ushort id,
+    uint? clientTick = null,
+    byte? keywordIndex = null)
+{
+    var sourcePayload = new UpdateScoreConfirmation(mob, affect).ToPayload();
+    return W2ppUpdateScoreV1Adapter.AdaptPayload(sourcePayload.AsSpan(0, W2ppUpdateScoreV1Adapter.SourcePayloadSize))
+        .ToFrame(
+            LegacyFrameCodec.CreateDefault(),
+            clientTick ?? unchecked((uint)Environment.TickCount64),
+            keywordIndex ?? (byte)RandomNumberGenerator.GetInt32(256),
+            id);
+}
+
+static byte[] BuildClientV769UpdateScoreWithoutAffectFrame(
+    ReadOnlySpan<byte> mob,
+    ushort id,
+    uint? clientTick = null,
+    byte? keywordIndex = null)
+{
+    // The target UpdateScore contract always carries the complete 32-entry
+    // affect projection. A missing legacy snapshot means all effects inactive.
+    return BuildClientV769UpdateScoreFrame(
+        mob,
+        new byte[LegacyAccountSnapshot.AffectStride],
+        id,
+        clientTick,
+        keywordIndex);
+}
+
+static bool TryBuildClientV769UpdateAffectFrame(
+    ReadOnlySpan<byte> affect,
+    ushort id,
+    uint clientTick,
+    byte keywordIndex,
+    out byte[]? frame)
+{
+    frame = null;
+    try
+    {
+        frame = W2ppUpdateAffectV1Adapter.AdaptPayload(affect)
+            .ToFrame(LegacyFrameCodec.CreateDefault(), id, clientTick, keywordIndex);
+        return true;
+    }
+    catch (ArgumentException)
+    {
+        return false;
+    }
+    catch (OverflowException)
+    {
+        // W2PP can store levels/times that do not fit the signed 7.69 affect
+        // fields. Do not truncate an active effect into a misleading relay.
+        return false;
+    }
+}
+
+static async ValueTask WriteLoggedFrameAsync(Stream stream, ServerWireLog? serverLog, int connectionId, ReadOnlyMemory<byte> frame, CancellationToken cancellationToken, string? note = null)
 {
     serverLog?.WriteRawFrame("TX", connectionId, frame.Span, LegacyFrameCodec.CreateDefault(), note);
     await stream.WriteAsync(frame, cancellationToken);
@@ -1563,6 +2694,46 @@ static async Task RunPistaScheduleLoopAsync(WorldHub world, CancellationToken ca
                 if (castleQuestPlan.RemovedNpcs.Count > 0)
                     await BroadcastRemovedNpcsInAreaAsync(world, castleQuestPlan.RemovedNpcs, 2176, 1160, 2300, 1276, cancellationToken);
                 Console.WriteLine($"Castle quest timer processed: slot={castleQuestPlan.MinuteSlot:yyyy-MM-dd HH:mm}, state={castleQuestPlan.PreviousState}->{castleQuestPlan.CurrentState}, removedNpcs={castleQuestPlan.RemovedNpcs.Count}.");
+            }
+
+            if (world.TryProcessMapItemMinute(now, out var mapItemMinutePlan) && mapItemMinutePlan is { ClosedItems.Count: > 0 })
+            {
+                var codec = LegacyFrameCodec.CreateDefault();
+                foreach (var mapItem in mapItemMinutePlan.ClosedItems)
+                {
+                    var closeFrame = new CreateItemConfirmation(
+                            checked((ushort)mapItem.PositionX),
+                            checked((ushort)mapItem.PositionY),
+                            checked((ushort)(mapItem.ItemId + LegacyMapItemStateCodes.WireIdOffset)),
+                            mapItem.Item,
+                            mapItem.Rotate,
+                            checked((byte)mapItem.State),
+                            checked((byte)Math.Clamp(mapItem.Height, 0, byte.MaxValue)))
+                        .ToFrame(codec, unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+                    foreach (var recipient in world.GetParticipantIdsInMapItemView(mapItem.ItemId + LegacyMapItemStateCodes.WireIdOffset))
+                        await world.SendAsync(recipient, closeFrame, cancellationToken);
+                }
+                Console.WriteLine($"Map item minute timer processed: slot={mapItemMinutePlan.MinuteSlot:yyyy-MM-dd HH:mm}, closedItems={mapItemMinutePlan.ClosedItems.Count}.");
+            }
+
+            if (world.TryProcessGroundItemSecond(now, out var groundItemDecayPlan) && groundItemDecayPlan is { RemovedItems.Count: > 0 })
+            {
+                var codec = LegacyFrameCodec.CreateDefault();
+                foreach (var removedItem in groundItemDecayPlan.RemovedItems)
+                {
+                    var decayFrame = new DecayItemConfirmation(checked((short)(removedItem.Item.ItemId + LegacyWorldItem.WireIdOffset)))
+                        .ToFrame(codec, unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), 30_000);
+                    foreach (var recipient in removedItem.RecipientConnectionIds)
+                        await world.SendAsync(recipient, decayFrame, cancellationToken);
+                }
+                Console.WriteLine($"Ground item decay timer processed: slot={groundItemDecayPlan.SecondSlot:yyyy-MM-dd HH:mm:ss}, removedItems={groundItemDecayPlan.RemovedItems.Count}.");
+            }
+
+            if (world.TryProcessCastleQuestSecond(now, out var castleQuestSecondPlan) && castleQuestSecondPlan is not null)
+            {
+                if (castleQuestSecondPlan.RemovedNpcs.Count > 0)
+                    await BroadcastRemovedNpcsInAreaAsync(world, castleQuestSecondPlan.RemovedNpcs, 2176, 1160, 2300, 1276, cancellationToken);
+                Console.WriteLine($"Castle quest second timer processed: slot={castleQuestSecondPlan.SecondSlot:yyyy-MM-dd HH:mm:ss}, time={castleQuestSecondPlan.PreviousTimeRemaining}->{castleQuestSecondPlan.CurrentTimeRemaining}, expired={castleQuestSecondPlan.Expired}, removedNpcs={castleQuestSecondPlan.RemovedNpcs.Count}.");
             }
 
             if (world.TryProcessPistaEntry(now, out var entryPlan) && entryPlan is not null)
@@ -1659,19 +2830,76 @@ static async Task BroadcastRemovedNpcsInAreaAsync(WorldHub world, IReadOnlyList<
     }
 }
 
+static async Task BroadcastAutoTradeRemovalAsync(WorldHub world, LegacyAutoTradeSnapshot? snapshot, CancellationToken cancellationToken)
+{
+    if (snapshot is null ||
+        !LegacyAutoTradeRemovalRelay.TryBuild(
+            snapshot,
+            LegacyFrameCodec.CreateDefault(),
+            unchecked((uint)Environment.TickCount64),
+            (byte)RandomNumberGenerator.GetInt32(256),
+            out var plan) ||
+        plan is null)
+        return;
+
+    var recipients = world.GetParticipantIdsInPlayerView(plan.ShopConnectionId);
+    if (recipients.Count == 0)
+        recipients = world.GetParticipantIdsInNpcView(plan.ShopConnectionId);
+    foreach (var recipient in recipients.Where(id => id != plan.ShopConnectionId))
+        await world.SendAsync(recipient, plan.Frame, cancellationToken);
+}
+
+static async Task BroadcastClosedAutoTradeRemovalAsync(
+    WorldHub world,
+    LegacyAutoTradeReconnectClosure closedListing,
+    CancellationToken cancellationToken)
+{
+    if (!LegacyAutoTradeRemovalRelay.TryBuild(
+            closedListing.Snapshot,
+            LegacyFrameCodec.CreateDefault(),
+            unchecked((uint)Environment.TickCount64),
+            (byte)RandomNumberGenerator.GetInt32(256),
+            out var plan) ||
+        plan is null)
+        return;
+
+    foreach (var recipient in closedListing.RecipientIds.Where(id => id != plan.ShopConnectionId))
+        await world.SendAsync(recipient, plan.Frame, cancellationToken);
+}
+
+static async Task RemoveAutoTradeStateAsync(
+    ILegacyAutoTradeStateStore? store,
+    string? accountName,
+    int characterSlot,
+    LegacyAutoTradeSnapshot? snapshot,
+    CancellationToken cancellationToken)
+{
+    if (store is null || snapshot is null || accountName is null || characterSlot < 0)
+        return;
+
+    try
+    {
+        var result = await store.RemoveAsync(accountName, characterSlot, cancellationToken);
+        if (result is not LegacyAutoTradeStateResult.Removed and not LegacyAutoTradeStateResult.NotFound)
+            Console.WriteLine($"Autotrade state removal returned {result}: account={accountName}, slot={characterSlot}.");
+    }
+    catch (Exception error)
+    {
+        Console.WriteLine($"Autotrade state removal failed: account={accountName}, slot={characterSlot}, error={error.GetType().Name}: {error.Message}.");
+    }
+}
+
 static async Task BroadcastPistaGeneratedNpcsAsync(WorldHub world, IReadOnlyList<LegacyWorldNpc> npcs, CancellationToken cancellationToken)
 {
-    var codec = LegacyFrameCodec.CreateDefault();
     foreach (var npc in npcs)
     {
-        var frame = new CreateMobConfirmation(
+        var frame = BuildClientV769CreateMobFrame(
             (ushort)npc.ConnectionId,
             npc.PositionX,
             npc.PositionY,
             npc.MobSnapshot,
             npc.AffectSnapshot,
-            npc: true)
-            .ToFrame(codec, unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
+            npc: true);
         await world.BroadcastAsync(-1, frame, cancellationToken);
     }
 }
@@ -1748,8 +2976,7 @@ static async Task SendResurrectionRefreshAsync(
 
     if (includeScoreAndResources && world.TryGetResourceState(connectionId, out var resourceState, out var requestedHp, out var requestedMp) && resourceState is not null)
     {
-        var scoreFrame = new UpdateScoreConfirmation(mob)
-            .ToFrame(codec, clientTick, keywordIndex, (ushort)connectionId);
+        var scoreFrame = BuildClientV769UpdateScoreWithoutAffectFrame(mob, (ushort)connectionId, clientTick, keywordIndex);
         await world.SendAsync(connectionId, scoreFrame, cancellationToken);
         var hpMpFrame = new SetHpMpConfirmation(resourceState.CurrentScore.Hp, resourceState.CurrentMana, requestedHp, requestedMp)
             .ToFrame(codec, clientTick, keywordIndex, (ushort)connectionId);
@@ -1794,13 +3021,13 @@ static bool TryResolveSkillCombatInputs(ReadOnlySpan<byte> mob, LegacyItemDataTa
     return true;
 }
 
-sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, string? AccountDatabaseConfigPath, string? SkillDataPath, string? ItemDataPath, string? HeightMapPath, string? AttributeMapPath, string? GuildDataPath, string? SummonRoot, string? NpcGenerationPath, string? NpcRoot, string? CastleQuestPath, string? DonateShopCatalogPath, string? DonateDatabaseConfigPath, bool SpawnCityNpcs, bool SpawnDonateNpc, LegacyMapCollisionMode MapCollisionMode, LegacyServerMode ServerMode)
+sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, string? AccountDatabaseConfigPath, string? SkillDataPath, string? ItemDataPath, string? InitItemPath, string? HeightMapPath, string? AttributeMapPath, string? GuildDataPath, string? SummonRoot, string? NpcGenerationPath, string? NpcRoot, string? CastleQuestPath, string? DonateShopCatalogPath, string? DonateDatabaseConfigPath, bool SpawnCityNpcs, bool SpawnDonateNpc, LegacyMapCollisionMode MapCollisionMode, LegacyServerMode ServerMode, string? AutoTradeStatePath, string? StatusFilePath, int? StatusSlot)
 {
     public string WorldKey => new LegacyServerModePolicy(ServerMode).WorldKey;
 
     public static ServerOptions Parse(string[] args)
     {
-        if (args.Length == 1 && int.TryParse(args[0], out var legacyPort)) return new("127.0.0.1", legacyPort, null, null, null, null, null, null, null, null, null, null, null, null, null, false, false, LegacyMapCollisionMode.LegacyCompatible, LegacyServerMode.Up);
+        if (args.Length == 1 && int.TryParse(args[0], out var legacyPort)) return new("127.0.0.1", legacyPort, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, false, LegacyMapCollisionMode.LegacyCompatible, LegacyServerMode.Up, null, null, null);
 
         var port = 8281; // GAME_PORT — matches Basedef.h and WYD.EXE client expectation
         var bindAddress = "127.0.0.1";
@@ -1808,6 +3035,7 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
         string? accountDatabaseConfigPath = null;
         string? skillDataPath = null;
         string? itemDataPath = null;
+        string? initItemPath = null;
         string? heightMapPath = null;
         string? attributeMapPath = null;
         string? guildDataPath = null;
@@ -1821,6 +3049,9 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
         var spawnDonateNpc = false;
         var mapCollisionMode = LegacyMapCollisionMode.LegacyCompatible;
         var serverMode = LegacyServerMode.Up;
+        string? autoTradeStatePath = null;
+        string? statusFilePath = null;
+        int? statusSlot = null;
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -1842,6 +3073,9 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
                     break;
                 case "--item-data" when index + 1 < args.Length:
                     itemDataPath = Path.GetFullPath(args[++index]);
+                    break;
+                case "--init-item" when index + 1 < args.Length:
+                    initItemPath = Path.GetFullPath(args[++index]);
                     break;
                 case "--heightmap" when index + 1 < args.Length:
                     heightMapPath = Path.GetFullPath(args[++index]);
@@ -1879,6 +3113,15 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
                 case "--strict-map-collision":
                     mapCollisionMode = LegacyMapCollisionMode.CandidateAware;
                     break;
+                case "--autotrade-state" when index + 1 < args.Length:
+                    autoTradeStatePath = Path.GetFullPath(args[++index]);
+                    break;
+                case "--status-file" when index + 1 < args.Length:
+                    statusFilePath = Path.GetFullPath(args[++index]);
+                    break;
+                case "--status-slot" when index + 1 < args.Length && int.TryParse(args[++index], out var parsedStatusSlot):
+                    statusSlot = parsedStatusSlot;
+                    break;
                 case "--mode" when index + 1 < args.Length:
                     if (!Enum.TryParse(args[++index], ignoreCase: true, out serverMode))
                         throw new ArgumentException("--mode must be 'up' or 'pvp'.");
@@ -1888,7 +3131,7 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
                         throw new ArgumentException("--world must be 'UP' or 'PVP'.");
                     break;
                 default:
-                    throw new ArgumentException("Usage: WydCdk.Server [--bind <ip-address>] [--port <port>] [--world <UP|PVP>] [--mode <up|pvp>] [--accounts-root <legacy-account-directory>] [--mariadb-account-config <mariadb-config.json>] [--skill-data <SkillData.csv>] [--item-data <ItemList.bin>] [--heightmap <heightmap.dat> --attribute-map <AttributeMap.dat>] [--guild-data <Guild.txt>] [--base-summon <BaseSummon-directory>] [--npc-generation <NPCGener.txt> --npc-root <npc-directory>] [--city-npcs] [--donate-npc] [--castle-quest <CastleQuest.txt>] [--donate-catalog <DonateShop.csv>] [--donate-db-config <mariadb-config.json>] [--strict-map-collision]");
+                    throw new ArgumentException("Usage: WydCdk.Server [--bind <ip-address>] [--port <port>] [--world <UP|PVP>] [--mode <up|pvp>] [--accounts-root <legacy-account-directory>] [--mariadb-account-config <mariadb-config.json>] [--skill-data <SkillData.csv>] [--item-data <ItemList.bin>] [--init-item <InitItem.bin>] [--heightmap <heightmap.dat> --attribute-map <AttributeMap.dat>] [--guild-data <Guild.txt>] [--base-summon <BaseSummon-directory>] [--npc-generation <NPCGener.txt> --npc-root <npc-directory>] [--city-npcs] [--donate-npc] [--castle-quest <CastleQuest.txt>] [--donate-catalog <DonateShop.csv>] [--donate-db-config <mariadb-config.json>] [--autotrade-state <path>] [--status-file <servtest.htm> --status-slot <1-9>] [--strict-map-collision]");
             }
         }
 
@@ -1903,6 +3146,10 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
             throw new ArgumentException("--city-npcs requires --npc-generation and --npc-root.");
         if (spawnDonateNpc && npcGenerationPath is null)
             throw new ArgumentException("--donate-npc requires --npc-generation and --npc-root.");
-        return new(bindAddress, port, accountRoot, accountDatabaseConfigPath, skillDataPath, itemDataPath, heightMapPath, attributeMapPath, guildDataPath, summonRoot, npcGenerationPath, npcRoot, castleQuestPath, donateShopCatalogPath, donateDatabaseConfigPath, spawnCityNpcs, spawnDonateNpc, mapCollisionMode, serverMode);
+        if ((statusFilePath is null) != (statusSlot is null))
+            throw new ArgumentException("--status-file and --status-slot must be provided together.");
+        if (statusSlot is not null && (statusSlot < 1 || statusSlot >= ServerStatusFilePublisher.SlotCount))
+            throw new ArgumentOutOfRangeException(nameof(args), "--status-slot must be between 1 and 9.");
+        return new(bindAddress, port, accountRoot, accountDatabaseConfigPath, skillDataPath, itemDataPath, initItemPath, heightMapPath, attributeMapPath, guildDataPath, summonRoot, npcGenerationPath, npcRoot, castleQuestPath, donateShopCatalogPath, donateDatabaseConfigPath, spawnCityNpcs, spawnDonateNpc, mapCollisionMode, serverMode, autoTradeStatePath, statusFilePath, statusSlot);
     }
 }

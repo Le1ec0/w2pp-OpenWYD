@@ -3,20 +3,15 @@ using System.Buffers.Binary;
 namespace WydCdk.Protocol;
 
 /// <summary>
-/// Encoder for legacy <c>_MSG_CNFCharacterLogin</c> as the CLIENT actually receives it: DBSrv's
-/// <c>MSG_CNFCharacterLogin</c> (CFileDB.cpp:1064-1090) only struct-copies mob/ShortSkill/affect/mobExtra/Donate
-/// from the account file and leaves PosX/PosY/ClientID/Weather unset (undefined stack garbage - that handler
-/// declares <c>MSG_CNFCharacterLogin sm;</c> without a memset); it is TMSrv's <c>_MSG_DBCNFCharacterLogin</c>
-/// handler (ProcessDBMessage.cpp:667-928) that fills those in before forwarding to the client - PosX/PosY from
-/// the character's own saved position (<c>STRUCT_MOB.SPX/SPY</c>) or, absent one, a computed guild-zone/city
-/// spawn; ClientID from the connection index; Weather from the server's current weather. This type reproduces
-/// that TMSrv-forwarded shape, not DBSrv's intermediate one. <c>mob</c>, <c>shortSkill</c>, <c>affect</c>, and
-/// <c>mobExtra</c> stay raw bytes rather than typed fields, matching how the reference handlers themselves just
-/// struct-copy them. Simplified deliberately (see AGENTS.md): <paramref name="posX"/>/<paramref name="posY"/>
-/// must be the character's saved SPX/SPY - the guild-zone/city-spawn table and the collision-avoiding
-/// <c>GetEmptyMobGrid</c> search (used only when there is no saved position) require a guild-zone and map/grid
-/// system this port does not have yet, so a character that never saved a position lands wherever its class
-/// template's SPX/SPY happens to be, rather than a real spawn point. <paramref name="weather"/> is expected to
+/// Encoder for the full legacy W2PP <c>MSG_CNFCharacterLogin</c> shape (2648 bytes), not the
+/// actual W2PP TMSrv-to-client relay. W2PP's <c>ProcessDBMessage.cpp</c> copies this database response into
+/// <c>MSG_CNFClientCharacterLogin</c> and sends only that 1832-byte prefix. This C# type retains the full
+/// internal fields and is also not the 7.69 client contract (<see cref="CharacterLoginConfirmationV769"/>).
+/// W2PP DBSrv leaves PosX/PosY/ClientID/Weather unset in its intermediate response; its TMSrv fills those before
+/// relay. <c>mob</c>, <c>shortSkill</c>, <c>affect</c>, and <c>mobExtra</c> stay raw bytes rather than typed fields,
+/// matching the legacy struct copies. Simplified deliberately (see AGENTS.md): <paramref name="posX"/>/<paramref name="posY"/>
+/// must be the live position selected by the world before constructing this packet; the character's saved SPX/SPY
+/// remains inside <paramref name="mob"/>. <paramref name="weather"/> is expected to
 /// be a fixed placeholder (this port tracks no weather state), and every other "unk" padding region is zero -
 /// TMSrv memsets those unconditionally, so zero is exact here, not a stand-in.
 /// </summary>

@@ -1,0 +1,18 @@
+{
+  "description": "Source-derived vectors for BASE_GetHpMp; inputs use level 100 and absolute BaseScore INT/CON values.",
+  "caps": { "maxHp": 400000, "maxMp": 100000 },
+  "cases": [
+    { "class": 0, "classMaster": 2, "level": 100, "intelligence": 20, "constitution": 16, "maxHp": 400, "maxMp": 177 },
+    { "class": 1, "classMaster": 2, "level": 100, "intelligence": 20, "constitution": 13, "maxHp": 176, "maxMp": 385 },
+    { "class": 2, "classMaster": 2, "level": 100, "intelligence": 21, "constitution": 11, "maxHp": 182, "maxMp": 285 },
+    { "class": 3, "classMaster": 2, "level": 100, "intelligence": 19, "constitution": 10, "maxHp": 278, "maxMp": 175 },
+    { "class": 0, "classMaster": 1, "level": 100, "intelligence": 20, "constitution": 16, "maxHp": 400, "maxMp": 177 },
+    { "class": 1, "classMaster": 1, "level": 100, "intelligence": 20, "constitution": 13, "maxHp": 176, "maxMp": 385 },
+    { "class": 2, "classMaster": 1, "level": 100, "intelligence": 21, "constitution": 11, "maxHp": 182, "maxMp": 285 },
+    { "class": 3, "classMaster": 1, "level": 100, "intelligence": 19, "constitution": 10, "maxHp": 278, "maxMp": 175 },
+    { "class": 0, "classMaster": 3, "level": 100, "intelligence": 20, "constitution": 16, "maxHp": 1597, "maxMp": 576 },
+    { "class": 1, "classMaster": 3, "level": 100, "intelligence": 20, "constitution": 13, "maxHp": 575, "maxMp": 1582 },
+    { "class": 2, "classMaster": 3, "level": 100, "intelligence": 21, "constitution": 11, "maxHp": 581, "maxMp": 1083 },
+    { "class": 3, "classMaster": 3, "level": 100, "intelligence": 19, "constitution": 10, "maxHp": 1076, "maxMp": 574 }
+  ]
+}

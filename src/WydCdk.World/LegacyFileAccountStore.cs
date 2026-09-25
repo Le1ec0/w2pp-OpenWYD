@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.Json;
 using WydCdk.Protocol;
 
 namespace WydCdk.World;
@@ -64,6 +65,17 @@ public enum DonateBalanceSaveResult
     NotAvailable,
 }
 
+public enum ClientEquipmentStateSaveResult
+{
+    Success,
+    AccountNotFound,
+    SlotOutOfRange,
+    CharacterNotAvailable,
+    InvalidLength,
+    Conflict,
+    NotAvailable,
+}
+
 /// <summary>Authentication result without exposing the stored password.</summary>
 public sealed record AccountAuthenticationResult(AccountAuthenticationStatus Status, string? AccountName)
 {
@@ -81,16 +93,32 @@ public interface IAccountSnapshotStore
     ValueTask<LegacyAccountSnapshot?> ReadSnapshotAsync(string accountName, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Minimal character-login read capability used by offline world rehydration.</summary>
+public interface ILegacyCharacterLoginDataStore
+{
+    ValueTask<LegacyCharacterLoginData?> ReadCharacterLoginDataAsync(string accountName, int slot, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Optional versioned state for the 7.69 client equipment extension. It is deliberately
+/// separate from <see cref="ICharacterStore"/> so the confirmed 7.945-byte legacy blob
+/// remains unchanged while a backend gains support for the two additional client slots.
+/// </summary>
+public interface IClientEquipmentStateStore
+{
+    ValueTask<IReadOnlyList<LegacyItem>?> ReadClientEquipmentAsync(string accountName, int slot, CancellationToken cancellationToken = default);
+    ValueTask<ClientEquipmentStateSaveResult> TrySaveClientEquipmentAsync(string accountName, int slot, IReadOnlyList<LegacyItem> equipment, CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Character/account-state contract shared by the legacy file adapter and the MariaDB world adapter.
 /// The payloads intentionally remain the confirmed legacy byte layouts so the wire layer does not acquire
 /// a second, partially equivalent representation while the storage backend is migrated.
 /// </summary>
-public interface ICharacterStore : IAccountSnapshotStore
+public interface ICharacterStore : IAccountSnapshotStore, ILegacyCharacterLoginDataStore
 {
     ValueTask<byte[]?> ReadNumericTokenAsync(string accountName, CancellationToken cancellationToken = default);
     ValueTask<bool> TryWriteNumericTokenAsync(string accountName, ReadOnlyMemory<byte> token, CancellationToken cancellationToken = default);
-    ValueTask<LegacyCharacterLoginData?> ReadCharacterLoginDataAsync(string accountName, int slot, CancellationToken cancellationToken = default);
     ValueTask<CharacterPositionSaveResult> TrySaveCharacterPositionAsync(string accountName, int slot, short positionX, short positionY, CancellationToken cancellationToken = default);
     ValueTask<CharacterStateSaveResult> TrySaveCharacterStateAsync(string accountName, int slot, ReadOnlyMemory<byte> mob, short positionX, short positionY, CancellationToken cancellationToken = default, ReadOnlyMemory<byte> mobExtra = default);
     ValueTask<CharacterGuildSaveResult> TrySaveCharacterGuildAsync(string accountName, int slot, int guildId, int coin, CancellationToken cancellationToken = default);
@@ -106,7 +134,15 @@ public interface ICharacterStore : IAccountSnapshotStore
 /// STRUCT_MOBEXTRA for one character, plus the account-wide Donate value. Kept as opaque byte blobs, matching
 /// how CFileDB.cpp:1064-1090 itself just struct-copies these fields rather than reinterpreting them.
 /// </summary>
-public sealed record LegacyCharacterLoginData(byte[] Mob, byte[] ShortSkill, byte[] Affect, byte[] MobExtra, int Donate, short SavedPositionX, short SavedPositionY);
+public sealed record LegacyCharacterLoginData(
+    byte[] Mob,
+    byte[] ShortSkill,
+    byte[] Affect,
+    byte[] MobExtra,
+    int Donate,
+    short SavedPositionX,
+    short SavedPositionY,
+    IReadOnlyList<LegacyItem>? ClientEquipment = null);
 
 /// <summary>
 /// Reader/writer for the legacy DBSrv account directory. Authentication reads only
@@ -115,18 +151,24 @@ public sealed record LegacyCharacterLoginData(byte[] Mob, byte[] ShortSkill, byt
 /// It never creates, extends, or deletes an account file itself (that remains external to this port);
 /// the character-creation methods below only fill in already-existing, empty character slots inside one.
 /// </summary>
-public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDonateBalanceStore
+public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDonateBalanceStore, IAtomicCharacterStateStore
 {
     private const int AccountNameLength = 16;
     private const int AccountPasswordLength = 12;
     private const int LoginHeaderLength = AccountNameLength + AccountPasswordLength;
     private const int CharacterNameFieldLength = 16; // NAME_LENGTH
+    private const int AtomicJournalVersion = 1;
+    private const string AtomicPreparedPhase = "Prepared";
+    private const string AtomicCommittedPhase = "Committed";
     private readonly string accountRoot;
+    private readonly string atomicJournalPath;
+    private readonly SemaphoreSlim atomicStateGate = new(1, 1);
 
     public LegacyFileAccountStore(string accountRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(accountRoot);
         this.accountRoot = Path.GetFullPath(accountRoot);
+        atomicJournalPath = Path.Combine(this.accountRoot, ".wyd-cdk-atomic-state.journal");
     }
 
     public async ValueTask<AccountAuthenticationResult> AuthenticateAsync(AccountLoginRequest request, CancellationToken cancellationToken = default)
@@ -455,6 +497,11 @@ public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDo
             BinaryPrimitives.WriteInt16LittleEndian(snapshot.AsSpan(LegacyAccountSnapshot.MobSavedPositionYOffset), positionY);
             stream.Position = characterOffset;
             await stream.WriteAsync(snapshot, cancellationToken);
+            var coin = BinaryPrimitives.ReadInt32LittleEndian(snapshot.AsSpan(LegacyAccountSnapshot.MobCoinOffset));
+            var coinBytes = new byte[sizeof(int)];
+            BinaryPrimitives.WriteInt32LittleEndian(coinBytes, coin);
+            stream.Position = LegacyAccountSnapshot.AccountCoinOffset;
+            await stream.WriteAsync(coinBytes, cancellationToken);
             if (!mobExtra.IsEmpty)
             {
                 stream.Position = LegacyAccountSnapshot.MobExtraOffset + (slot * LegacyAccountSnapshot.MobExtraStride);
@@ -474,6 +521,94 @@ public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDo
         catch (EndOfStreamException)
         {
             return CharacterStateSaveResult.NotAvailable;
+        }
+    }
+
+    /// <summary>
+    /// Persists both sides of a completed trade through a small write-ahead journal. The account files are
+    /// replaced as complete blobs so an interrupted pair update can be rolled back or replayed before the next
+    /// atomic operation. Same-account trades remain invalid because this adapter has no single-file two-slot
+    /// contract yet.
+    /// </summary>
+    public async ValueTask<AtomicCharacterStateSaveResult> TrySaveCharacterStatesAtomicallyAsync(
+        LegacyCharacterStateSaveRequest first,
+        LegacyCharacterStateSaveRequest second,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryPrepareAtomicRequest(first, out var firstRequest, out var firstPath) ||
+            !TryPrepareAtomicRequest(second, out var secondRequest, out var secondPath) ||
+            string.Equals(firstRequest.AccountName, secondRequest.AccountName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(firstPath, secondPath, StringComparison.OrdinalIgnoreCase))
+            return AtomicCharacterStateSaveResult.InvalidRequest;
+
+        await atomicStateGate.WaitAsync(cancellationToken);
+        try
+        {
+            await RecoverAtomicJournalAsync(cancellationToken);
+
+            byte[] firstBefore;
+            byte[] secondBefore;
+            try
+            {
+                firstBefore = await File.ReadAllBytesAsync(firstPath, cancellationToken);
+                secondBefore = await File.ReadAllBytesAsync(secondPath, cancellationToken);
+            }
+            catch (FileNotFoundException)
+            {
+                return AtomicCharacterStateSaveResult.AccountNotFound;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return AtomicCharacterStateSaveResult.AccountNotFound;
+            }
+
+            if (firstBefore.Length < LegacyAccountSnapshot.RequiredFileLength ||
+                secondBefore.Length < LegacyAccountSnapshot.RequiredFileLength)
+                return AtomicCharacterStateSaveResult.NotSupported;
+
+            var firstAfter = firstBefore.ToArray();
+            var secondAfter = secondBefore.ToArray();
+            var firstResult = ApplyAtomicCharacterState(firstAfter, firstRequest);
+            if (firstResult != AtomicCharacterStateSaveResult.Success)
+                return firstResult;
+            var secondResult = ApplyAtomicCharacterState(secondAfter, secondRequest);
+            if (secondResult != AtomicCharacterStateSaveResult.Success)
+                return secondResult;
+
+            var entries = new[]
+            {
+                new AtomicJournalEntry(firstPath, firstBefore, firstAfter),
+                new AtomicJournalEntry(secondPath, secondBefore, secondAfter),
+            };
+
+            try
+            {
+                await WriteAtomicJournalAsync(new AtomicJournalDocument(AtomicJournalVersion, AtomicPreparedPhase, entries), cancellationToken);
+                await WriteAtomicBlobAsync(firstPath, firstAfter, cancellationToken);
+                await WriteAtomicBlobAsync(secondPath, secondAfter, cancellationToken);
+                await WriteAtomicJournalAsync(new AtomicJournalDocument(AtomicJournalVersion, AtomicCommittedPhase, entries), cancellationToken);
+                DeleteAtomicJournal();
+                return AtomicCharacterStateSaveResult.Success;
+            }
+            catch (OperationCanceledException)
+            {
+                await RecoverAtomicJournalAsync(CancellationToken.None);
+                throw;
+            }
+            catch (IOException)
+            {
+                await RecoverAtomicJournalAsync(CancellationToken.None);
+                return AtomicCharacterStateSaveResult.NotSupported;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await RecoverAtomicJournalAsync(CancellationToken.None);
+                return AtomicCharacterStateSaveResult.NotSupported;
+            }
+        }
+        finally
+        {
+            atomicStateGate.Release();
         }
     }
 
@@ -727,9 +862,7 @@ public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDo
             var name = ReadCString(file.AsSpan(characterOffset + LegacyAccountSnapshot.MobNameOffset, CharacterNameFieldLength));
             if (name.Length == 0) return DeleteCharacterStoreResult.NotAvailable;
 
-            file.AsSpan(LegacyAccountSnapshot.ShortSkillOffset + (slot * LegacyAccountSnapshot.ShortSkillStride), LegacyAccountSnapshot.ShortSkillStride).Clear();
-            file.AsSpan(characterOffset, LegacyAccountSnapshot.CharacterStride).Clear();
-            file.AsSpan(LegacyAccountSnapshot.MobExtraOffset + (slot * LegacyAccountSnapshot.MobExtraStride), LegacyAccountSnapshot.MobExtraStride).Clear();
+            LegacyCharacterStorageDefaults.ResetDeletedCharacterSlot(file, slot);
 
             stream.Position = 0;
             await stream.WriteAsync(file, cancellationToken);
@@ -753,6 +886,168 @@ public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDo
         var path = Path.Combine(Path.GetDirectoryName(accountRoot) ?? accountRoot, "char", GetLegacyDirectory(upperName), upperName);
         try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
+
+    private bool TryPrepareAtomicRequest(
+        LegacyCharacterStateSaveRequest request,
+        out LegacyCharacterStateSaveRequest normalizedRequest,
+        out string path)
+    {
+        normalizedRequest = request;
+        path = string.Empty;
+        if (request is null ||
+            request.Mob is null ||
+            request.MobExtra is null ||
+            request.CharacterSlot < 0 ||
+            request.CharacterSlot >= LegacyAccountSnapshot.CharacterCount ||
+            request.Mob.Length != LegacyAccountSnapshot.CharacterStride ||
+            request.MobExtra.Length != LegacyAccountSnapshot.MobExtraStride ||
+            !TryResolveAccountPath(request.AccountName, out var normalizedAccountName, out path))
+            return false;
+
+        normalizedRequest = request with { AccountName = normalizedAccountName };
+        return true;
+    }
+
+    private static AtomicCharacterStateSaveResult ApplyAtomicCharacterState(
+        byte[] accountFile,
+        LegacyCharacterStateSaveRequest request)
+    {
+        var characterOffset = LegacyAccountSnapshot.CharactersOffset + (request.CharacterSlot * LegacyAccountSnapshot.CharacterStride);
+        if (accountFile[characterOffset + LegacyAccountSnapshot.MobNameOffset] == 0)
+            return AtomicCharacterStateSaveResult.CharacterNotAvailable;
+
+        request.Mob.CopyTo(accountFile.AsSpan(characterOffset, LegacyAccountSnapshot.CharacterStride));
+        BinaryPrimitives.WriteInt16LittleEndian(
+            accountFile.AsSpan(characterOffset + LegacyAccountSnapshot.MobSavedPositionXOffset), request.PositionX);
+        BinaryPrimitives.WriteInt16LittleEndian(
+            accountFile.AsSpan(characterOffset + LegacyAccountSnapshot.MobSavedPositionYOffset), request.PositionY);
+        request.MobExtra.CopyTo(accountFile.AsSpan(
+            LegacyAccountSnapshot.MobExtraOffset + (request.CharacterSlot * LegacyAccountSnapshot.MobExtraStride),
+            LegacyAccountSnapshot.MobExtraStride));
+
+        var coin = BinaryPrimitives.ReadInt32LittleEndian(request.Mob.AsSpan(LegacyAccountSnapshot.MobCoinOffset));
+        BinaryPrimitives.WriteInt32LittleEndian(accountFile.AsSpan(LegacyAccountSnapshot.AccountCoinOffset), coin);
+        return AtomicCharacterStateSaveResult.Success;
+    }
+
+    private async ValueTask RecoverAtomicJournalAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(atomicJournalPath))
+            return;
+
+        AtomicJournalDocument? document;
+        try
+        {
+            var json = await File.ReadAllTextAsync(atomicJournalPath, cancellationToken);
+            document = JsonSerializer.Deserialize<AtomicJournalDocument>(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The legacy file account atomic journal is invalid.", exception);
+        }
+
+        ValidateAtomicJournal(document);
+        var entries = document!.Files!;
+        if (document.Phase == AtomicPreparedPhase)
+        {
+            for (var index = entries.Count - 1; index >= 0; index--)
+                await WriteAtomicBlobAsync(entries[index].Path, entries[index].Before, cancellationToken);
+        }
+        else
+        {
+            foreach (var entry in entries)
+                await WriteAtomicBlobAsync(entry.Path, entry.After, cancellationToken);
+        }
+
+        DeleteAtomicJournal();
+    }
+
+    private async ValueTask WriteAtomicJournalAsync(AtomicJournalDocument document, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(accountRoot);
+        var temporaryPath = atomicJournalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan))
+            {
+                await JsonSerializer.SerializeAsync(stream, document, cancellationToken: cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, atomicJournalPath, overwrite: true);
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(temporaryPath);
+        }
+    }
+
+    private static async ValueTask WriteAtomicBlobAsync(string path, byte[] bytes, CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(directory))
+            throw new InvalidDataException("The legacy account atomic journal contains a path without a directory.");
+
+        Directory.CreateDirectory(directory);
+        var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 8192, FileOptions.SequentialScan))
+            {
+                await stream.WriteAsync(bytes, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(temporaryPath);
+        }
+    }
+
+    private void ValidateAtomicJournal(AtomicJournalDocument? document)
+    {
+        if (document is null ||
+            document.Version != AtomicJournalVersion ||
+            document.Phase is not (AtomicPreparedPhase or AtomicCommittedPhase) ||
+            document.Files is null ||
+            document.Files.Count != 2)
+            throw new InvalidDataException("The legacy file account atomic journal has an unsupported shape.");
+
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in document.Files)
+        {
+            if (entry is null ||
+                string.IsNullOrWhiteSpace(entry.Path) ||
+                !IsInsideAccountRoot(entry.Path) ||
+                !paths.Add(Path.GetFullPath(entry.Path)) ||
+                entry.Before is null ||
+                entry.After is null ||
+                entry.Before.Length < LegacyAccountSnapshot.RequiredFileLength ||
+                entry.After.Length != entry.Before.Length)
+                throw new InvalidDataException("The legacy file account atomic journal contains an invalid file entry.");
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try { File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private void DeleteAtomicJournal()
+    {
+        try { File.Delete(atomicJournalPath); }
+        catch (FileNotFoundException) { }
+    }
+
+    private sealed record AtomicJournalDocument(int Version, string Phase, IReadOnlyList<AtomicJournalEntry> Files);
+
+    private sealed record AtomicJournalEntry(string Path, byte[] Before, byte[] After);
 
     private static void WriteCString(Span<byte> destination, string value)
     {

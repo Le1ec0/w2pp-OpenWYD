@@ -1,0 +1,61 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=24",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=24",
+  "cases": [
+    {
+      "name": "no-possessed-affect",
+      "startingArmorClass": 100,
+      "records": [],
+      "targetExpected": { "armorClass": 100 },
+      "w2ppExpected": { "armorClass": 100 }
+    },
+    {
+      "name": "basic-quarter-plus-value",
+      "startingArmorClass": 100,
+      "records": [{ "slot": 0, "type": 24, "value": 5, "level": 0 }],
+      "targetExpected": { "armorClass": 130 },
+      "w2ppExpected": { "armorClass": 130 }
+    },
+    {
+      "name": "integer-division-truncates-current-armor",
+      "startingArmorClass": 103,
+      "records": [{ "slot": 1, "type": 24, "value": 7, "level": 255 }],
+      "targetExpected": { "armorClass": 135 },
+      "w2ppExpected": { "armorClass": 135 }
+    },
+    {
+      "name": "repeated-affects-are-sequential",
+      "startingArmorClass": 101,
+      "records": [
+        { "slot": 0, "type": 24, "value": 0, "level": 0 },
+        { "slot": 1, "type": 24, "value": 3, "level": 0 }
+      ],
+      "targetExpected": { "armorClass": 160 },
+      "w2ppExpected": { "armorClass": 160 }
+    },
+    {
+      "name": "small-armor-keeps-integer-floor",
+      "startingArmorClass": 3,
+      "records": [{ "slot": 2, "type": 24, "value": 0, "level": 1 }],
+      "targetExpected": { "armorClass": 3 },
+      "w2ppExpected": { "armorClass": 3 }
+    },
+    {
+      "name": "large-armor-and-value",
+      "startingArmorClass": 1000,
+      "records": [{ "slot": 3, "type": 24, "value": 10, "level": 99 }],
+      "targetExpected": { "armorClass": 1260 },
+      "w2ppExpected": { "armorClass": 1260 }
+    },
+    {
+      "name": "other-affects-are-ignored",
+      "startingArmorClass": 200,
+      "records": [
+        { "slot": 4, "type": 13, "value": 20, "level": 100 },
+        { "slot": 5, "type": 14, "value": 20, "level": 100 }
+      ],
+      "targetExpected": { "armorClass": 200 },
+      "w2ppExpected": { "armorClass": 200 }
+    }
+  ]
+}

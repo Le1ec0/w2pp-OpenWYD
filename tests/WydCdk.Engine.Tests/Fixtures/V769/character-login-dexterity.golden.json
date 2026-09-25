@@ -1,0 +1,12 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=6",
+  "cases": [
+    { "name": "no-dexterity-affect", "startingDexterity": 100, "records": [], "targetExpected": 100, "w2ppExpected": 100 },
+    { "name": "positive-twenty-five-percent", "startingDexterity": 100, "records": [{ "slot": 0, "type": 6, "value": 25, "level": 0 }], "targetExpected": 125, "w2ppExpected": 125 },
+    { "name": "float-truncation", "startingDexterity": 101, "records": [{ "slot": 1, "type": 6, "value": 33, "level": 255 }], "targetExpected": 134, "w2ppExpected": 134 },
+    { "name": "repeated-affects-are-sequential", "startingDexterity": 10, "records": [{ "slot": 2, "type": 6, "value": 50, "level": 0 }, { "slot": 3, "type": 6, "value": 50, "level": 0 }], "targetExpected": 22, "w2ppExpected": 22 },
+    { "name": "zero-value-preserves-dexterity", "startingDexterity": -25, "records": [{ "slot": 4, "type": 6, "value": 0, "level": 65535 }], "targetExpected": -25, "w2ppExpected": -25 },
+    { "name": "maximum-value", "startingDexterity": 1000, "records": [{ "slot": 5, "type": 6, "value": 255, "level": 1 }], "targetExpected": 3550, "w2ppExpected": 3550 },
+    { "name": "other-affects-are-ignored", "startingDexterity": 100, "records": [{ "slot": 6, "type": 2, "value": 99, "level": 255 }, { "slot": 7, "type": 15, "value": 5, "level": 100 }], "targetExpected": 100, "w2ppExpected": 100 }
+  ]
+}

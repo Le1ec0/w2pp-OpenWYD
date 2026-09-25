@@ -1,0 +1,125 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore final face-gated damage addition and multiplier",
+  "cases": [
+    {
+      "name": "mortal-face-below-four-adds-stats-special-and-level",
+      "input": {
+        "damage": 500,
+        "strength": 101,
+        "dexterity": 70,
+        "special1": 11,
+        "level": 400,
+        "face": 3,
+        "classMaster": 2,
+        "damageMultiplier": 100
+      },
+      "targetExpected": { "damage": 984 },
+      "w2ppExpected": { "damage": 984 }
+    },
+    {
+      "name": "arch-uses-level-without-maximum-level-offset",
+      "input": {
+        "damage": 1000,
+        "strength": 20,
+        "dexterity": 12,
+        "special1": 6,
+        "level": 399,
+        "face": 0,
+        "classMaster": 1,
+        "damageMultiplier": 100
+      },
+      "targetExpected": { "damage": 1419 },
+      "w2ppExpected": { "damage": 1419 }
+    },
+    {
+      "name": "non-arch-non-mortal-adds-maximum-level",
+      "input": {
+        "damage": 100,
+        "strength": 11,
+        "dexterity": 8,
+        "special1": 0,
+        "level": 1,
+        "face": 2,
+        "classMaster": 3,
+        "damageMultiplier": 100
+      },
+      "targetExpected": { "damage": 507 },
+      "w2ppExpected": { "damage": 507 }
+    },
+    {
+      "name": "face-four-does-not-add-stat-based-damage",
+      "input": {
+        "damage": 500,
+        "strength": 101,
+        "dexterity": 70,
+        "special1": 11,
+        "level": 400,
+        "face": 4,
+        "classMaster": 2,
+        "damageMultiplier": 100
+      },
+      "targetExpected": { "damage": 500 },
+      "w2ppExpected": { "damage": 500 }
+    },
+    {
+      "name": "integer-stat-addition-precedes-percent-multiplier",
+      "input": {
+        "damage": 101,
+        "strength": 21,
+        "dexterity": 10,
+        "special1": 0,
+        "level": 1,
+        "face": 3,
+        "classMaster": 2,
+        "damageMultiplier": 133
+      },
+      "targetExpected": { "damage": 152 },
+      "w2ppExpected": { "damage": 152 }
+    },
+    {
+      "name": "signed-stat-divisions-truncate-toward-zero",
+      "input": {
+        "damage": 100,
+        "strength": -3,
+        "dexterity": -5,
+        "special1": -2,
+        "level": 0,
+        "face": 1,
+        "classMaster": 2,
+        "damageMultiplier": 100
+      },
+      "targetExpected": { "damage": 96 },
+      "w2ppExpected": { "damage": 96 }
+    },
+    {
+      "name": "multiplier-applies-even-when-face-gate-is-closed",
+      "input": {
+        "damage": 101,
+        "strength": 21,
+        "dexterity": 10,
+        "special1": 0,
+        "level": 1,
+        "face": 4,
+        "classMaster": 2,
+        "damageMultiplier": 130
+      },
+      "targetExpected": { "damage": 131 },
+      "w2ppExpected": { "damage": 131 }
+    },
+    {
+      "name": "nonstandard-face-gate-still-adds-maximum-level",
+      "input": {
+        "damage": 500,
+        "strength": 2,
+        "dexterity": 4,
+        "special1": 1,
+        "level": 1,
+        "face": 3,
+        "classMaster": 0,
+        "damageMultiplier": 100
+      },
+      "targetExpected": { "damage": 903 },
+      "w2ppExpected": { "damage": 903 }
+    }
+  ]
+}

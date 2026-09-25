@@ -1,0 +1,56 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=2 Haste branch",
+  "cases": [
+    {
+      "name": "no-active-affects",
+      "targetExpected": { "runAddition": 0, "rsvFlagsToAdd": 0 },
+      "w2ppExpected": { "runAddition": 0, "rsvFlagsToAdd": 0 }
+    },
+    {
+      "name": "other-affect-types-do-not-change-run-or-haste-flag",
+      "records": [
+        { "slot": 0, "type": 3, "value": 50, "level": 100, "time": 600 },
+        { "slot": 1, "type": 16, "value": 4, "level": 255, "time": 1200 },
+        { "slot": 31, "type": 25, "value": 90, "level": 200, "time": 3600 }
+      ],
+      "targetExpected": { "runAddition": 0, "rsvFlagsToAdd": 0 },
+      "w2ppExpected": { "runAddition": 0, "rsvFlagsToAdd": 0 }
+    },
+    {
+      "name": "single-haste-adds-value-and-sets-rsv",
+      "records": [ { "slot": 7, "type": 2, "value": 5, "level": 300, "time": 0 } ],
+      "targetExpected": { "runAddition": 5, "rsvFlagsToAdd": 32 },
+      "w2ppExpected": { "runAddition": 5, "rsvFlagsToAdd": 32 }
+    },
+    {
+      "name": "multiple-haste-records-accumulate",
+      "records": [
+        { "slot": 0, "type": 2, "value": 1, "level": 1, "time": 1 },
+        { "slot": 11, "type": 2, "value": 7, "level": 0, "time": 0 },
+        { "slot": 31, "type": 2, "value": 255, "level": 65535, "time": 4294967295 }
+      ],
+      "targetExpected": { "runAddition": 263, "rsvFlagsToAdd": 32 },
+      "w2ppExpected": { "runAddition": 263, "rsvFlagsToAdd": 32 }
+    },
+    {
+      "name": "zero-value-haste-still-sets-rsv",
+      "records": [ { "slot": 31, "type": 2, "value": 0, "level": 0, "time": 0 } ],
+      "targetExpected": { "runAddition": 0, "rsvFlagsToAdd": 32 },
+      "w2ppExpected": { "runAddition": 0, "rsvFlagsToAdd": 32 }
+    },
+    {
+      "name": "all-32-haste-values-are-added-before-final-run-cap",
+      "repeat": 32,
+      "repeatedType": 2,
+      "repeatedValue": 255,
+      "targetExpected": { "runAddition": 8160, "rsvFlagsToAdd": 32 },
+      "w2ppExpected": { "runAddition": 8160, "rsvFlagsToAdd": 32 }
+    },
+    {
+      "name": "inactive-slots-ignore-residual-value-by-type-zero",
+      "records": [ { "slot": 4, "type": 0, "value": 255, "level": 65535, "time": 4294967295 } ],
+      "targetExpected": { "runAddition": 0, "rsvFlagsToAdd": 0 },
+      "w2ppExpected": { "runAddition": 0, "rsvFlagsToAdd": 0 }
+    }
+  ]
+}

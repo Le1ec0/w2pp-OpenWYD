@@ -1,0 +1,12 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=12",
+  "cases": [
+    { "name": "no-armor-reduction", "startingArmorClass": 100, "records": [], "targetExpected": 100, "w2ppExpected": 100 },
+    { "name": "twenty-five-percent-reduction", "startingArmorClass": 100, "records": [{ "slot": 0, "type": 12, "value": 25, "level": 0 }], "targetExpected": 75, "w2ppExpected": 75 },
+    { "name": "float-truncation", "startingArmorClass": 101, "records": [{ "slot": 1, "type": 12, "value": 33, "level": 255 }], "targetExpected": 67, "w2ppExpected": 67 },
+    { "name": "repeated-reductions-are-sequential", "startingArmorClass": 100, "records": [{ "slot": 2, "type": 12, "value": 10, "level": 0 }, { "slot": 3, "type": 12, "value": 10, "level": 0 }], "targetExpected": 81, "w2ppExpected": 81 },
+    { "name": "full-reduction", "startingArmorClass": 123, "records": [{ "slot": 4, "type": 12, "value": 100, "level": 65535 }], "targetExpected": 0, "w2ppExpected": 0 },
+    { "name": "negative-factor", "startingArmorClass": 100, "records": [{ "slot": 5, "type": 12, "value": 255, "level": 1 }], "targetExpected": -155, "w2ppExpected": -155 },
+    { "name": "other-affects-are-ignored", "startingArmorClass": 100, "records": [{ "slot": 6, "type": 2, "value": 99, "level": 255 }, { "slot": 7, "type": 15, "value": 5, "level": 100 }], "targetExpected": 100, "w2ppExpected": 100 }
+  ]
+}

@@ -13,8 +13,12 @@ public sealed class MessagePanelConfirmation(string message)
     {
         ArgumentNullException.ThrowIfNull(codec);
         var payload = new byte[MessageLength];
-        var count = Math.Min(Encoding.ASCII.GetByteCount(message), MessageLength - 1);
-        Encoding.ASCII.GetBytes(message.AsSpan(), payload.AsSpan(0, count));
+        // TMSrv copies the bytes loaded from Language.txt directly into the
+        // char[128] field. The released table is Windows-1252/Latin-1 text;
+        // Latin1 preserves the Portuguese characters without making the
+        // protocol depend on the optional CodePages provider.
+        var count = Math.Min(Encoding.Latin1.GetByteCount(message), MessageLength - 2);
+        Encoding.Latin1.GetBytes(message.AsSpan(), payload.AsSpan(0, count));
         return codec.Encode(MessageType, 0, clientTick, payload, keywordIndex);
     }
 }

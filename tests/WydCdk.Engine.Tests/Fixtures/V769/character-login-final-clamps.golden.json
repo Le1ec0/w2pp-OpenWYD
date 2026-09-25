@@ -1,0 +1,77 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore final Cur Resist scalar clamps",
+  "cases": [
+    {
+      "name": "lower-upper-and-target-magic-caps",
+      "input": {
+        "hp": -12,
+        "mp": 80,
+        "maxHp": 100,
+        "maxMp": 75,
+        "regenHp": -4,
+        "regenMp": 260,
+        "magic": 250000000,
+        "critical": 300,
+        "resist": [-1, 101, 0, 100]
+      },
+      "targetExpected": {
+        "hp": 0,
+        "mp": 75,
+        "regenHp": 0,
+        "regenMp": 255,
+        "magic": 190000000,
+        "critical": 255,
+        "resist": [0, 100, 0, 100]
+      },
+      "w2ppExpected": {
+        "magic": 250000000
+      }
+    },
+    {
+      "name": "health-upper-and-lower-without-magic-or-critical-cap",
+      "input": {
+        "hp": 200,
+        "mp": -20,
+        "maxHp": 100,
+        "maxMp": 70,
+        "regenHp": 255,
+        "regenMp": 0,
+        "magic": 1234,
+        "critical": -3,
+        "resist": [10, 99, 100, -50]
+      },
+      "targetExpected": {
+        "hp": 100,
+        "mp": 0,
+        "regenHp": 255,
+        "regenMp": 0,
+        "magic": 1234,
+        "critical": -3,
+        "resist": [10, 99, 100, 0]
+      }
+    },
+    {
+      "name": "inclusive-cap-boundaries",
+      "input": {
+        "hp": 100,
+        "mp": 70,
+        "maxHp": 100,
+        "maxMp": 70,
+        "regenHp": 0,
+        "regenMp": 255,
+        "magic": 190000000,
+        "critical": 254,
+        "resist": [100, 0, 50, 50]
+      },
+      "targetExpected": {
+        "hp": 100,
+        "mp": 70,
+        "regenHp": 0,
+        "regenMp": 255,
+        "magic": 190000000,
+        "critical": 254,
+        "resist": [100, 0, 50, 50]
+      }
+    }
+  ]
+}

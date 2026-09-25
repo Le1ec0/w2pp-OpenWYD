@@ -1,0 +1,12 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=15",
+  "cases": [
+    { "name": "no-athena-touch", "startingSpecials": [0, 0, 0, 0], "records": [], "targetExpected": [0, 0, 0, 0], "w2ppExpected": [0, 0, 0, 0] },
+    { "name": "basic-level-and-value", "startingSpecials": [0, 0, 0, 0], "records": [{ "slot": 0, "type": 15, "value": 5, "level": 100 }], "targetExpected": [15, 15, 15, 15], "w2ppExpected": [15, 15, 15, 15] },
+    { "name": "integer-division-before-addition", "startingSpecials": [0, 0, 0, 0], "records": [{ "slot": 1, "type": 15, "value": 5, "level": 19 }], "targetExpected": [6, 6, 6, 6], "w2ppExpected": [6, 6, 6, 6] },
+    { "name": "special-one-cap-diverges", "startingSpecials": [190, 250, 254, 0], "records": [{ "slot": 2, "type": 15, "value": 15, "level": 100 }], "targetExpected": [215, 255, 255, 25], "w2ppExpected": [200, 255, 255, 25] },
+    { "name": "repeated-touches-accumulate", "startingSpecials": [0, 1, 2, 3], "records": [{ "slot": 3, "type": 15, "value": 3, "level": 10 }, { "slot": 4, "type": 15, "value": 7, "level": 20 }], "targetExpected": [13, 14, 15, 16], "w2ppExpected": [13, 14, 15, 16] },
+    { "name": "maximum-level-and-value", "startingSpecials": [0, 0, 0, 0], "records": [{ "slot": 5, "type": 15, "value": 255, "level": 65535 }], "targetExpected": [255, 255, 255, 255], "w2ppExpected": [200, 255, 255, 255] },
+    { "name": "other-affects-are-ignored", "startingSpecials": [1, 2, 3, 4], "records": [{ "slot": 6, "type": 2, "value": 99, "level": 255 }, { "slot": 7, "type": 11, "value": 5, "level": 200 }], "targetExpected": [1, 2, 3, 4], "w2ppExpected": [1, 2, 3, 4] }
+  ]
+}

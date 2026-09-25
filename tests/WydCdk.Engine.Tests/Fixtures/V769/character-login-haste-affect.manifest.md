@@ -1,0 +1,7 @@
+# Character-login Haste affect stage (7.69)
+
+- Target: `Backup/Tools/ReferenceSources/TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore`, `Affect.Type == 2` at lines 3826-3832. Source SHA-256: `D84B2E358825CC0AF1FF8D0CFD316E09304892C15422A48C3D94A3D047927610`.
+- Data: for every one of the 32 affect slots whose `Type` is 2, add its unsigned `Value` byte to the accumulated `Run` and OR `RSV_HASTE` (`0x20`) into `MOB.Rsv`. `Level` and `Time` are not consulted in this branch. The target `STRUCT_AFFECT` is eight bytes (`Type`, `Value`, `Level`, `Time`); header SHA-256 `B59A7C5FC76D898C10E3600005920A56450725480C8C5D485DE8F199762307E8`.
+- W2PP comparison: `Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore`, `Type == 2` at lines 3950-3954; source SHA-256 `C9E04E7F0AAC87DFDAB367B77F3DC8384355FE1166898FFEB62E095C551B99F7`. Formula/order and `RSV_HASTE=0x20` match; W2PP header SHA-256 `382E9313FC7D8AF3A4BD87363E5A5403E7C64D5B900FB4DC72AE3EA044175FA3`.
+- Port: `LegacyCurrentScoreMath.CalculateHasteAffectStage` returns the additive Run delta and Rsv mask to OR. It does not mutate a MOB, clamp Run, or integrate the other affect branches; the terminal AttackRun stage applies the final cap.
+- Fixture: seven synthetic cases cover empty/unrelated slots, repeated Type=2, zero-valued active Haste, all 32 slots, and the ignored Level/Time fields. A separate test-only W2PP evaluator checks every case. These are source-derived checks, not runtime C++ captures.

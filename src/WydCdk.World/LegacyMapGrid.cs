@@ -64,4 +64,11 @@ public sealed class LegacyMapGrid
         x < 0 || y < 0 || x >= HeightWidth || y >= HeightHeight
             ? null
             : height[(y * HeightWidth) + x];
+
+    internal bool IsInsideDynamicHeight(int x, int y) =>
+        x >= 1 && y >= 1 && x <= HeightWidth - 2 && y <= HeightHeight - 2;
+
+    internal int GetMutableTerrainHeight(int x, int y) => height[(y * HeightWidth) + x];
+
+    internal void SetMutableTerrainHeight(int x, int y, int value) => height[(y * HeightWidth) + x] = checked((byte)value);
 }

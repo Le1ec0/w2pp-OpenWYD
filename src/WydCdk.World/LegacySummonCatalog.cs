@@ -3,14 +3,14 @@ using WydCdk.Protocol;
 namespace WydCdk.World;
 
 /// <summary>
-/// The 50 summon slots used by <c>CNPCSummon::Initialize</c>. The reference
-/// release populates the first 40 slots; the remaining slots stay zeroed in
-/// the legacy global array and are therefore intentionally unavailable here.
+/// The 50 summon slots used by <c>CNPCSummon::Initialize</c>. The 7.69/W2PP
+/// sources populate the first 43 slots; slots 43..49 remain unavailable.
 /// </summary>
 public sealed class LegacySummonCatalog
 {
     public const int SlotCount = 50;
-    public const int LoadedSlotCount = 40;
+    public const int LoadedSlotCount = 43;
+    public const int HistoricalLoadedSlotCount = 40;
 
     private static readonly string[] FileNames =
     [
@@ -18,6 +18,7 @@ public sealed class LegacySummonCatalog
         "Porco", "Javali", "Lobo", "Dragao_Menor", "Urso", "Dente_de_Sabre", "Sem_Sela_N", "Fantasma_N", "Leve_N", "Equip_N",
         "Andaluz_N", "Sem_Sela_B", "Fantasma_B", "Leve_B", "Equip_B", "Andaluz_B", "Fenrir", "Dragao", "FenrirSombra", "Tigre_de_Fogo",
         "Dragao_Vermelho", "Unicornio", "Pegasus", "Unisus", "Grifo", "Hipogrifo", "Grifo_Sangrento", "Svadilfire", "Sleipnir", "Pantera_Negra",
+        "Cav._Arcano", "Arq._Arcano", "Mag._Arcano",
     ];
 
     // STRUCT_BEASTBONUS fields Unk..Unk6 from Basedef.cpp. Only these six
@@ -33,12 +34,15 @@ public sealed class LegacySummonCatalog
 
     private LegacySummonCatalog(LegacySummonTemplate?[] templates) => this.templates = templates;
 
-    public static LegacySummonCatalog Load(string baseSummonRoot)
+    public static LegacySummonCatalog Load(string baseSummonRoot, int loadedSlotCount = LoadedSlotCount)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseSummonRoot);
+        if (loadedSlotCount is < 0 or > LoadedSlotCount)
+            throw new ArgumentOutOfRangeException(nameof(loadedSlotCount), loadedSlotCount, $"The summon catalog supports 0..{LoadedSlotCount} initialized slots.");
+
         var root = Path.GetFullPath(baseSummonRoot);
         var templates = new LegacySummonTemplate?[SlotCount];
-        for (var index = 0; index < LoadedSlotCount; index++)
+        for (var index = 0; index < loadedSlotCount; index++)
         {
             var path = Path.Combine(root, FileNames[index]);
             var mob = File.ReadAllBytes(path);

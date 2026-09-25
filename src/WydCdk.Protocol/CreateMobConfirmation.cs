@@ -13,6 +13,9 @@ public sealed class CreateMobConfirmation
     private const int EquipmentCount = 16;
     private const int AffectCount = 32;
     private const int ScoreSize = 48;
+    private const int MobCarryOffset = 268;
+    private const int KillMarkSlot = 63;
+    private const int KillMarkOffset = MobCarryOffset + (KillMarkSlot * LegacyItem.SizeInBytes);
     private readonly short positionX;
     private readonly short positionY;
     private readonly ushort mobId;
@@ -44,6 +47,18 @@ public sealed class CreateMobConfirmation
         BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(2), positionY);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(4), mobId);
         mob.AsSpan(0, NameLength).CopyTo(payload.AsSpan(6, NameLength));
+
+        // GetCreateMob overwrites the last four name bytes with the player
+        // metadata consumed by TMHuman: chaos/CP, current kills and total
+        // kills.  Without this, other clients interpret trailing zeroes as
+        // chaos level zero and render the name as permanently negative.
+        if (createType == 0 && mobId > 0 && mobId < 1000)
+        {
+            payload[6 + 12] = mob[KillMarkOffset + 2];
+            payload[6 + 13] = mob[KillMarkOffset + 3];
+            payload[6 + 14] = mob[KillMarkOffset + 5];
+            payload[6 + 15] = mob[KillMarkOffset + 7];
+        }
 
         for (var index = 0; index < EquipmentCount; index++)
             BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(22 + (index * 2)), BinaryPrimitives.ReadUInt16LittleEndian(mob.AsSpan(140 + (index * LegacyItem.SizeInBytes))));

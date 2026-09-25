@@ -1,0 +1,58 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=1",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=1",
+  "cases": [
+    {
+      "name": "no-holy-touch-affect",
+      "headItemIndex": 7,
+      "records": [],
+      "targetExpected": { "runDelta": 0, "attackDelta": 0, "intelligenceDelta": 0 },
+      "w2ppExpected": { "runDelta": 0, "attackDelta": 0, "intelligenceDelta": 0 }
+    },
+    {
+      "name": "run-value-and-fixed-attack-penalty",
+      "headItemIndex": 7,
+      "records": [{ "slot": 0, "type": 1, "value": 25, "level": 0 }],
+      "targetExpected": { "runDelta": -25, "attackDelta": -30, "intelligenceDelta": 0 },
+      "w2ppExpected": { "runDelta": -25, "attackDelta": -30, "intelligenceDelta": 0 }
+    },
+    {
+      "name": "head-item-gate-applies-intelligence-penalty",
+      "headItemIndex": 51,
+      "records": [{ "slot": 0, "type": 1, "value": 25, "level": 0 }],
+      "targetExpected": { "runDelta": -25, "attackDelta": -30, "intelligenceDelta": -40 },
+      "w2ppExpected": { "runDelta": -25, "attackDelta": -30, "intelligenceDelta": -40 }
+    },
+    {
+      "name": "multiple-affects-accumulate",
+      "headItemIndex": 100,
+      "records": [
+        { "slot": 0, "type": 1, "value": 10, "level": 0 },
+        { "slot": 1, "type": 1, "value": 20, "level": 0 }
+      ],
+      "targetExpected": { "runDelta": -30, "attackDelta": -60, "intelligenceDelta": -80 },
+      "w2ppExpected": { "runDelta": -30, "attackDelta": -60, "intelligenceDelta": -80 }
+    },
+    {
+      "name": "zero-value-still-reduces-attack",
+      "headItemIndex": 7,
+      "records": [{ "slot": 0, "type": 1, "value": 0, "level": 0 }],
+      "targetExpected": { "runDelta": 0, "attackDelta": -30, "intelligenceDelta": 0 },
+      "w2ppExpected": { "runDelta": 0, "attackDelta": -30, "intelligenceDelta": 0 }
+    },
+    {
+      "name": "byte-value-255-is-subtracted",
+      "headItemIndex": 60,
+      "records": [{ "slot": 0, "type": 1, "value": 255, "level": 0 }],
+      "targetExpected": { "runDelta": -255, "attackDelta": -30, "intelligenceDelta": -40 },
+      "w2ppExpected": { "runDelta": -255, "attackDelta": -30, "intelligenceDelta": -40 }
+    },
+    {
+      "name": "other-affects-are-ignored",
+      "headItemIndex": 100,
+      "records": [{ "slot": 0, "type": 5, "value": 25, "level": 0 }],
+      "targetExpected": { "runDelta": 0, "attackDelta": 0, "intelligenceDelta": 0 },
+      "w2ppExpected": { "runDelta": 0, "attackDelta": 0, "intelligenceDelta": 0 }
+    }
+  ]
+}

@@ -241,6 +241,7 @@ internal sealed class MainForm : Form
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
@@ -306,7 +307,18 @@ internal sealed class MainForm : Form
         if (process is null) return;
         try
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            if (!process.HasExited)
+            {
+                AppendLog("Solicitando parada cooperativa do núcleo...");
+                process.StandardInput.WriteLine("stop");
+                process.StandardInput.Flush();
+                if (!process.WaitForExit(5000))
+                {
+                    AppendLog("O núcleo não encerrou em 5 segundos; usando encerramento forçado de fallback.");
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(5000);
+                }
+            }
         }
         catch (InvalidOperationException) { }
         catch (System.ComponentModel.Win32Exception) { }

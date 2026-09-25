@@ -1,0 +1,269 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Type=16 composition of audited stages",
+  "cases": [
+    {
+      "name": "no-transform-keeps-score-stages-and-composes-other-resistance",
+      "characterClass": 2,
+      "learnedSkills": 0,
+      "characterLevel": 100,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 0, "type": 2, "value": 99, "level": 200 }, { "slot": 1, "type": 25, "value": 50, "level": 255 }],
+      "targetExpected": {
+        "hasActiveTransformation": false,
+        "speed": { "attackSpeedBonus": 0, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 0 },
+        "armorClass": 100,
+        "maxHp": 1000,
+        "criticalAddition": 0,
+        "headItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 41, "thunder": 51, "fire": 61, "ice": 71, "headItemIndex": 7 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": false,
+        "speed": { "attackSpeedBonus": 0, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 0 },
+        "armorClass": 100,
+        "maxHp": 1000,
+        "criticalAddition": 0,
+        "headItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 10, "thunder": 51, "fire": 61, "ice": 71, "headItemIndex": 7 }
+      }
+    },
+    {
+      "name": "wolf-skill-composes-target-and-w2pp-differences",
+      "characterClass": 2,
+      "learnedSkills": 131072,
+      "characterLevel": 100,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 1, "type": 16, "value": 1, "level": 100 }],
+      "targetExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 15, "runSpeedBonus": 1 },
+        "damage": { "damageAddition": 10, "damageMultiplierAdjustment": 45 },
+        "armorClass": 105,
+        "maxHp": 1000,
+        "criticalAddition": 5,
+        "headItem": { "index": 22, "effect1": 43, "value1": 4, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 15, "thunder": 25, "fire": 35, "ice": 45, "headItemIndex": 22 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 15, "runSpeedBonus": 1 },
+        "damage": { "damageAddition": 10, "damageMultiplierAdjustment": 30 },
+        "armorClass": 108,
+        "maxHp": 1050,
+        "criticalAddition": 5,
+        "headItem": { "index": 22, "effect1": 43, "value1": 4, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 10, "thunder": 20, "fire": 30, "ice": 40, "headItemIndex": 22 }
+      }
+    },
+    {
+      "name": "bear-skill-composes-hp-and-resistance-divergence",
+      "characterClass": 2,
+      "learnedSkills": 524288,
+      "characterLevel": 100,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 2, "type": 16, "value": 2, "level": 100 }],
+      "targetExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 80, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": -10 },
+        "armorClass": 105,
+        "maxHp": 1350,
+        "criticalAddition": 0,
+        "headItem": { "index": 23, "effect1": 43, "value1": 0, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 30, "thunder": 40, "fire": 50, "ice": 60, "headItemIndex": 23 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 100, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": -10 },
+        "armorClass": 105,
+        "maxHp": 1400,
+        "criticalAddition": 0,
+        "headItem": { "index": 23, "effect1": 43, "value1": 0, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 50, "thunder": 60, "fire": 70, "ice": 80, "headItemIndex": 23 }
+      }
+    },
+    {
+      "name": "astaroth-skill-composes-critical-divergence",
+      "characterClass": 2,
+      "learnedSkills": 2097152,
+      "characterLevel": 100,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 3, "type": 16, "value": 3, "level": 100 }],
+      "targetExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 135, "runSpeedBonus": 1 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 20 },
+        "armorClass": 115,
+        "maxHp": 1150,
+        "criticalAddition": 0,
+        "headItem": { "index": 24, "effect1": 43, "value1": 0, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 25, "thunder": 35, "fire": 45, "ice": 55, "headItemIndex": 24 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 135, "runSpeedBonus": 1 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 20 },
+        "armorClass": 115,
+        "maxHp": 1150,
+        "criticalAddition": 5,
+        "headItem": { "index": 24, "effect1": 43, "value1": 0, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 25, "thunder": 35, "fire": 45, "ice": 55, "headItemIndex": 24 }
+      }
+    },
+    {
+      "name": "titan-composes-target-and-w2pp-speed-ac-resistance-differences",
+      "characterClass": 2,
+      "learnedSkills": 0,
+      "characterLevel": 200,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 4, "type": 16, "value": 4, "level": 200 }],
+      "targetExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 165, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 10 },
+        "armorClass": 145,
+        "maxHp": 1150,
+        "criticalAddition": 0,
+        "headItem": { "index": 25, "effect1": 43, "value1": 2, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 30, "thunder": 40, "fire": 50, "ice": 60, "headItemIndex": 25 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 185, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 10 },
+        "armorClass": 135,
+        "maxHp": 1150,
+        "criticalAddition": 0,
+        "headItem": { "index": 25, "effect1": 43, "value1": 2, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 10, "thunder": 20, "fire": 30, "ice": 40, "headItemIndex": 25 }
+      }
+    },
+    {
+      "name": "eden-composes-damage-critical-equipment-and-resistance-differences",
+      "characterClass": 2,
+      "learnedSkills": 0,
+      "characterLevel": 200,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 5, "type": 16, "value": 5, "level": 200 }],
+      "targetExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 180, "runSpeedBonus": 3 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 40 },
+        "armorClass": 130,
+        "maxHp": 1250,
+        "criticalAddition": 10,
+        "headItem": { "index": 32, "effect1": 43, "value1": 2, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 30, "thunder": 40, "fire": 50, "ice": 60, "headItemIndex": 32 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 175, "runSpeedBonus": 3 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 30 },
+        "armorClass": 125,
+        "maxHp": 1250,
+        "criticalAddition": 6,
+        "headItem": { "index": 32, "effect1": 43, "value1": 2, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 20, "thunder": 30, "fire": 40, "ice": 50, "headItemIndex": 32 }
+      }
+    },
+    {
+      "name": "repeated-wolf-then-eden-preserves-order-ac-maxhp-critical-and-resistance",
+      "characterClass": 2,
+      "learnedSkills": 131072,
+      "characterLevel": 200,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [10, 20, 30, 40],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 6, "type": 16, "value": 1, "level": 100 }, { "slot": 7, "type": 16, "value": 5, "level": 200 }],
+      "targetExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 180, "runSpeedBonus": 3 },
+        "damage": { "damageAddition": 10, "damageMultiplierAdjustment": 85 },
+        "armorClass": 136,
+        "maxHp": 1250,
+        "criticalAddition": 15,
+        "headItem": { "index": 32, "effect1": 43, "value1": 2, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 35, "thunder": 45, "fire": 55, "ice": 65, "headItemIndex": 32 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": true,
+        "speed": { "attackSpeedBonus": 175, "runSpeedBonus": 3 },
+        "damage": { "damageAddition": 10, "damageMultiplierAdjustment": 60 },
+        "armorClass": 135,
+        "maxHp": 1312,
+        "criticalAddition": 11,
+        "headItem": { "index": 32, "effect1": 43, "value1": 2, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 20, "thunder": 30, "fire": 40, "ice": 50, "headItemIndex": 32 }
+      }
+    },
+    {
+      "name": "non-beastmaster-transformation-is-rejected-but-other-resistance-remains",
+      "characterClass": 1,
+      "learnedSkills": 2097152,
+      "characterLevel": 100,
+      "classMaster": 2,
+      "special3": 0,
+      "startingArmorClass": 100,
+      "startingMaxHp": 1000,
+      "resist": [100, 100, 100, 100],
+      "startingHeadItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+      "records": [{ "slot": 8, "type": 16, "value": 5, "level": 200 }, { "slot": 9, "type": 3, "value": 20, "level": 0 }, { "slot": 10, "type": 25, "value": 50, "level": 255 }],
+      "targetExpected": {
+        "hasActiveTransformation": false,
+        "speed": { "attackSpeedBonus": 0, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 0 },
+        "armorClass": 100,
+        "maxHp": 1000,
+        "criticalAddition": 0,
+        "headItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 121, "thunder": 121, "fire": 121, "ice": 121, "headItemIndex": 7 }
+      },
+      "w2ppExpected": {
+        "hasActiveTransformation": false,
+        "speed": { "attackSpeedBonus": 0, "runSpeedBonus": 0 },
+        "damage": { "damageAddition": 0, "damageMultiplierAdjustment": 0 },
+        "armorClass": 100,
+        "maxHp": 1000,
+        "criticalAddition": 0,
+        "headItem": { "index": 7, "effect1": 2, "value1": 3, "effect2": 4, "value2": 5, "effect3": 6, "value3": 7 },
+        "resistance": { "holy": 90, "thunder": 121, "fire": 121, "ice": 121, "headItemIndex": 7 }
+      }
+    }
+  ]
+}

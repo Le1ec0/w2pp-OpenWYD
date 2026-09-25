@@ -29,6 +29,15 @@ public static class MariaDbConnectionFactory
         if (string.IsNullOrWhiteSpace(options.Host) || options.Port is < 1 or > 65535 || string.IsNullOrWhiteSpace(options.Database) || string.IsNullOrWhiteSpace(options.Username))
             throw new InvalidDataException("MariaDB configuration requires host, valid port, database, and username.");
 
+        return FromOptions(options);
+    }
+
+    public static Func<DbConnection> FromOptions(MariaDbConnectionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (string.IsNullOrWhiteSpace(options.Host) || options.Port is < 1 or > 65535 || string.IsNullOrWhiteSpace(options.Database) || string.IsNullOrWhiteSpace(options.Username))
+            throw new InvalidDataException("MariaDB configuration requires host, valid port, database, and username.");
+
         var factory = ResolveFactory(options.Provider);
         var connectionString = $"Server={Escape(options.Host)};Port={options.Port};Database={Escape(options.Database)};User ID={Escape(options.Username)};Password={Escape(options.Password)};SslMode={Escape(options.SslMode)};";
         return () =>

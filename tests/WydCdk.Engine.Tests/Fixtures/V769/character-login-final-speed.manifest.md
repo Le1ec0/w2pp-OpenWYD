@@ -1,0 +1,8 @@
+# Character-login final AttackRun stage (7.69)
+
+- Target: `Backup/Tools/ReferenceSources/TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore`, `Cur SpeedRun` at lines 4444-4483. Source SHA-256: `D84B2E358825CC0AF1FF8D0CFD316E09304892C15422A48C3D94A3D047927610`.
+- Order: add accumulated `AttackSpeedBonus` and `Dexterity / 5` to `Att`; add `RunSpeedBonus` to `Run`; apply the mount run floor only when cached `face <= 4`; clamp Run to 0..6 and Att to 0..150; integer-divide Att by 10; pack `AttackRun = Att * 16 + Run`.
+- Mount boundary: this stage accepts an already-resolved floor from `LegacyMountRunRules`, which ports the table and item/effect gate in `character-login-mount-speed.manifest.md`. `face` is the local cached before affect/transform processing, not a later rewritten head item.
+- W2PP comparison: `Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore`, final AttackRun block at lines 4675-4711; function SHA-256 `C9E04E7F0AAC87DFDAB367B77F3DC8384355FE1166898FFEB62E095C551B99F7`. The final arithmetic/order and face gate match for identical accumulated inputs and pre-resolved mount floor.
+- Port: `LegacyCurrentScoreMath.ApplyFinalAttackRunStage` is a pure isolated stage. It does not compute upstream equipment seeds, affect bonuses, transformation bonuses, or write a MOB/listener state.
+- Fixture: eight synthetic source-derived vectors cover integer division, lower/upper clamps, face-gated mount floor, floor-before-cap, non-reducing floor, and packed output. The test independently evaluates the W2PP final block against the same inputs; this is not a runtime C++ capture or full `CurrentScore` parity claim.

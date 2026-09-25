@@ -9,7 +9,8 @@ public enum LoginSessionState
     Accepted = 1,          // USER_ACCEPT
     LoginPending = 2,      // USER_LOGIN: waiting for the account-store result
     CharacterSelection = 11, // USER_SELCHAR
-    Playing = 12,          // USER_PLAY
+    CharacterWait = 12,    // USER_CHARWAIT: asynchronous character DB operation
+    Playing = 22,          // USER_PLAY
 }
 
 public enum LoginTransitionResult
@@ -85,9 +86,29 @@ public sealed class LoginSessionRegistry
     public LoginTransitionResult CompleteCharacterLogin(int connectionId, int characterSlot = -1, short positionX = 0, short positionY = 0)
     {
         if (!sessions.TryGetValue(connectionId, out var session)) return LoginTransitionResult.UnknownConnection;
-        if (session.State != LoginSessionState.CharacterSelection) return LoginTransitionResult.InvalidState;
+        if (session.State != LoginSessionState.CharacterWait) return LoginTransitionResult.InvalidState;
 
         sessions[connectionId] = session with { State = LoginSessionState.Playing, CharacterSlot = characterSlot, PositionX = positionX, PositionY = positionY };
+        return LoginTransitionResult.Accepted;
+    }
+
+    /// <summary>Starts the legacy asynchronous DB wait from USER_SELCHAR.</summary>
+    public LoginTransitionResult BeginCharacterWait(int connectionId)
+    {
+        if (!sessions.TryGetValue(connectionId, out var session)) return LoginTransitionResult.UnknownConnection;
+        if (session.State != LoginSessionState.CharacterSelection) return LoginTransitionResult.InvalidState;
+
+        sessions[connectionId] = session with { State = LoginSessionState.CharacterWait };
+        return LoginTransitionResult.Accepted;
+    }
+
+    /// <summary>Completes a create/delete DB refresh and returns to the legacy USER_SELCHAR state.</summary>
+    public LoginTransitionResult CompleteCharacterRefresh(int connectionId)
+    {
+        if (!sessions.TryGetValue(connectionId, out var session)) return LoginTransitionResult.UnknownConnection;
+        if (session.State != LoginSessionState.CharacterWait) return LoginTransitionResult.InvalidState;
+
+        sessions[connectionId] = session with { State = LoginSessionState.CharacterSelection };
         return LoginTransitionResult.Accepted;
     }
 
@@ -96,7 +117,7 @@ public sealed class LoginSessionRegistry
         if (!sessions.TryGetValue(connectionId, out var session)) return MovementResult.UnknownConnection;
         if (session.State != LoginSessionState.Playing) return MovementResult.InvalidState;
         if (request.TargetX is <= 0 or >= 4096 || request.TargetY is <= 0 or >= 4096) return MovementResult.OutOfBounds;
-        if (Math.Abs(request.TargetX - session.PositionX) > 66 || Math.Abs(request.TargetY - session.PositionY) > 66) return MovementResult.StepTooLarge;
+        if (!LegacyMovementRules.IsTargetWithinViewGrid(session.PositionX, session.PositionY, request.TargetX, request.TargetY)) return MovementResult.StepTooLarge;
 
         sessions[connectionId] = session with { PositionX = request.TargetX, PositionY = request.TargetY };
         return MovementResult.Accepted;

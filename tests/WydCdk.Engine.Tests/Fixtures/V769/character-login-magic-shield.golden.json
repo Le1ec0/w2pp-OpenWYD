@@ -1,0 +1,11 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=11",
+  "cases": [
+    { "name": "no-shield", "records": [], "targetExpected": { "armorClassAddition": 0 }, "w2ppExpected": { "armorClassAddition": 0 } },
+    { "name": "level-ten-value-seven", "records": [{ "slot": 0, "type": 11, "value": 7, "level": 10 }], "targetExpected": { "armorClassAddition": 9 }, "w2ppExpected": { "armorClassAddition": 10 } },
+    { "name": "integer-division-boundary", "records": [{ "slot": 1, "type": 11, "value": 0, "level": 11 }], "targetExpected": { "armorClassAddition": 2 }, "w2ppExpected": { "armorClassAddition": 3 } },
+    { "name": "repeated-shields-accumulate", "records": [{ "slot": 2, "type": 11, "value": 1, "level": 9 }, { "slot": 3, "type": 11, "value": 3, "level": 20 }], "targetExpected": { "armorClassAddition": 9 }, "w2ppExpected": { "armorClassAddition": 13 } },
+    { "name": "maximum-level-and-value", "records": [{ "slot": 4, "type": 11, "value": 255, "level": 65535 }], "targetExpected": { "armorClassAddition": 13362 }, "w2ppExpected": { "armorClassAddition": 22100 } },
+    { "name": "other-affects-are-ignored", "records": [{ "slot": 5, "type": 2, "value": 99, "level": 255 }, { "slot": 6, "type": 16, "value": 5, "level": 200 }], "targetExpected": { "armorClassAddition": 0 }, "w2ppExpected": { "armorClassAddition": 0 } }
+  ]
+}

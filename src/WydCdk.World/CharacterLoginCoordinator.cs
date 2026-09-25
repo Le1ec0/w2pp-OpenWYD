@@ -41,8 +41,15 @@ public sealed class CharacterLoginCoordinator(ICharacterStore accounts)
             return new(CharacterLoginStatus.SecureNotVerified, null);
 
         var data = await accounts.ReadCharacterLoginDataAsync(accountName, request.Slot, cancellationToken);
-        return data is null
-            ? new(CharacterLoginStatus.NotAvailable, null)
-            : new(CharacterLoginStatus.Success, data);
+        if (data is null)
+            return new(CharacterLoginStatus.NotAvailable, null);
+
+        // TMSrv initializes Carry[KILL_MARK] immediately after loading the MOB.
+        // Without this, a new character carries zero in cEffect and the client
+        // renders its name as negative while /cp reports -75.
+        return new(CharacterLoginStatus.Success, data with
+        {
+            Mob = LegacyCharacterStorageDefaults.EnsureKillMark(data.Mob)
+        });
     }
 }

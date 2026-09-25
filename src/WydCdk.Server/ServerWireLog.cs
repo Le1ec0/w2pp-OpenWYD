@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using WydCdk.Protocol;
 
@@ -43,7 +44,9 @@ internal sealed class ServerWireLog : IDisposable
         var payload = IsSensitiveFrame(frame.Header.Type)
             ? "<redacted-auth-payload>"
             : Convert.ToHexString(frame.Payload.Span);
-        Write($"{direction} connection={connectionId} type=0x{frame.Header.Type:X4} id={frame.Header.Id} size={frame.Header.Size} tick={frame.Header.ClientTick} checksum={frame.IsChecksumValid} payload={payload}{(note is null ? string.Empty : $" {note}")}");
+        var selection = DescribeCharacterSelection(frame);
+        var details = string.Join(' ', new[] { note, selection }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+        Write($"{direction} connection={connectionId} type=0x{frame.Header.Type:X4} id={frame.Header.Id} size={frame.Header.Size} tick={frame.Header.ClientTick} checksum={frame.IsChecksumValid} payload={payload}{(details.Length == 0 ? string.Empty : $" {details}")}");
     }
 
     public void WriteRawFrame(string direction, int connectionId, ReadOnlySpan<byte> encodedFrame, LegacyFrameCodec codec, string? note = null)
@@ -67,6 +70,34 @@ internal sealed class ServerWireLog : IDisposable
             AccountLoginRequest.MessageType or
             AccountSecureRequest.MessageType or
             CreateCharacterRequest.MessageType;
+    }
+
+    private static string? DescribeCharacterSelection(DecodedFrame frame)
+    {
+        if (frame.Header.Type is not (NewCharacterConfirmation.MessageType or DeleteCharacterConfirmation.MessageType)
+            || frame.Payload.Length != NewCharacterConfirmation.PayloadSize)
+            return null;
+
+        var payload = frame.Payload.Span;
+        var result = new StringBuilder("selection=");
+        for (var slot = 0; slot < LegacyCharacterSelection.CharacterCount; slot++)
+        {
+            var name = payload.Slice(16 + (slot * LegacyCharacterSelection.NameLength), LegacyCharacterSelection.NameLength);
+            var nameLength = name.IndexOf((byte)0);
+            if (nameLength < 0) nameLength = name.Length;
+            var scoreOffset = 80 + (slot * LegacyScore.SizeInBytes);
+            var equipmentOffset = 272 + (slot * LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes);
+            if (slot > 0) result.Append(';');
+            result.Append("s").Append(slot)
+                .Append(" name=").Append(Convert.ToHexString(name[..nameLength]))
+                .Append(" x=").Append(BinaryPrimitives.ReadInt16LittleEndian(payload[(slot * 2)..]))
+                .Append(" y=").Append(BinaryPrimitives.ReadInt16LittleEndian(payload[(8 + (slot * 2))..]))
+                .Append(" level=").Append(BinaryPrimitives.ReadInt32LittleEndian(payload[scoreOffset..]))
+                .Append(" equip0=").Append(BinaryPrimitives.ReadInt16LittleEndian(payload[equipmentOffset..]))
+                .Append(" coin=").Append(BinaryPrimitives.ReadInt32LittleEndian(payload[(792 + (slot * 4))..]));
+        }
+
+        return result.ToString();
     }
 
     public void Dispose()

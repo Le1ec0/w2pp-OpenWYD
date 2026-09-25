@@ -6,6 +6,46 @@
     <ProjectReference Include="..\..\src\WydCdk.Server\WydCdk.Server.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\V769\character-selection.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-selection.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\account-login.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.account-login.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\character-login.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-hpmp.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-hpmp.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-soul.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-soul.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-ability-stage.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-ability-stage.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-final-clamps.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-final-clamps.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-resistance-affects.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-resistance-affects.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-final-damage.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-final-damage.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-final-speed.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-final-speed.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-mount-speed.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-mount-speed.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-haste-affect.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-haste-affect.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-holy-touch.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-holy-touch.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-samaritan.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-samaritan.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-assault.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-assault.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-possessed.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-possessed.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-magic-shield.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-magic-shield.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-magic-weapon.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-magic-weapon.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-athena-touch.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-athena-touch.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-dexterity.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-dexterity.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-fanaticism.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-fanaticism.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-armor-class-reduction.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-armor-class-reduction.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-transformation-speed.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-speed.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-transformation-damage.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-damage.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-transformation-ac.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-ac.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-transformation-maxhp.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-maxhp.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-transformation-critical-equipment.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-critical-equipment.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-transformation-composition.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-composition.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-score-coordinator.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-score-coordinator.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-kibita-soul.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-kibita-soul.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-mob.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-mob.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\update-equip.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.update-equip.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\create-mob.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.create-mob.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\remove-mob.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.remove-mob.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\update-affect.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.update-affect.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\update-score.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.update-score.golden.hex" />
+    <EmbeddedResource Include="Fixtures\V769\update-etc.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.update-etc.golden.hex" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
