@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Buffers.Binary;
 using WydCdk.Protocol;
+using WydCdk.Server;
 using WydCdk.World;
 
 var options = ServerOptions.Parse(args);
@@ -21,6 +22,11 @@ ICharacterStore? accounts = options.AccountRoot is not null
 IAccountStore? accountAuthenticator = accounts as IAccountStore;
 if (options.AccountDatabaseConfigPath is not null)
     accountAuthenticator = new MariaDbAccountAuthenticator(MariaDbConnectionFactory.FromJson(options.AccountDatabaseConfigPath));
+IAccountReviewStore? accountReviewStore = options.AccountReviewRoot is null
+    ? null
+    : new FileAccountReviewStore(options.AccountReviewRoot);
+if (accountAuthenticator is not null && accountReviewStore is null)
+    throw new ArgumentException("--account-review-root is required whenever account authentication is enabled.");
 IDonateBalanceStore? donateBalances = accounts as IDonateBalanceStore;
 var templateRoot = options.AccountRoot is not null
     ? Path.Combine(Path.GetDirectoryName(options.AccountRoot)!, "BaseMob")
@@ -50,6 +56,7 @@ if (options.DonateDatabaseConfigPath is not null)
 }
 var world = new WorldHub(mapGrid, guildZones, options.MapCollisionMode, summonCatalog, itemData, skills, npcGenerationCatalog, donateShopCatalog, options.ServerMode);
 var autoTradeBook = new LegacyAutoTradeBook();
+var sessions = new LoginSessionRegistry();
 ILegacyAutoTradeStateStore? autoTradeStateStore = options.AutoTradeStatePath is not null
     ? new LegacyAutoTradeFileStore(options.AutoTradeStatePath, options.WorldKey, options.AccountRoot)
     : options.AccountDatabaseConfigPath is not null
@@ -146,7 +153,7 @@ try
     {
         var client = await listener.AcceptTcpClientAsync(shutdown.Token);
         var connectionId = Interlocked.Increment(ref nextConnectionId);
-        _ = InspectConnectionAsync(client, connectionId, accounts, accountAuthenticator, templates, skills, itemData, donateBalances, world, autoTradeBook, autoTradeStateStore, autoTradePurchaseCommitStore, options.DonateDatabaseConfigPath is not null, serverLog, shutdown.Token);
+        _ = InspectConnectionAsync(client, connectionId, accounts, accountAuthenticator, accountReviewStore, templates, skills, itemData, donateBalances, world, sessions, autoTradeBook, autoTradeStateStore, autoTradePurchaseCommitStore, options.DonateDatabaseConfigPath is not null, serverLog, shutdown.Token);
     }
 }
 catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
@@ -222,17 +229,50 @@ static void TryPublishStatus(ServerStatusFilePublisher? publisher, int playerCou
     }
 }
 
-static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICharacterStore? accounts, IAccountStore? accountAuthenticator, LegacyCharacterTemplateStore? templates, LegacySkillDataTable? skills, LegacyItemDataTable? itemData, IDonateBalanceStore? donateBalances, WorldHub world, LegacyAutoTradeBook autoTradeBook, ILegacyAutoTradeStateStore? autoTradeStateStore, ILegacyAutoTradePurchaseCommitStore? autoTradePurchaseCommitStore, bool explicitDonateDatabase, ServerWireLog? serverLog, CancellationToken cancellationToken)
+static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICharacterStore? accounts, IAccountStore? accountAuthenticator, IAccountReviewStore? accountReviewStore, LegacyCharacterTemplateStore? templates, LegacySkillDataTable? skills, LegacyItemDataTable? itemData, IDonateBalanceStore? donateBalances, WorldHub world, LoginSessionRegistry sessions, LegacyAutoTradeBook autoTradeBook, ILegacyAutoTradeStateStore? autoTradeStateStore, ILegacyAutoTradePurchaseCommitStore? autoTradePurchaseCommitStore, bool explicitDonateDatabase, ServerWireLog? serverLog, CancellationToken cancellationToken)
 {
     using (client)
     {
         using var stream = new SerializedNetworkStream(client.GetStream());
         var decoder = new LegacyFrameStream(LegacyFrameCodec.CreateDefault());
-        var sessions = new LoginSessionRegistry();
         var donateShopRateLimiter = new LegacyDonateShopRateLimiter();
+        var actionAccountReview = accountReviewStore is null ? null : new LegacyActionAccountReviewCoordinator(accountReviewStore);
         sessions.Open(connectionId);
         serverLog?.Write($"CONNECTION OPEN connection={connectionId} remote={client.Client.RemoteEndPoint}");
         var buffer = new byte[4096];
+
+        async Task LogoutCharacterAsync()
+        {
+            if (sessions.TryGet(connectionId, out var logoutSession) && logoutSession!.State == LoginSessionState.Playing)
+            {
+                var logoutPlan = await LegacyAutoTradeDepartureCoordinator.DepartAsync(connectionId, world, autoTradeBook,
+                    async ct =>
+                    {
+                        await SaveCharacterOnDepartureAsync(accounts, world, logoutSession, disconnect: false, ct);
+                        sessions.CompleteCharacterLogout(connectionId);
+                    },
+                    async (shop, ct) => await RemoveAutoTradeStateAsync(autoTradeStateStore, logoutSession.AccountName, logoutSession.CharacterSlot, shop, ct),
+                    LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), cancellationToken);
+                await BroadcastAutoTradeDepartureAsync(world, logoutPlan, cancellationToken);
+                await BroadcastSummonDespawnsAsync(world, logoutPlan.DespawnedSummonIds, cancellationToken);
+            }
+            // CharLogOut acknowledges even outside USER_PLAY; it does not close TCP.
+            await stream.WriteAsync(CharacterLogoutConfirmation.ToFrame(LegacyFrameCodec.CreateDefault(), connectionId,
+                unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
+        }
+
+        async Task<LegacyCrackErrorOutcome?> RecordCrackErrorAsync(int points, int type, bool deferCharacterLogout = false)
+        {
+            if (!sessions.TryAddCrackError(connectionId, points, type, out var error)) return null;
+            if (error!.ShouldLog)
+                Console.WriteLine($"Crack error: connection={connectionId}, points={error.AddedPoints}, type={error.Type}, total={error.TotalPoints}.");
+            if (!error.RequiresCharacterLogout || deferCharacterLogout) return error;
+            await stream.WriteAsync(new MessagePanelConfirmation(LegacyCrackErrorRules.BadNetworkNotice)
+                .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
+            await LogoutCharacterAsync();
+            Console.WriteLine($"Crack character logout: connection={connectionId}, type={error.Type}.");
+            return error;
+        }
 
         try
         {
@@ -274,14 +314,21 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             return;
                         }
 
-                        var outcome = await new AccountLoginCoordinator(sessions, accountAuthenticator).HandleAsync(connectionId, login, cancellationToken);
+                        var outcome = await new AccountLoginCoordinator(sessions, accountAuthenticator, accountReviewStore!).HandleAsync(connectionId, login, cancellationToken);
                         if (!outcome.IsSuccess)
                         {
-                            var status = outcome.Authentication ?? AccountAuthenticationStatus.InvalidAccountFile;
-                            var failure = new MessagePanelConfirmation(AccountLoginFailureNotice.For(status))
+                            var failureText = outcome.Rejection == AccountLoginRejection.None
+                                ? AccountLoginFailureNotice.For(outcome.Authentication ?? AccountAuthenticationStatus.InvalidAccountFile)
+                                : AccountLoginFailureNotice.ForReview(outcome.Rejection);
+                            var failure = new MessagePanelConfirmation(failureText)
                                 .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256));
                             await WriteLoggedFrameAsync(stream, serverLog, connectionId, failure, cancellationToken, "account-login-failure");
-                            Console.WriteLine($"Account login rejected: {status}; failure notice sent to client.");
+                            if (outcome.Rejection == AccountLoginRejection.ReviewStoreUnavailable)
+                                Console.Error.WriteLine($"Account review lookup unavailable: connection={connectionId}; login denied fail-closed and generic notice sent.");
+                            else
+                                Console.WriteLine(outcome.Rejection == AccountLoginRejection.None
+                                    ? $"Account login rejected: {outcome.Authentication ?? AccountAuthenticationStatus.InvalidAccountFile}; failure notice sent to client."
+                                    : $"Account login rejected: {outcome.Rejection}; failure notice sent to client.");
                             return;
                         }
 
@@ -443,13 +490,22 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             {
                                 try
                                 {
-                                    var reconnect = await LegacyAutoTradeReconnectCoordinator.CloseAsync(
+                                    var reconnectPlan = await LegacyAutoTradeReconnectCoordinator.CloseAndRecoverAsync(
+                                        sessions,
                                         world,
                                         autoTradeBook,
                                         autoTradeStateStore,
                                         loginSession.AccountName!,
                                         characterLogin.Slot,
+                                        LegacyFrameCodec.CreateDefault(),
+                                        unchecked((uint)Environment.TickCount64),
+                                        (byte)RandomNumberGenerator.GetInt32(256),
                                         cancellationToken);
+                                    // Captured under the saved pair leases, released before sockets.
+                                    foreach (var framePlan in reconnectPlan.RecoveryFrames)
+                                        foreach (var recipient in framePlan.RecipientIds)
+                                            await world.SendAsync(recipient, framePlan.Frame, cancellationToken);
+                                    var reconnect = reconnectPlan.Outcome;
                                     if (reconnect.Result == LegacyAutoTradeReconnectResult.PersistenceUnavailable)
                                     {
                                         sessions.CompleteCharacterRefresh(connectionId);
@@ -1056,12 +1112,42 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             continue;
                         }
 
+                        var deleteAccount = deleteSession.AccountName is not null && accounts is not null
+                            ? await accounts.ReadSnapshotAsync(deleteSession.AccountName, cancellationToken)
+                            : null;
+                        if (deleteAccount is null)
+                        {
+                            Console.WriteLine($"Carry item deletion rejected: account={deleteSession.AccountName}, reason=AccountSnapshotUnavailable.");
+                            continue;
+                        }
+
                         var deleteResult = world.TryDeleteCarryItem(
                             connectionId,
                             deleteItemRequest.Slot,
-                            deleteItemRequest.ItemIndex);
+                            deleteItemRequest.ItemIndex,
+                            out var cancelledTradeOpponentId,
+                            deleteAccount.IsBlocked);
                         if (deleteResult == LegacyDeleteItemResult.Accepted)
                             Console.WriteLine($"Carry item deleted: account={deleteSession.AccountName}, slot={deleteItemRequest.Slot}, item={deleteItemRequest.ItemIndex}.");
+                        else if (deleteResult == LegacyDeleteItemResult.TradeCancelled)
+                        {
+                            var codec = LegacyFrameCodec.CreateDefault();
+                            if (cancelledTradeOpponentId > 0)
+                            {
+                                var opponentSignal = TradeCloseRequest.ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)cancelledTradeOpponentId));
+                                await world.SendAsync(cancelledTradeOpponentId, opponentSignal, cancellationToken);
+                            }
+                            var ownSignal = TradeCloseRequest.ToFrame(codec, frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                            await world.SendAsync(connectionId, ownSignal, cancellationToken);
+                            Console.WriteLine($"Carry item deletion cancelled trade: account={deleteSession.AccountName}, opponent={cancelledTradeOpponentId}.");
+                        }
+                        else if (deleteResult == LegacyDeleteItemResult.AccountBlocked)
+                        {
+                            var notice = new MessagePanelConfirmation("Sua conta está com o bloqueio ativo para essa operação.")
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256));
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, notice, cancellationToken, "delete-item-account-blocked");
+                            Console.WriteLine($"Carry item deletion rejected: account={deleteSession.AccountName}, reason={deleteResult}.");
+                        }
                         else
                             Console.WriteLine($"Carry item deletion rejected: account={deleteSession.AccountName}, slot={deleteItemRequest.Slot}, item={deleteItemRequest.ItemIndex}, reason={deleteResult}.");
                         continue;
@@ -1110,6 +1196,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                     if (AutoTradeStartRequest.TryParse(frame, out var autoTradeRequest) && autoTradeRequest is not null)
                     {
+                        await using var startLease = await autoTradeBook.AcquireAsync([connectionId], cancellationToken);
                         if (!sessions.TryGet(connectionId, out var autoTradeSession) || autoTradeSession!.State != LoginSessionState.Playing)
                         {
                             Console.WriteLine("Rejected autotrade-start frame: session is not in USER_PLAY.");
@@ -1143,7 +1230,10 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             NonTradeableItemIndices: nonTradeableIndices,
                             AccountBlocked: accountSnapshot?.IsBlocked ?? false,
                             ItemDataAvailable: itemData is not null);
-                        var autoTradeResult = autoTradeBook.TryStart(connectionId, autoTradeRequest, autoTradeContext, out var autoTradeSnapshot);
+                        var autoTradeResult = autoTradeBook.TryStart(startLease, connectionId,
+                            new(autoTradeSession.AccountName ?? string.Empty, autoTradeSession.CharacterSlot),
+                            autoTradeRequest, autoTradeContext, out var autoTradeHandle);
+                        var autoTradeSnapshot = autoTradeHandle?.Snapshot;
                         var autoTradeStateSaved = true;
                         if (autoTradeResult == LegacyAutoTradeStartResult.Accepted && autoTradeSnapshot is not null && autoTradeStateStore is not null)
                         {
@@ -1168,33 +1258,21 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                             if (!autoTradeStateSaved)
                             {
-                                autoTradeBook.TryStop(connectionId, out _);
+                                autoTradeBook.TryStop(startLease, autoTradeHandle!);
                                 Console.WriteLine($"Autotrade start rejected: account={autoTradeSession.AccountName}, reason=StatePersistenceUnavailable.");
                                 continue;
                             }
                         }
 
                         if (autoTradeResult == LegacyAutoTradeStartResult.Accepted && autoTradeSnapshot is not null &&
-                            LegacyAutoTradeListRelay.TryBuild(connectionId, autoTradeSnapshot, LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, out var autoTradeRelay) &&
-                            autoTradeRelay is not null)
+                            LegacyAutoTradeListingRelay.TryCapture(world, autoTradeBook, startLease, connectionId, connectionId,
+                                true, LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, out var autoTradeFrames))
                         {
-                            await stream.WriteAsync(autoTradeRelay.ResponseFrame, cancellationToken);
-                            if (world.TryGetCharacterSnapshot(connectionId, out var autoTradeVisualMob, out _, out _, out _, out var autoTradeVisualAffect) &&
-                                autoTradeVisualMob is not null && autoTradeVisualAffect is not null &&
-                                LegacyAutoTradeVisualRelay.TryBuild(
-                                    autoTradeSnapshot,
-                                    autoTradeVisualMob,
-                                    autoTradeVisualAffect,
-                                    LegacyFrameCodec.CreateDefault(),
-                                    frame.Header.ClientTick,
-                                    frame.Header.KeywordIndex,
-                                    out var autoTradeVisualRelay) &&
-                                autoTradeVisualRelay is not null)
-                            {
-                                await stream.WriteAsync(autoTradeVisualRelay.Frame, cancellationToken);
-                                foreach (var recipient in world.GetParticipantIdsInPlayerView(connectionId).Where(id => id != connectionId))
-                                    await world.SendAsync(recipient, autoTradeVisualRelay.Frame, cancellationToken);
-                            }
+                            await startLease.DisposeAsync(); // Capture before release; transport never owns the lease.
+                            foreach (var plan in autoTradeFrames)
+                                foreach (var recipient in plan.RecipientIds)
+                                    if (recipient == connectionId) await stream.WriteAsync(plan.Frame, cancellationToken);
+                                    else await world.SendAsync(recipient, plan.Frame, cancellationToken);
                             Console.WriteLine($"Autotrade started: account={autoTradeSession.AccountName}, position=({autoTradeX},{autoTradeY}), tax={autoTradeSnapshot.Tax}, title={autoTradeSnapshot.Title}.");
                         }
                         else
@@ -1204,70 +1282,18 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                     if (TradeListRequest.TryParse(frame, out var tradeListRequest) && tradeListRequest is not null)
                     {
-                        if (!sessions.TryGet(connectionId, out var tradeListSession) || tradeListSession!.State != LoginSessionState.Playing)
-                        {
-                            Console.WriteLine("Rejected autotrade-list frame: session is not in USER_PLAY.");
-                            continue;
-                        }
-
-                        if (!autoTradeBook.TryGet(tradeListRequest.TargetId, out var shopSnapshot) || shopSnapshot is null)
-                        {
-                            Console.WriteLine($"Autotrade list rejected: requester={tradeListSession.AccountName}, target={tradeListRequest.TargetId}, reason=TargetNotInAutoTrade.");
-                            continue;
-                        }
-
-                        var requesterStateAvailable = world.TryGetCombatState(connectionId, out var requesterState) && requesterState is not null;
-                        var requesterPositionAvailable = world.TryGetCharacterSnapshot(connectionId, out _, out var requesterX, out var requesterY);
-                        var targetIsOnline = world.TryGetCharacterSnapshot(tradeListRequest.TargetId, out _, out var targetX, out var targetY);
-                        var targetIsOfflineAutoTrade = world.TryGetNpcSnapshot(tradeListRequest.TargetId, out var targetNpc) &&
-                            targetNpc is not null && targetNpc.AutoTradeSnapshot is not null;
-                        if (!targetIsOnline && targetIsOfflineAutoTrade)
-                        {
-                            targetX = targetNpc!.PositionX;
-                            targetY = targetNpc.PositionY;
-                        }
-                        var targetPositionAvailable = targetIsOnline || targetIsOfflineAutoTrade;
-                        var listContext = new LegacyAutoTradeListContext(
-                            requesterStateAvailable ? requesterState!.CurrentScore.Hp : 0,
-                            tradeListSession.State == LoginSessionState.Playing && requesterPositionAvailable,
-                            targetPositionAvailable,
-                            targetIsOnline,
-                            TargetAutoTradeActive: true,
-                            requesterX,
-                            requesterY,
-                            targetX,
-                            targetY,
-                            TargetOfflineAutoTrade: targetIsOfflineAutoTrade);
-                        var listResult = LegacyAutoTradeListRules.Validate(tradeListRequest.TargetId, listContext);
-                        if (listResult == LegacyAutoTradeListResult.Accepted &&
-                            LegacyAutoTradeListRelay.TryBuild(connectionId, shopSnapshot, LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, out var listRelay) &&
-                            listRelay is not null)
-                        {
-                            await stream.WriteAsync(listRelay.ResponseFrame, cancellationToken);
-                            var targetVisualAvailable = world.TryGetCharacterSnapshot(tradeListRequest.TargetId, out var targetVisualMob, out _, out _, out _, out var targetVisualAffect);
-                            if (!targetVisualAvailable && targetIsOfflineAutoTrade)
-                            {
-                                targetVisualMob = targetNpc!.MobSnapshot;
-                                targetVisualAffect = targetNpc.AffectSnapshot;
-                                targetVisualAvailable = true;
-                            }
-                            if (targetVisualAvailable && targetVisualMob is not null && targetVisualAffect is not null &&
-                                LegacyAutoTradeVisualRelay.TryBuild(
-                                    shopSnapshot,
-                                    targetVisualMob,
-                                    targetVisualAffect,
-                                    LegacyFrameCodec.CreateDefault(),
-                                    frame.Header.ClientTick,
-                                    frame.Header.KeywordIndex,
-                                    out var targetVisualRelay) &&
-                                targetVisualRelay is not null)
-                            {
-                                await stream.WriteAsync(targetVisualRelay.Frame, cancellationToken);
-                            }
-                            Console.WriteLine($"Autotrade list sent: requester={tradeListSession.AccountName}, target={tradeListRequest.TargetId}, title={shopSnapshot.Title}.");
-                        }
-                        else
-                            Console.WriteLine($"Autotrade list rejected: requester={tradeListSession.AccountName}, target={tradeListRequest.TargetId}, reason={listResult}.");
+                        await TradeListRequestHandler.HandleAsync(
+                            connectionId,
+                            tradeListRequest,
+                            frame.Header.ClientTick,
+                            frame.Header.KeywordIndex,
+                            world,
+                            sessions,
+                            autoTradeBook,
+                            (response, ct) => stream.WriteAsync(response, ct),
+                            async (points, type) => { _ = await RecordCrackErrorAsync(points, type); },
+                            Console.WriteLine,
+                            cancellationToken);
                         continue;
                     }
 
@@ -1434,11 +1460,30 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         if (!sessions.TryGet(connectionId, out var closeTradeSession) || closeTradeSession!.State != LoginSessionState.Playing)
                         {
                             Console.WriteLine("Rejected trade-close frame: session is not in USER_PLAY.");
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.QuitTradePoints, LegacyCrackErrorRules.QuitTradeType);
                             continue;
                         }
 
-                        var closeResult = world.TryCloseTrade(connectionId, out var closeOutcome);
-                        Console.WriteLine(closeResult == LegacyTradeCloseResult.Accepted
+                        var closeDispatch = await LegacyAutoTradeCloseCoordinator.CloseAndCaptureAsync(
+                            connectionId, sessions, world, autoTradeBook, autoTradeStateStore,
+                            LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, cancellationToken);
+                        var closeResult = closeDispatch.Outcome.Result;
+                        var closeOutcome = closeDispatch.Outcome.Trade;
+                        if (closeResult == LegacyAutoTradeCloseResult.NotAlive)
+                        {
+                            if (world.TryGetResourceState(connectionId, out var closeResources, out _, out _) && closeResources is not null)
+                            {
+                                var hpModeFrame = new SetHpModeConfirmation(closeResources.CurrentScore.Hp, (short)closeTradeSession.State)
+                                    .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, checked((ushort)connectionId));
+                                await world.SendAsync(connectionId, hpModeFrame, cancellationToken);
+                            }
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.QuitTradePoints, LegacyCrackErrorRules.QuitTradeType);
+                        }
+                        // All state/frames are committed and captured; no operation lease crosses socket I/O.
+                        foreach (var plan in closeDispatch.Frames)
+                            foreach (var recipientId in plan.RecipientIds)
+                                await world.SendAsync(recipientId, plan.Frame, cancellationToken);
+                        Console.WriteLine(closeOutcome is not null
                             ? $"Trade closed: account={closeTradeSession.AccountName}, opponent={closeOutcome!.OpponentId}."
                             : $"Trade close ignored: account={closeTradeSession.AccountName}, reason={closeResult}.");
                         continue;
@@ -1879,16 +1924,316 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                     if (ActionRequest.TryParse(frame, out var action) && action is not null)
                     {
-                        if (!sessions.TryGet(connectionId, out var actionSession) || actionSession!.State != LoginSessionState.Playing)
+                        if (!sessions.TryGet(connectionId, out var actionSession) || actionSession is null ||
+                            !LegacyMovementRules.ShouldContinueAction(actionSession.State))
                         {
                             Console.WriteLine($"Rejected action: connection={connectionId}, reason={MovementResult.InvalidState}.");
                             continue;
                         }
 
+                        // Action/Action2/Action3 share the same HP==0 gate in both references.
+                        var hasActionResources = world.TryGetResourceState(connectionId, out var actionResources, out _, out _);
+                        if (!hasActionResources || actionResources is null)
+                        {
+                            Console.WriteLine($"Rejected action: connection={connectionId}, reason=AuthoritativeStateUnavailable.");
+                            continue;
+                        }
+
+                        var actionGate = LegacyMovementRules.ResolveActionPreconditions(
+                            actionResources.CurrentScore.Hp,
+                            actionResources.CurrentScore.AttackRun,
+                            out var allowedSpeed);
+                        if (actionGate == LegacyMovementRules.ActionGateResult.CharacterDead)
+                        {
+                            await stream.WriteAsync(new SetHpModeConfirmation(0, (short)actionSession.State)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, (ushort)connectionId), cancellationToken);
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionPoints, LegacyCrackErrorRules.ActionType);
+                            continue;
+                        }
+
+                        if (actionGate != LegacyMovementRules.ActionGateResult.Ready)
+                        {
+                            Console.WriteLine($"Rejected action: connection={connectionId}, reason=AuthoritativeStateUnavailable.");
+                            continue;
+                        }
+
+                        // RemoveTrade also resets TradeMode/AutoTrade when either side
+                        // owns an active AFK shop. Close that durable state together
+                        // with the bilateral pair before relaying the normal MOB.
+                        var actionTradeOpponentId = world.GetTradeOpponentId(connectionId);
+                        var actionHasShop = autoTradeBook.HasListing(connectionId) ||
+                            actionTradeOpponentId > 0 && autoTradeBook.HasListing(actionTradeOpponentId);
+                        if (actionHasShop)
+                        {
+                            var actionClose = await LegacyAutoTradeCloseCoordinator.CloseForActionAndCaptureAsync(
+                                connectionId, sessions, world, autoTradeBook, autoTradeStateStore,
+                                LegacyFrameCodec.CreateDefault(), cancellationToken);
+                            var closeOutcome = actionClose.Outcome;
+                            if (closeOutcome.Result == LegacyAutoTradeCloseResult.NotAlive)
+                            {
+                                if (world.TryGetResourceState(connectionId, out var closeActionResources, out _, out _) && closeActionResources is not null)
+                                    await stream.WriteAsync(new SetHpModeConfirmation(closeActionResources.CurrentScore.Hp, (short)actionSession.State)
+                                        .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, (ushort)connectionId), cancellationToken);
+                                await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionPoints, LegacyCrackErrorRules.ActionType);
+                                continue;
+                            }
+
+                            if (closeOutcome.Result == LegacyAutoTradeCloseResult.NoShop && closeOutcome.Trade is null &&
+                                closeOutcome.ClosedListings.Count == 0)
+                            {
+                                // A concurrent close removed the observed listing. Fall through
+                                // to the atomic bilateral check below in case the pair changed.
+                            }
+                            else if ((closeOutcome.Result is LegacyAutoTradeCloseResult.Closed or LegacyAutoTradeCloseResult.NoShop) &&
+                                actionClose.Frames.Count > 0)
+                            {
+                                foreach (var plan in actionClose.Frames)
+                                    foreach (var recipient in plan.RecipientIds.Distinct())
+                                        if (recipient == connectionId) await stream.WriteAsync(plan.Frame, cancellationToken);
+                                        else await world.SendAsync(recipient, plan.Frame, cancellationToken);
+                                Console.WriteLine($"Action closed AFK shop/trade state: connection={connectionId}, opponent={closeOutcome.Trade?.OpponentId ?? 0}, listings={closeOutcome.ClosedListings.Count}.");
+                                continue;
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Action stopped during AFK shop close: connection={connectionId}, reason={closeOutcome.Result}, frames={actionClose.Frames.Count}.");
+                                continue;
+                            }
+                        }
+
+                        // In both legacy sources, a non-zero-HP Action first cancels
+                        // an active bilateral trade and returns without movement.
+                        var actionTradeResult = world.TryCancelTradeForAction(connectionId, out var actionTrade);
+                        if (actionTradeResult == LegacyActionTradeCancellationResult.CharacterDead)
+                        {
+                            await stream.WriteAsync(new SetHpModeConfirmation(0, (short)actionSession.State)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, (ushort)connectionId), cancellationToken);
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionPoints, LegacyCrackErrorRules.ActionType);
+                            continue;
+                        }
+                        if (actionTradeResult == LegacyActionTradeCancellationResult.Cancelled && actionTrade is not null)
+                        {
+                            var tradeSignalCodec = LegacyFrameCodec.CreateDefault();
+                            var opponentSignal = TradeCloseRequest.ToFrame(
+                                tradeSignalCodec, 0, 0, checked((ushort)actionTrade.OpponentId));
+                            await world.SendAsync(actionTrade.OpponentId, opponentSignal, cancellationToken);
+                            var ownSignal = TradeCloseRequest.ToFrame(
+                                tradeSignalCodec, 0, 0, checked((ushort)connectionId));
+                            await stream.WriteAsync(ownSignal, cancellationToken);
+                            Console.WriteLine($"Action cancelled bilateral trade: connection={connectionId}, opponent={actionTrade.OpponentId}.");
+                            continue;
+                        }
+                        if (actionTradeResult != LegacyActionTradeCancellationResult.NoActiveTrade)
+                        {
+                            Console.WriteLine($"Action stopped during trade cancellation: connection={connectionId}, reason={actionTradeResult}.");
+                            continue;
+                        }
+
+                        // 7.69 recalls from these origin sectors before the Action speed/time/range checks.
+                        if (world.TryRecallForActionOriginWithViews(connectionId, out var originRecallTransition) && originRecallTransition is not null)
+                        {
+                            var originRecall = originRecallTransition.Recall;
+                            sessions.SetServerPosition(connectionId, originRecall.ToX, originRecall.ToY);
+                            var recallTick = unchecked((uint)Environment.TickCount64);
+                            var recallKeyword = (byte)RandomNumberGenerator.GetInt32(256);
+                            var recallCodec = LegacyFrameCodec.CreateDefault();
+                            var recallFrame = new ActionRequest(
+                                originRecall.FromX,
+                                originRecall.FromY,
+                                Effect: 1,
+                                Speed: 2,
+                                Route: new byte[24],
+                                originRecall.ToX,
+                                originRecall.ToY)
+                                .ToFrame(recallCodec, recallTick, recallKeyword, (ushort)connectionId);
+                            if (!LegacyRecallRelay.TryBuild(
+                                world,
+                                originRecallTransition,
+                                recallFrame,
+                                recallCodec,
+                                recallTick,
+                                recallKeyword,
+                                out var recallRelayPlans))
+                                Console.Error.WriteLine($"Action origin recall visibility plan failed: connection={connectionId}; no global relay was sent.");
+
+                            await stream.WriteAsync(recallFrame, cancellationToken);
+                            if (recallRelayPlans is not null)
+                                foreach (var plan in recallRelayPlans)
+                                    await world.SendAsync(plan.RecipientId, plan.Frame, cancellationToken);
+                            Console.WriteLine($"Action origin recalled: account={actionSession.AccountName}, from=({originRecall.FromX},{originRecall.FromY}), to=({originRecall.ToX},{originRecall.ToY}).");
+                            continue;
+                        }
+
+                        // Both TMSrv references reject a stop immediately after another stop;
+                        // LastMoveType is reset on character login and updated only by accepted movement.
+                        if (action.WireType == ActionRequest.StopMessageType &&
+                            actionSession.LastMoveType == ActionRequest.StopMessageType)
+                        {
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionStopPoints, LegacyCrackErrorRules.ActionStopType);
+                            Console.WriteLine($"Rejected consecutive Action2: connection={connectionId}.");
+                            continue;
+                        }
+
+                        // The 7.69 and W2PP Action branch validates its client clock here;
+                        // Action2 bypasses this branch; Action3 checks eligibility before its own tick gate.
+                        if (action.WireType == ActionRequest.MessageType)
+                        {
+                            var actionServerTick = unchecked((uint)Environment.TickCount64);
+                            var oldestActionTick = actionServerTick <= 120_000u ? 0u : actionServerTick - 120_000u;
+                            if (frame.Header.ClientTick > unchecked(actionServerTick + 15_000u) ||
+                                frame.Header.ClientTick < oldestActionTick)
+                            {
+                                await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionTickPoints, LegacyCrackErrorRules.ActionTickType);
+                                Console.WriteLine($"Rejected Action timestamp: connection={connectionId}, clientTick={frame.Header.ClientTick}, serverTick={actionServerTick}.");
+                                continue;
+                            }
+                        }
+
+                        // 7.69 and W2PP apply the Action3 class/skill penalty before this tick check.
+                        // Below MAX_LEVEL, the packet continues unless the shared crack threshold logs out.
+                        if (action.WireType == ActionRequest.IllusionMessageType &&
+                            LegacyIllusionRules.ShouldRecordEligibilityError(
+                                actionResources.CharacterClass,
+                                actionResources.LearnedSkill,
+                                actionResources.CurrentScore.Level))
+                        {
+                            var eligibilityError = await RecordCrackErrorAsync(
+                                LegacyCrackErrorRules.ActionIllusionEligibilityPoints,
+                                LegacyCrackErrorRules.ActionIllusionEligibilityType);
+                            if (eligibilityError?.RequiresCharacterLogout == true)
+                                continue;
+                        }
+
+                        // 7.69 charges the fixed skill-73 mana cost before the Action3 tick gate.
+                        // Its ReqMp decrement is commented out; keep the separately tracked value unchanged.
+                        if (action.WireType == ActionRequest.IllusionMessageType)
+                        {
+                            var illusionSpell = skills?[LegacyIllusionRules.ManaCostSkillId];
+                            if (illusionSpell is null || illusionSpell.ManaSpent < 0)
+                            {
+                                Console.WriteLine($"Rejected Action3: skill-73 mana data unavailable or invalid for connection={connectionId}.");
+                                continue;
+                            }
+
+                            var mana = world.TryConsumeFixedMana(
+                                connectionId,
+                                illusionSpell.ManaSpent,
+                                out _,
+                                out _,
+                                out _);
+                            if (mana == LegacySkillManaResult.InsufficientMana)
+                            {
+                                if (world.TryGetResourceState(connectionId, out var resourceState, out var requestedHp, out var requestedMp) && resourceState is not null)
+                                {
+                                    var sync = new SetHpMpConfirmation(resourceState.CurrentScore.Hp, resourceState.CurrentMana, requestedHp, requestedMp)
+                                        .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                    await stream.WriteAsync(sync, cancellationToken);
+                                }
+                                Console.WriteLine($"Rejected Action3: account={actionSession.AccountName}, reason={mana}.");
+                                continue;
+                            }
+                            if (mana != LegacySkillManaResult.Accepted)
+                            {
+                                Console.WriteLine($"Rejected Action3: account={actionSession.AccountName}, reason={mana}.");
+                                continue;
+                            }
+                        }
+
+                        // Illusion uses the same client-tick window, with its own legacy error type (104).
+                        if (action.WireType == ActionRequest.IllusionMessageType)
+                        {
+                            var illusionServerTick = unchecked((uint)Environment.TickCount64);
+                            var oldestIllusionTick = illusionServerTick <= 120_000u ? 0u : illusionServerTick - 120_000u;
+                            if (frame.Header.ClientTick > unchecked(illusionServerTick + 15_000u) ||
+                                frame.Header.ClientTick < oldestIllusionTick)
+                            {
+                                await RecordCrackErrorAsync(
+                                    LegacyCrackErrorRules.ActionIllusionTickPoints,
+                                    LegacyCrackErrorRules.ActionIllusionTickType);
+                                Console.WriteLine($"Rejected Action3 timestamp: connection={connectionId}, clientTick={frame.Header.ClientTick}, serverTick={illusionServerTick}.");
+                                continue;
+                            }
+                        }
+
+                        var requestedSpeed = action.Speed;
+                        var attackRun = actionResources.CurrentScore.AttackRun;
+                        if (LegacyMovementRules.RequiresAccountAnalysis(requestedSpeed, attackRun))
+                        {
+                            var crackError = await RecordCrackErrorAsync(
+                                LegacyCrackErrorRules.ActionSpeedPoints,
+                                LegacyCrackErrorRules.ActionSpeedType,
+                                deferCharacterLogout: true);
+                            var reviewAccount = actionSession.AccountName ?? string.Empty;
+                            world.TryGetParticipantCharacterName(connectionId, out var reviewCharacter);
+                            var remoteAddress = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString();
+                            var result = actionAccountReview is null
+                                ? ActionAccountReviewResult.PersistenceUnavailable
+                                : await actionAccountReview.ReviewSpeedViolationAsync(
+                                    reviewAccount,
+                                    reviewCharacter,
+                                    remoteAddress,
+                                    requestedSpeed,
+                                    allowedSpeed,
+                                    attackRun,
+                                    cancellationToken);
+                            var marked = result is ActionAccountReviewResult.Marked or ActionAccountReviewResult.AlreadyMarked;
+                            var notice = AccountLoginFailureNotice.ForReview(marked
+                                ? AccountLoginRejection.AccountUnderAnalysis
+                                : AccountLoginRejection.ReviewStoreUnavailable);
+                            var noticeFrame = new MessagePanelConfirmation(notice).ToFrame(
+                                LegacyFrameCodec.CreateDefault(),
+                                unchecked((uint)Environment.TickCount64),
+                                (byte)RandomNumberGenerator.GetInt32(256));
+                            await WriteLoggedFrameAsync(stream, serverLog, connectionId, noticeFrame, cancellationToken,
+                                marked ? "account-review-analysis" : "account-review-write-failure");
+                            if (marked)
+                            {
+                                Console.WriteLine($"Account marked for Analysis: connection={connectionId}, account={reviewAccount}, character={reviewCharacter ?? "unknown"}, reason={FileAccountReviewStore.HighSeverityActionSpeedReason}, requested={requestedSpeed}, allowed={allowedSpeed}, attackRun={attackRun}, remote={remoteAddress ?? "unknown"}, crackLogoutThreshold={crackError?.RequiresCharacterLogout ?? false}, result={result}.");
+                            }
+                            else
+                            {
+                                Console.Error.WriteLine($"Account Analysis persistence failed: connection={connectionId}, account={reviewAccount}, reason={FileAccountReviewStore.HighSeverityActionSpeedReason}, result={result}; connection closed without movement relay.");
+                            }
+                            return;
+                        }
+
+                        if (action.Speed > allowedSpeed)
+                        {
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionSpeedPoints, LegacyCrackErrorRules.ActionSpeedType);
+                            if (!sessions.TryGet(connectionId, out var speedSession) || !LegacyMovementRules.ShouldContinueAction(speedSession?.State))
+                                continue;
+                            Console.WriteLine($"Action speed corrected: connection={connectionId}, attackRun={actionResources.CurrentScore.AttackRun}, requested={requestedSpeed}, allowed={allowedSpeed}.");
+                            action = action with { Speed = allowedSpeed };
+                        }
+
                         // Pista entry and other server teleports mutate WorldHub first. Sync the
                         // per-connection movement gate before applying the next client action.
+                        var rangeX = actionSession.PositionX;
+                        var rangeY = actionSession.PositionY;
                         if (world.TryGetCharacterSnapshot(connectionId, out _, out var authoritativeX, out var authoritativeY))
+                        {
+                            rangeX = authoritativeX;
+                            rangeY = authoritativeY;
                             sessions.SetServerPosition(connectionId, authoritativeX, authoritativeY);
+                        }
+
+                        // Both references reject >33 before destination-map work and correct privately only at >66.
+                        // GetAction starts from the authoritative position; the rejected client's origin/route are not echoed.
+                        if (!LegacyMovementRules.IsTargetWithinViewGrid(rangeX, rangeY, action.TargetX, action.TargetY))
+                        {
+                            if (LegacyMovementRules.RequiresPositionCorrection(rangeX, rangeY, action.TargetX, action.TargetY))
+                            {
+                                var correction = new ActionRequest(rangeX, rangeY, 1, 6, new byte[24], rangeX, rangeY)
+                                {
+                                    WireType = ActionRequest.IllusionMessageType,
+                                };
+                                await stream.WriteAsync(correction.ToFrame(LegacyFrameCodec.CreateDefault(),
+                                    unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256),
+                                    (ushort)connectionId), cancellationToken);
+                            }
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.ActionRangePoints, LegacyCrackErrorRules.ActionRangeType);
+                            continue;
+                        }
 
                         var mapRestriction = world.EvaluateMovementMapTarget(connectionId, action.TargetX, action.TargetY);
                         if (mapRestriction != LegacyMovementMapRestriction.None)
@@ -1901,9 +2246,13 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                 await stream.WriteAsync(noticeFrame, cancellationToken);
                             }
 
-                            if (world.TryRecallForMovementRestriction(connectionId, out var recall) && recall is not null)
+                            if (world.TryRecallForMovementRestrictionWithViews(connectionId, out var recallTransition) && recallTransition is not null)
                             {
+                                var recall = recallTransition.Recall;
                                 sessions.SetServerPosition(connectionId, recall.ToX, recall.ToY);
+                                var recallTick = unchecked((uint)Environment.TickCount64);
+                                var recallKeyword = (byte)RandomNumberGenerator.GetInt32(256);
+                                var recallCodec = LegacyFrameCodec.CreateDefault();
                                 var recallFrame = new ActionRequest(
                                     recall.FromX,
                                     recall.FromY,
@@ -1912,9 +2261,21 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                     Route: new byte[24],
                                     recall.ToX,
                                     recall.ToY)
-                                    .ToFrame(LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                    .ToFrame(recallCodec, recallTick, recallKeyword, (ushort)connectionId);
+                                if (!LegacyRecallRelay.TryBuild(
+                                    world,
+                                    recallTransition,
+                                    recallFrame,
+                                    recallCodec,
+                                    recallTick,
+                                    recallKeyword,
+                                    out var recallRelayPlans))
+                                    Console.Error.WriteLine($"Movement recall visibility plan failed: connection={connectionId}; no global relay was sent.");
+
                                 await stream.WriteAsync(recallFrame, cancellationToken);
-                                await world.BroadcastAsync(connectionId, recallFrame, cancellationToken);
+                                if (recallRelayPlans is not null)
+                                    foreach (var plan in recallRelayPlans)
+                                        await world.SendAsync(plan.RecipientId, plan.Frame, cancellationToken);
                                 Console.WriteLine($"Movement recalled: account={actionSession.AccountName}, reason={mapRestriction}, from=({recall.FromX},{recall.FromY}), to=({recall.ToX},{recall.ToY}).");
                             }
                             else
@@ -1930,7 +2291,15 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             // the millisecond ClientTick stamped at input time instead of replacing it with server time.
                             var actionFrame = action.ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
                             await stream.WriteAsync(actionFrame, cancellationToken);
-                            await world.BroadcastAsync(connectionId, actionFrame, cancellationToken);
+                            foreach (var recipient in world.GetParticipantIdsInPlayerView(connectionId).Where(id => id != connectionId))
+                                await world.SendAsync(recipient, actionFrame, cancellationToken);
+                            if (action.WireType == ActionRequest.IllusionMessageType &&
+                                world.TryGetResourceState(connectionId, out var illusionState, out var requestedHp, out var requestedMp) && illusionState is not null)
+                            {
+                                var resourceFrame = new SetHpMpConfirmation(illusionState.CurrentScore.Hp, illusionState.CurrentMana, requestedHp, requestedMp)
+                                    .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
+                                await stream.WriteAsync(resourceFrame, cancellationToken);
+                            }
                             if (world.TryAdvanceSummons(connectionId, out var summonMovements))
                             {
                                 foreach (var summonMovement in summonMovements)
@@ -1960,6 +2329,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                         if (!sessions.TryGet(connectionId, out var motionSession) || motionSession!.State != LoginSessionState.Playing)
                         {
                             Console.WriteLine($"Rejected motion: connection={connectionId}, session is not in USER_PLAY.");
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.MotionPoints, LegacyCrackErrorRules.MotionType);
                             continue;
                         }
 
@@ -1974,6 +2344,7 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                 .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, (byte)RandomNumberGenerator.GetInt32(256), (ushort)connectionId);
                             await stream.WriteAsync(hpModeFrame, cancellationToken);
                             Console.WriteLine($"Rejected motion: account={motionSession.AccountName}, character HP is zero.");
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.MotionPoints, LegacyCrackErrorRules.MotionType);
                             continue;
                         }
 
@@ -2002,24 +2373,72 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                     if (AttackRequest.TryParse(frame, out var attack) && attack is not null)
                     {
-                        if (skills is null || !sessions.TryGet(connectionId, out var attackSession) || attackSession!.State != LoginSessionState.Playing || !world.TryGetCombatState(connectionId, out var combatState) || combatState is null)
+                        // TMProject 7.69 and W2PP check TradeMode before USER_PLAY,
+                        // HP, timing, mana, and combat validation. A listed shop owner
+                        // receives only the legacy private MessagePanel 170.
+                        if (autoTradeBook.HasListing(connectionId))
+                        {
+                            var notice = new MessagePanelConfirmation("N\u00E3o \u00E9 possi\u00EDvel durante a auto venda.")
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), 0, 0);
+                            await stream.WriteAsync(notice, cancellationToken);
+                            continue;
+                        }
+
+                        if (skills is null || !sessions.TryGet(connectionId, out var attackSession) || attackSession!.State != LoginSessionState.Playing || !world.TryGetAttackState(connectionId, out var attackState) || attackState is null)
                         {
                             Console.WriteLine($"Ignored attack: connection={connectionId}, skill={attack.SkillIndex}, reason=CombatNotReady.");
                             continue;
                         }
 
-                        // C++ Exec_MSG_Attack rejects a dead attacker before timing, mana, or damage work.
-                        // Dead attackers are rejected for ordinary attacks; skill 99 is the explicit legacy resurrection exception.
-                        if (combatState.CurrentScore.Hp <= 0 && attack.SkillIndex != 99)
+                        var combatState = attackState.CombatState;
+
+                        // TMProject 7.69 rejects clanless attacks in RvR sector (13,15) before HP/tick/mana.
+                        // W2PP has no matching branch; the selected 7.69 client/server source defines this release behavior.
+                        if (LegacyAttackRvrGateRules.ShouldReject(attackState.PositionX, attackState.PositionY, attackState.Clan))
                         {
-                            Console.WriteLine($"Rejected attack: account={attackSession.AccountName}, skill={attack.SkillIndex}, reason=AttackerNotAlive.");
+                            var notice = new MessagePanelConfirmation(LegacyAttackRvrGateRules.BlockedMessage)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), 0, 0);
+                            await stream.WriteAsync(notice, cancellationToken);
                             continue;
                         }
 
-                        var timing = sessions.TryAcceptAttackTiming(connectionId, frame.Header.ClientTick, unchecked((uint)Environment.TickCount64));
+                        // W2PP rejects exactly-zero HP here, before timing, mana, and damage; skill 99 is resurrection.
+                        if (LegacyAttackDeadGateRules.ShouldReject(combatState.CurrentScore.Hp, attack.SkillIndex))
+                        {
+                            var hpModeFrame = new SetHpModeConfirmation(combatState.CurrentScore.Hp, (short)attackSession.State)
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), 0, 0, (ushort)connectionId);
+                            await stream.WriteAsync(hpModeFrame, cancellationToken);
+                            await RecordCrackErrorAsync(LegacyCrackErrorRules.AttackDeadPoints, LegacyCrackErrorRules.AttackDeadType);
+                            continue;
+                        }
+
+                        var timing = sessions.TryAcceptAttackTiming(connectionId, frame.Header.ClientTick,
+                            unchecked((uint)Environment.TickCount64), out var hasBackwardTickError);
+                        LegacyCrackErrorOutcome? backwardTickError = null;
+                        if (hasBackwardTickError)
+                        {
+                            // 7.69 and W2PP add 4/type7 without returning before LastAttackTick update or
+                            // the server-window gate. Defer this error's logout until a simultaneous 1/type107
+                            // window rejection has also been recorded, preserving the source order.
+                            backwardTickError = await RecordCrackErrorAsync(
+                                LegacyCrackErrorRules.AttackBackstepPoints,
+                                LegacyCrackErrorRules.AttackBackstepType,
+                                deferCharacterLogout: timing != AttackTimingResult.Accepted);
+                        }
                         if (timing != AttackTimingResult.Accepted)
                         {
+                            if (timing is AttackTimingResult.TooSoon or AttackTimingResult.OutsideServerWindow)
+                            {
+                                // Both 7.69 and W2PP add 1/type107 for these timing failures. The extra 7.69
+                                // ban/Analysis/SaveInfoDetect side effects are excluded by the project's Action-only Analysis policy.
+                                await RecordCrackErrorAsync(LegacyCrackErrorRules.AttackTimingPoints, LegacyCrackErrorRules.AttackTimingType);
+                            }
                             Console.WriteLine($"Rejected attack: account={attackSession.AccountName}, skill={attack.SkillIndex}, reason={timing}.");
+                            continue;
+                        }
+                        if (backwardTickError?.RequiresCharacterLogout == true)
+                        {
+                            Console.WriteLine($"Rejected attack: account={attackSession.AccountName}, skill={attack.SkillIndex}, reason=CrackErrorThreshold.");
                             continue;
                         }
 
@@ -2412,44 +2831,8 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
 
                     if (CharacterLogoutRequest.IsValid(frame))
                     {
-                        if (!sessions.TryGet(connectionId, out var logoutSession) || logoutSession!.State != LoginSessionState.Playing)
-                        {
-                            // CharLogOut sends the confirmation even when the legacy user is not in USER_PLAY.
-                            await stream.WriteAsync(CharacterLogoutConfirmation.ToFrame(LegacyFrameCodec.CreateDefault(), connectionId, unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
-                            Console.WriteLine($"Character logout acknowledged outside USER_PLAY: connection={connectionId}.");
-                            continue;
-                        }
-
-                        if (accounts is not null && logoutSession.CharacterSlot >= 0 && logoutSession.AccountName is not null)
-                        {
-                            if (world.TryGetCharacterSnapshot(connectionId, out var mobSnapshot, out var positionX, out var positionY, out var mobExtraSnapshot, out _, out var clientEquipmentSnapshot) && mobSnapshot is not null)
-                            {
-                                var saveResult = await accounts.TrySaveCharacterStateAsync(
-                                    logoutSession.AccountName, logoutSession.CharacterSlot, mobSnapshot, positionX, positionY, cancellationToken, mobExtraSnapshot);
-                                Console.WriteLine($"Character state save: account={logoutSession.AccountName}, slot={logoutSession.CharacterSlot}, position=({positionX},{positionY}), result={saveResult}.");
-                                if (accounts is IClientEquipmentStateStore clientEquipmentStore && clientEquipmentSnapshot is not null)
-                                {
-                                    var equipmentResult = await clientEquipmentStore.TrySaveClientEquipmentAsync(
-                                        logoutSession.AccountName, logoutSession.CharacterSlot, clientEquipmentSnapshot, cancellationToken);
-                                    Console.WriteLine($"Client 7.69 equipment save: account={logoutSession.AccountName}, slot={logoutSession.CharacterSlot}, result={equipmentResult}.");
-                                }
-                            }
-                            else
-                            {
-                                var saveResult = await accounts.TrySaveCharacterPositionAsync(
-                                    logoutSession.AccountName, logoutSession.CharacterSlot, logoutSession.PositionX, logoutSession.PositionY, cancellationToken);
-                                Console.WriteLine($"Character position fallback save: account={logoutSession.AccountName}, slot={logoutSession.CharacterSlot}, position=({logoutSession.PositionX},{logoutSession.PositionY}), result={saveResult}.");
-                            }
-                        }
-
-                        sessions.CompleteCharacterLogout(connectionId);
-                        autoTradeBook.TryStop(connectionId, out var logoutAutoTrade);
-                        await RemoveAutoTradeStateAsync(autoTradeStateStore, logoutSession.AccountName, logoutSession.CharacterSlot, logoutAutoTrade, cancellationToken);
-                        await BroadcastAutoTradeRemovalAsync(world, logoutAutoTrade, cancellationToken);
-                        world.Leave(connectionId, out var logoutSummons);
-                        await BroadcastSummonDespawnsAsync(world, logoutSummons, cancellationToken);
-                        await stream.WriteAsync(CharacterLogoutConfirmation.ToFrame(LegacyFrameCodec.CreateDefault(), connectionId, unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256)), cancellationToken);
-                        Console.WriteLine($"Character logout accepted: account={logoutSession.AccountName}, connection={connectionId}.");
+                        await LogoutCharacterAsync();
+                        Console.WriteLine($"Character logout acknowledged: connection={connectionId}.");
                         continue;
                     }
 
@@ -2469,38 +2852,31 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
         }
         finally
         {
-            serverLog?.Write($"CONNECTION FINALLY connection={connectionId} state={(sessions.TryGet(connectionId, out var finalSession) ? finalSession!.State : LoginSessionState.Closed)}");
-            if (accounts is not null && sessions.TryGet(connectionId, out var disconnectedSession) && disconnectedSession!.State == LoginSessionState.Playing && disconnectedSession.AccountName is not null && disconnectedSession.CharacterSlot >= 0)
+            try
             {
-                if (world.TryGetCharacterSnapshot(connectionId, out var mobSnapshot, out var positionX, out var positionY, out var mobExtraSnapshot, out _, out var clientEquipmentSnapshot) && mobSnapshot is not null)
-                {
-                    var saveResult = await accounts.TrySaveCharacterStateAsync(
-                        disconnectedSession.AccountName, disconnectedSession.CharacterSlot, mobSnapshot, positionX, positionY, CancellationToken.None, mobExtraSnapshot);
-                    Console.WriteLine($"Character disconnect state save: account={disconnectedSession.AccountName}, slot={disconnectedSession.CharacterSlot}, position=({positionX},{positionY}), result={saveResult}.");
-                    if (accounts is IClientEquipmentStateStore clientEquipmentStore && clientEquipmentSnapshot is not null)
+                var disconnectPlan = await LegacyAutoTradeDepartureCoordinator.DepartAsync(connectionId, world, autoTradeBook,
+                    async ct =>
                     {
-                        var equipmentResult = await clientEquipmentStore.TrySaveClientEquipmentAsync(
-                            disconnectedSession.AccountName, disconnectedSession.CharacterSlot, clientEquipmentSnapshot, CancellationToken.None);
-                        Console.WriteLine($"Client 7.69 equipment disconnect save: account={disconnectedSession.AccountName}, slot={disconnectedSession.CharacterSlot}, result={equipmentResult}.");
-                    }
-                }
-                else
-                {
-                    var saveResult = await accounts.TrySaveCharacterPositionAsync(
-                        disconnectedSession.AccountName, disconnectedSession.CharacterSlot, disconnectedSession.PositionX, disconnectedSession.PositionY, CancellationToken.None);
-                    Console.WriteLine($"Character disconnect position fallback save: account={disconnectedSession.AccountName}, slot={disconnectedSession.CharacterSlot}, position=({disconnectedSession.PositionX},{disconnectedSession.PositionY}), result={saveResult}.");
-                }
+                        serverLog?.Write($"CONNECTION FINALLY connection={connectionId} state={(sessions.TryGet(connectionId, out var finalSession) ? finalSession!.State : LoginSessionState.Closed)}");
+                        if (sessions.TryGet(connectionId, out var disconnectedSession) && disconnectedSession?.State == LoginSessionState.Playing)
+                            await SaveCharacterOnDepartureAsync(accounts, world, disconnectedSession, disconnect: true, ct);
+                    },
+                    async (shop, ct) =>
+                    {
+                        if (sessions.TryGet(connectionId, out var endedSession))
+                            await RemoveAutoTradeStateAsync(autoTradeStateStore, endedSession!.AccountName, endedSession.CharacterSlot, shop, ct);
+                    },
+                    LegacyFrameCodec.CreateDefault(), unchecked((uint)Environment.TickCount64), (byte)RandomNumberGenerator.GetInt32(256), CancellationToken.None);
+                await BroadcastAutoTradeDepartureAsync(world, disconnectPlan, CancellationToken.None);
+                if (disconnectPlan.ClosedTrade is { } disconnectedTrade)
+                    Console.WriteLine($"Trade cancelled by disconnect: connection={disconnectedTrade.ConnectionId}, opponent={disconnectedTrade.OpponentId}.");
+                await BroadcastSummonDespawnsAsync(world, disconnectPlan.DespawnedSummonIds, CancellationToken.None);
+                serverLog?.Write($"CONNECTION CLOSED connection={connectionId}");
             }
-
-            autoTradeBook.TryStop(connectionId, out var disconnectedAutoTrade);
-            if (sessions.TryGet(connectionId, out var endedSession))
-                await RemoveAutoTradeStateAsync(autoTradeStateStore, endedSession!.AccountName, endedSession.CharacterSlot, disconnectedAutoTrade, CancellationToken.None);
-            await BroadcastAutoTradeRemovalAsync(world, disconnectedAutoTrade, CancellationToken.None);
-            world.Leave(connectionId, out var disconnectedSummons, out var disconnectedTrade);
-            if (disconnectedTrade is not null)
-                Console.WriteLine($"Trade cancelled by disconnect: connection={disconnectedTrade.ConnectionId}, opponent={disconnectedTrade.OpponentId}.");
-            await BroadcastSummonDespawnsAsync(world, disconnectedSummons, CancellationToken.None);
-            serverLog?.Write($"CONNECTION CLOSED connection={connectionId}");
+            finally
+            {
+                sessions.Close(connectionId);
+            }
         }
     }
 }
@@ -2830,23 +3206,32 @@ static async Task BroadcastRemovedNpcsInAreaAsync(WorldHub world, IReadOnlyList<
     }
 }
 
-static async Task BroadcastAutoTradeRemovalAsync(WorldHub world, LegacyAutoTradeSnapshot? snapshot, CancellationToken cancellationToken)
+static async ValueTask SaveCharacterOnDepartureAsync(ICharacterStore? accounts, WorldHub world, LoginSession session, bool disconnect, CancellationToken cancellationToken)
 {
-    if (snapshot is null ||
-        !LegacyAutoTradeRemovalRelay.TryBuild(
-            snapshot,
-            LegacyFrameCodec.CreateDefault(),
-            unchecked((uint)Environment.TickCount64),
-            (byte)RandomNumberGenerator.GetInt32(256),
-            out var plan) ||
-        plan is null)
-        return;
+    if (accounts is null || session.CharacterSlot < 0 || session.AccountName is null) return;
+    var label = disconnect ? "disconnect " : string.Empty;
+    if (world.TryGetCharacterSnapshot(session.ConnectionId, out var mob, out var x, out var y, out var extra, out _, out var equipment) && mob is not null)
+    {
+        var result = await accounts.TrySaveCharacterStateAsync(session.AccountName, session.CharacterSlot, mob, x, y, cancellationToken, extra);
+        Console.WriteLine($"Character {label}state save: account={session.AccountName}, slot={session.CharacterSlot}, position=({x},{y}), result={result}.");
+        if (accounts is IClientEquipmentStateStore equipmentStore && equipment is not null)
+        {
+            var equipmentResult = await equipmentStore.TrySaveClientEquipmentAsync(session.AccountName, session.CharacterSlot, equipment, cancellationToken);
+            Console.WriteLine($"Client 7.69 equipment {label}save: account={session.AccountName}, slot={session.CharacterSlot}, result={equipmentResult}.");
+        }
+    }
+    else
+    {
+        var result = await accounts.TrySaveCharacterPositionAsync(session.AccountName, session.CharacterSlot, session.PositionX, session.PositionY, cancellationToken);
+        Console.WriteLine($"Character {label}position fallback save: account={session.AccountName}, slot={session.CharacterSlot}, position=({session.PositionX},{session.PositionY}), result={result}.");
+    }
+}
 
-    var recipients = world.GetParticipantIdsInPlayerView(plan.ShopConnectionId);
-    if (recipients.Count == 0)
-        recipients = world.GetParticipantIdsInNpcView(plan.ShopConnectionId);
-    foreach (var recipient in recipients.Where(id => id != plan.ShopConnectionId))
-        await world.SendAsync(recipient, plan.Frame, cancellationToken);
+static async Task BroadcastAutoTradeDepartureAsync(WorldHub world, LegacyAutoTradeDeparturePlan plan, CancellationToken cancellationToken)
+{
+    foreach (var framePlan in plan.Frames)
+        foreach (var recipient in framePlan.RecipientIds)
+            await world.SendAsync(recipient, framePlan.Frame, cancellationToken);
 }
 
 static async Task BroadcastClosedAutoTradeRemovalAsync(
@@ -3021,18 +3406,19 @@ static bool TryResolveSkillCombatInputs(ReadOnlySpan<byte> mob, LegacyItemDataTa
     return true;
 }
 
-sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, string? AccountDatabaseConfigPath, string? SkillDataPath, string? ItemDataPath, string? InitItemPath, string? HeightMapPath, string? AttributeMapPath, string? GuildDataPath, string? SummonRoot, string? NpcGenerationPath, string? NpcRoot, string? CastleQuestPath, string? DonateShopCatalogPath, string? DonateDatabaseConfigPath, bool SpawnCityNpcs, bool SpawnDonateNpc, LegacyMapCollisionMode MapCollisionMode, LegacyServerMode ServerMode, string? AutoTradeStatePath, string? StatusFilePath, int? StatusSlot)
+sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, string? AccountDatabaseConfigPath, string? AccountReviewRoot, string? SkillDataPath, string? ItemDataPath, string? InitItemPath, string? HeightMapPath, string? AttributeMapPath, string? GuildDataPath, string? SummonRoot, string? NpcGenerationPath, string? NpcRoot, string? CastleQuestPath, string? DonateShopCatalogPath, string? DonateDatabaseConfigPath, bool SpawnCityNpcs, bool SpawnDonateNpc, LegacyMapCollisionMode MapCollisionMode, LegacyServerMode ServerMode, string? AutoTradeStatePath, string? StatusFilePath, int? StatusSlot)
 {
     public string WorldKey => new LegacyServerModePolicy(ServerMode).WorldKey;
 
     public static ServerOptions Parse(string[] args)
     {
-        if (args.Length == 1 && int.TryParse(args[0], out var legacyPort)) return new("127.0.0.1", legacyPort, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, false, LegacyMapCollisionMode.LegacyCompatible, LegacyServerMode.Up, null, null, null);
+        if (args.Length == 1 && int.TryParse(args[0], out var legacyPort)) return new("127.0.0.1", legacyPort, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, false, LegacyMapCollisionMode.LegacyCompatible, LegacyServerMode.Up, null, null, null);
 
         var port = 8281; // GAME_PORT — matches Basedef.h and WYD.EXE client expectation
         var bindAddress = "127.0.0.1";
         string? accountRoot = null;
         string? accountDatabaseConfigPath = null;
+        string? accountReviewRoot = null;
         string? skillDataPath = null;
         string? itemDataPath = null;
         string? initItemPath = null;
@@ -3067,6 +3453,9 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
                     break;
                 case "--mariadb-account-config" when index + 1 < args.Length:
                     accountDatabaseConfigPath = Path.GetFullPath(args[++index]);
+                    break;
+                case "--account-review-root" when index + 1 < args.Length:
+                    accountReviewRoot = Path.GetFullPath(args[++index]);
                     break;
                 case "--skill-data" when index + 1 < args.Length:
                     skillDataPath = Path.GetFullPath(args[++index]);
@@ -3131,7 +3520,7 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
                         throw new ArgumentException("--world must be 'UP' or 'PVP'.");
                     break;
                 default:
-                    throw new ArgumentException("Usage: WydCdk.Server [--bind <ip-address>] [--port <port>] [--world <UP|PVP>] [--mode <up|pvp>] [--accounts-root <legacy-account-directory>] [--mariadb-account-config <mariadb-config.json>] [--skill-data <SkillData.csv>] [--item-data <ItemList.bin>] [--init-item <InitItem.bin>] [--heightmap <heightmap.dat> --attribute-map <AttributeMap.dat>] [--guild-data <Guild.txt>] [--base-summon <BaseSummon-directory>] [--npc-generation <NPCGener.txt> --npc-root <npc-directory>] [--city-npcs] [--donate-npc] [--castle-quest <CastleQuest.txt>] [--donate-catalog <DonateShop.csv>] [--donate-db-config <mariadb-config.json>] [--autotrade-state <path>] [--status-file <servtest.htm> --status-slot <1-9>] [--strict-map-collision]");
+                    throw new ArgumentException("Usage: WydCdk.Server [--bind <ip-address>] [--port <port>] [--world <UP|PVP>] [--mode <up|pvp>] [--accounts-root <legacy-account-directory>] [--mariadb-account-config <mariadb-config.json>] [--account-review-root <persistent-directory>] [--skill-data <SkillData.csv>] [--item-data <ItemList.bin>] [--init-item <InitItem.bin>] [--heightmap <heightmap.dat> --attribute-map <AttributeMap.dat>] [--guild-data <Guild.txt>] [--base-summon <BaseSummon-directory>] [--npc-generation <NPCGener.txt> --npc-root <npc-directory>] [--city-npcs] [--donate-npc] [--castle-quest <CastleQuest.txt>] [--donate-catalog <DonateShop.csv>] [--donate-db-config <mariadb-config.json>] [--autotrade-state <path>] [--status-file <servtest.htm> --status-slot <1-9>] [--strict-map-collision]");
             }
         }
 
@@ -3148,8 +3537,10 @@ sealed record ServerOptions(string BindAddress, int Port, string? AccountRoot, s
             throw new ArgumentException("--donate-npc requires --npc-generation and --npc-root.");
         if ((statusFilePath is null) != (statusSlot is null))
             throw new ArgumentException("--status-file and --status-slot must be provided together.");
+        if ((accountRoot is not null || accountDatabaseConfigPath is not null) && accountReviewRoot is null)
+            throw new ArgumentException("--account-review-root is required whenever account authentication is enabled.");
         if (statusSlot is not null && (statusSlot < 1 || statusSlot >= ServerStatusFilePublisher.SlotCount))
             throw new ArgumentOutOfRangeException(nameof(args), "--status-slot must be between 1 and 9.");
-        return new(bindAddress, port, accountRoot, accountDatabaseConfigPath, skillDataPath, itemDataPath, initItemPath, heightMapPath, attributeMapPath, guildDataPath, summonRoot, npcGenerationPath, npcRoot, castleQuestPath, donateShopCatalogPath, donateDatabaseConfigPath, spawnCityNpcs, spawnDonateNpc, mapCollisionMode, serverMode, autoTradeStatePath, statusFilePath, statusSlot);
+        return new(bindAddress, port, accountRoot, accountDatabaseConfigPath, accountReviewRoot, skillDataPath, itemDataPath, initItemPath, heightMapPath, attributeMapPath, guildDataPath, summonRoot, npcGenerationPath, npcRoot, castleQuestPath, donateShopCatalogPath, donateDatabaseConfigPath, spawnCityNpcs, spawnDonateNpc, mapCollisionMode, serverMode, autoTradeStatePath, statusFilePath, statusSlot);
     }
 }

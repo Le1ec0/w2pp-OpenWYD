@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\WydCdk.Protocol\WydCdk.Protocol.csproj" />
@@ -37,6 +37,11 @@
     <EmbeddedResource Include="Fixtures\V769\character-login-transformation-composition.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-composition.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-score-coordinator.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-score-coordinator.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-kibita-soul.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-kibita-soul.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-frozen-blade.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-frozen-blade.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-weaken.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-weaken.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-meditation.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-meditation.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-golden-shield.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-golden-shield.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\character-login-elemental-protection-ac.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-elemental-protection-ac.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-mob.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-mob.golden.hex" />
     <EmbeddedResource Include="Fixtures\V769\update-equip.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.update-equip.golden.hex" />
     <EmbeddedResource Include="Fixtures\V769\create-mob.golden.hex" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.create-mob.golden.hex" />

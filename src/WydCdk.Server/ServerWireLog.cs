@@ -4,10 +4,10 @@ using WydCdk.Protocol;
 
 internal sealed class ServerWireLog : IDisposable
 {
-    private readonly StreamWriter writer;
+    private readonly TextWriter writer;
     private readonly object gate = new();
 
-    private ServerWireLog(StreamWriter writer)
+    internal ServerWireLog(TextWriter writer)
     {
         this.writer = writer;
     }
@@ -64,12 +64,17 @@ internal sealed class ServerWireLog : IDisposable
 
     public TextWriter CreateTee(TextWriter consoleWriter) => new TeeTextWriter(consoleWriter, this);
 
-    private static bool IsSensitiveFrame(ushort type)
+    internal static bool IsSensitiveFrame(ushort type)
     {
+        // Audit: DeleteCharacterRequest (0x0211) carries the account password;
+        // AccountLoginConfirmation (0x010A) carries session keys and BlockPassword.
+        // Both must be suppressed before any wire log reaches disk.
         return type is
             AccountLoginRequest.MessageType or
+            AccountLoginConfirmation.MessageType or
             AccountSecureRequest.MessageType or
-            CreateCharacterRequest.MessageType;
+            CreateCharacterRequest.MessageType or
+            DeleteCharacterRequest.MessageType;
     }
 
     private static string? DescribeCharacterSelection(DecodedFrame frame)

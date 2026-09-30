@@ -1059,7 +1059,7 @@ public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDo
     private bool TryResolveAccountPath(string accountName, out string normalized, out string path)
     {
         path = string.Empty;
-        if (!TryNormalizeAccountName(accountName, out normalized)) return false;
+        if (!LegacyAccountNameRules.TryNormalize(accountName, out normalized)) return false;
 
         var candidate = Path.Combine(accountRoot, GetLegacyDirectory(normalized), normalized);
         if (!IsInsideAccountRoot(candidate)) return false;
@@ -1072,13 +1072,6 @@ public sealed class LegacyFileAccountStore : IAccountStore, ICharacterStore, IDo
     {
         var rootWithSeparator = Path.EndsInDirectorySeparator(accountRoot) ? accountRoot : accountRoot + Path.DirectorySeparatorChar;
         return Path.GetFullPath(path).StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool TryNormalizeAccountName(string accountName, out string normalized)
-    {
-        normalized = accountName.ToUpperInvariant();
-        if (normalized.Length is < 1 or >= AccountNameLength) return false;
-        return normalized.All(static character => character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-');
     }
 
     private static string GetLegacyDirectory(string accountName) => accountName[0] is >= 'A' and <= 'Z' ? accountName[..1] : "etc";

@@ -1,5 +1,24 @@
 # Ambiente do WYD CDK
 
+## Plataforma .NET do ambiente local
+
+O listener, os projetos de dominio/protocolo, testes, ferramentas e o launcher
+usam `net10.0`; o painel WinForms usa `net10.0-windows`. Nesta atualizacao o SDK
+observado foi `10.0.401`. A linha recomendada e .NET 10 LTS no ultimo patch
+estavel, sem preview/STS automatico. Ate existir `global.json` pelo `BL-025`,
+comece cada evidencia de build com:
+
+```powershell
+dotnet --info
+dotnet build .\Server\WydCdk.Engine.slnx --nologo -v:q
+```
+
+Use `async`/`await` e cancelamento para I/O; nao use `Task.Run` para mascarar
+operacoes de rede, arquivo ou banco. Preserve `Nullable`/`ImplicitUsings`, injecao
+de dependencia, configuracao tipada, logs sem credenciais e o bind local por
+padrao. Qualquer teste publico, credencial ou endpoint externo continua fora
+desse ambiente e exige autorizacao separada.
+
 ## Estado confirmado nesta sessão
 
 - `Site\` é o frontend PHP legado de cadastro, ranking, download e guildmark. Os arquivos `php-local.err.log` e `php-e2e.err.log` registram execuções anteriores do PHP embutido em `127.0.0.1:8000` e `127.0.0.1:8080`.

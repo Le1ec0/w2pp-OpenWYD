@@ -11,6 +11,10 @@ internal sealed class MainForm : Form
     private readonly NumericUpDown portBox = new() { Minimum = 1, Maximum = 65535, Value = 8281 };
     private readonly TextBox accountRootBox = new();
     private readonly TextBox accountDatabaseBox = new();
+    private readonly TextBox accountReviewRootBox = new()
+    {
+        Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WydCdk", "account-review"),
+    };
     private readonly TextBox donateDatabaseBox = new();
     private readonly ComboBox modeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label statusLabel = new();
@@ -167,7 +171,7 @@ internal sealed class MainForm : Form
     private Control BuildConfiguration()
     {
         var group = new GroupBox { Text = "Inicialização", Dock = DockStyle.Fill, ForeColor = Color.Gainsboro };
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 4, Padding = new Padding(8) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 5, Padding = new Padding(8) };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
@@ -179,6 +183,8 @@ internal sealed class MainForm : Form
         AddField(grid, "MariaDB auth", accountDatabaseBox, 2, 2, 3, 1);
         AddField(grid, "Donate DB", donateDatabaseBox, 0, 3, 1, 1);
         AddField(grid, "Modo", modeBox, 2, 3, 3, 1);
+        AddField(grid, "Account review", accountReviewRootBox, 0, 4, 1, 4);
+        grid.SetColumnSpan(accountReviewRootBox, 3);
         group.Controls.Add(grid);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
@@ -253,6 +259,7 @@ internal sealed class MainForm : Form
         startInfo.ArgumentList.Add(modeBox.SelectedItem?.ToString() ?? "UP");
         AddOptionalArgument(startInfo, "--accounts-root", accountRootBox.Text);
         AddOptionalArgument(startInfo, "--mariadb-account-config", accountDatabaseBox.Text);
+        AddOptionalArgument(startInfo, "--account-review-root", accountReviewRootBox.Text);
         AddOptionalArgument(startInfo, "--donate-db-config", donateDatabaseBox.Text);
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };

@@ -4,6 +4,10 @@
 **Escopo:** reinicio arquitetural do emulador Server C#/.NET, cliente unico 7.670 compilado da referencia comunitaria 7.69, quatro pacotes de layout selecionaveis pelo launcher, Site 7.54 integrado e inventario do port existente.  
 **Natureza:** diagnostico e plano de reorganizacao. Nao e commit, release nem autorizacao de deploy.
 
+**Desenho e execucao aprovados, T1..T6 implementados; extensao local T7:** coordenacao de compra/fechamento de autotrade em
+[TRADE-CLOSE-001](#trade-close-001-coordenacao-de-autotrade-26092026).
+Plano executavel: [AUTOTRADE_CLOSE_PLAN.md](AUTOTRADE_CLOSE_PLAN.md).
+
 **Documentos operacionais:** o checklist está em [PROGRESSO.md](../../PROGRESSO.md), o backlog priorizado em [BACKLOG.md](../../BACKLOG.md) e a matriz de rastreabilidade em [PORT_TRACEABILITY.md](PORT_TRACEABILITY.md).
 
 **Gate obrigatorio de port:** a referencia 7.69 define o contrato-alvo, mas todo recorte precisa primeiro comparar o simbolo, wire e efeito equivalente em `Server/W2PP`. Se houver diferenca, a decisao (manter, adaptar ou substituir) entra na ficha e no teste antes de qualquer implementacao C#; nao ha copia direta presumida da 7.69.
@@ -735,3 +739,147 @@ referencia identificada
 ```
 
 Esse fluxo e registro historico da trilha antiga 7559/7600 e nao tem autoridade sobre a direcao 7.69 aprovada em 19/09/2026. Tambem nao autoriza sincronizar ou publicar source na VPS.
+
+## TRADE-CLOSE-001: Coordenacao de autotrade (26/09/2026)
+
+### Objetivo e estado da proposta
+
+Desenho e execucao aprovados pelo usuario em 26/09/2026. T1..T6 do
+[plano de implementacao](AUTOTRADE_CLOSE_PLAN.md) implementados: leases,
+persistencia conjunta, compra protegida, reserva/HP, reconciliacao, host/visual
+normal e rede. A extensao T7 para Action/TradeMode foi validada localmente em
+28/09 (276 PASS, build sem avisos/erros, E2E wire loopback); sem novo deploy
+neste recorte. Nao representa paridade completa de QuitTrade ou do ciclo AFK.
+
+QuitTrade deve fechar a loja online sem permitir que uma compra em andamento
+perca seu rollback. Depois do fechamento duravel, retirar o listing do book,
+restaurar o visual normal do personagem e preservar sinais/PK ja portados.
+O monolito e os projetos atuais permanecem; nao reorganizar a solution.
+
+### Evidencia e decisao de compatibilidade
+
+- Em ambas as referencias, `_MSG_QuitTrade` rejeita HP <= 0, chama
+  `RemoveTrade(opponent)` e `RemoveTrade(self)` e atualiza PK do autor.
+- `RemoveTrade` limpa Trade/AutoTrade, envia sinal 900 e, quando TradeMode
+  esta ativo, multicasta CreateMob normal. Nao remove o jogador do mundo.
+- A variante 7.69 zera ISTradTimer; o W2PP auditado nao faz esse reset.
+  Timer/evento AFK continua fora deste bloco.
+- O C# estende o legado com listing duravel/offline. Antes de T1, TryStop
+  durante o commit causava RollbackFailed, reproduzido em teste concorrente.
+  Leases compartilhadas agora protegem CAS/commit/rollback. Persistencia
+  serializada sozinha nao protege os objetos em memoria; integrar QuitTrade
+  e os relays ao coordenador novo permanece em T5.
+
+Decisao: manter wire/comportamento visivel 7.69 e adaptar a coordenacao da
+extensao persistente C#. Nao copiar locks, layout ou arquitectura C++.
+
+### Exclusao compartilhada e responsabilidades
+
+Adicionar uma fronteira assincrona de operacao por identidade runtime de loja,
+compartilhada pelo mesmo book/host. A lease cobre leitura autoritativa, CAS,
+commit duravel e rollback. Nao manter o lock sincrono do WorldHub durante I/O.
+Se a operacao envolver dois participantes, adquirir IDs distintos em ordem
+crescente; liberar em ordem inversa, inclusive em falha/cancelamento.
+Verificar sessao/owner/slot e geracao do listing depois de adquirir a lease,
+para nao aplicar um plano antigo a uma nova loja ou ID reutilizado.
+
+Abertura, executor de compra, consulta, QuitTrade, logout/desconexao e fechamento
+por reconexao devem respeitar essa mesma fronteira. Nao basta proteger apenas
+o novo handler. Boot/rehidratacao ocorre antes de aceitar conexoes. A espera
+de uma loja nao deve bloquear outra; o registro de leases deve ter ciclo de
+vida limitado ao host/identidades admitidas, sem descarte de semaphore em uso.
+
+O coordenador de aplicacao prepara resultado e destinatarios, sem escrever em
+sockets. Book guarda listing/geracao; WorldHub guarda participante/par/estado
+de jogo; os adapters implementam persistencia. Host apenas compoe e envia frames.
+Preservar os CAS existentes: a lease nao autoriza sobrescrever um MOB divergente
+nem resolve concorrencia geral de inventario fora desta trilha.
+
+### Fechamento e ponto de aceite
+
+1. Localizar sessao e eventual par, adquirir leases e revalidar identidades.
+2. Sob lock curto do WorldHub, validar USER_PLAY/HP e reservar um token de
+   fechamento com o par esperado. Novas ofertas/checks nao podem alterar
+   esse par reservado. HP <= 0 nesse ponto retorna o comportamento atual,
+   sem remover loja/par ou publicar cancelamento/PK.
+3. Capturar listings atuais dos dois lados e seus owners. Se nenhum estiver
+   ativo, continuar o caminho existente de QuitTrade, sem I/O de autotrade.
+4. Para listings persistidos, remover os registros como uma unica operacao
+   condicional pelos snapshots esperados. Acrescentar uma porta de fechamento
+   em lote: file store faz uma substituicao atomica do documento e MariaDB
+   usa uma transacao. Nao executar dois RemoveAsync independentes quando
+   dois lados possuem loja. Backend configurado sem essa capacidade rejeita
+   o fechamento, sem apagar apenas a metade em memoria.
+5. Confirmada a remocao duravel, finalizar token/par e remover os listings
+   correspondentes em memoria. Esse trecho nao pode ser interrompido pelo
+   cancellation token do socket. Nao alterar Carry, cargo, Gold ou MOBEXTRA.
+6. Capturar o MOB/affects autoritativos e vizinhanca para o visual normal;
+   liberar reservas/leases e devolver plano de sinal, visual e PK ao host.
+
+O gate HP lineariza o aceite no passo 2, como a verificacao inicial do handler
+sincrono legado. Se o personagem morrer durante a espera de persistencia, um
+fechamento ja aceito nao sera reclassificado como rejeitado depois do delete.
+Isso nao congela HP/combat; o visual usa o MOB atual no momento da conclusao.
+Falha antes do commit desfaz apenas a reserva de fechamento, mantendo o par.
+
+### Falhas e recuperacao
+
+- Compra primeiro: QuitTrade espera commit ou rollback completo, rele os dados
+  atuais e so entao fecha. Fechamento primeiro: compra posterior encontra
+  loja ausente e nao debita nem entrega item.
+- Rejeicao duravel conhecida: liberar a reserva sem retirar listing/par e
+  sem sinal de sucesso, CreateMob normal ou PK de fechamento.
+- Cancelamento antes de mutacao duravel: nenhuma transicao parcial. Depois de
+  commit confirmado: finalizar memoria mesmo se nao for possivel enviar frames.
+- Exception nao prova rollback do banco. Resultado duravel ambiguo exige
+  reconciliar os registros esperados sob a lease; se todos foram removidos,
+  concluir; se permanecem intactos, abortar. Se nao for possivel determinar,
+  marcar a operacao pendente e bloquear novas vendas/aberturas afetadas, sem
+  sucesso falso nem restauracao cega. Recovery em retry/reconexao deve resolver
+  o estado antes de reutilizar o owner; reinicio usa a origem duravel.
+- Novo listing/geracao ou par divergente rejeita o plano antigo. Reenvio de
+  QuitTrade depois de fechar mantem sinal proprio/PK, sem repetir visual de loja.
+- Falha de envio nao reabre uma loja nem desfaz uma venda ja comprometida.
+
+### Contrato de saida e aceite de testes
+
+Preservar sinal 900 (`0x0384`, 12 bytes) por participante online afetado.
+Para cada loja online fechada, emitir CreateMob normal 7.69 (`236` bytes),
+nao CreateMobTrade (`260`) nem RemoveMob. Usar os adapters/encoder ativos e
+destinatarios 33x33 incluindo o dono; nao transmitir globalmente. PK continua
+sendo o do autor conforme regra ja portada. Remocao de NPC em logout/reconexao
+mantem seu contrato proprio; nao reutiliza-lo para personagem online.
+
+Testes devem executar o codigo real com barreiras deterministas de persistencia,
+sem Sleep como prova de ordem. Antes da implementacao, observar falha para:
+
+- fechamento online e repeticao; nenhum Carry/Gold/cargo alterado;
+- compra retida antes do commit, com sucesso e com rejeicao/rollback;
+- fechamento retido antes do delete e compra concorrente posterior;
+- delete rejeitado, cancelado e ambiguo, sem sucesso falso;
+- duas lojas afetadas: remocao conjunta ou nenhuma; geracao/par obsoletos;
+- HP 0/-1, HP positivo que cai durante a gravacao, ausencia de par/loja;
+- logout/desconexao/reconexao durante compra e independencia entre lojas;
+- file store real com releitura/reinicio; adapter MariaDB em banco local
+  isolado para delete conjunto, CAS e conflitos;
+- rede loopback com dois personagens: abertura/consulta, fechamento e frames
+  normais/PK, rejeicao de compra posterior, durabilidade e relogin intactos.
+
+Executar suite completa, build e smokes do modulo antes de declarar concluido.
+Atualizar rastreabilidade e gates efetivamente executados; headless nao comprova
+o visual do WYD.exe. So depois publicar artefatos na VPS sandbox autorizada,
+conferindo backup, hashes e UP/PVP. Nao inclui Site/producao, source remoto,
+commit/push, evento AFK, AddCrackError ou reorganizacao de outros modulos.
+
+### Aditivo: fechamento de loja disparado por Action (28/09/2026)
+
+O ramo `Action` agora reutiliza `CloseForActionAndCaptureAsync` e a fronteira
+duravel/leases/recovery acima. O gate especifico permanece `HP==0` (nao `<=0`,
+como no QuitTrade): zero conserva HpMode; HP negativo pode concluir o fechamento.
+Uma loja no autor ou no participante da troca bilateral e fechada antes do
+retorno do Action; a combinacao trade+shop usa a mesma reserva atomica.
+O resultado emite sinais `0x0384`/12 aos participantes e CreateMob normal/236
+para a visao, sem PK, Action relay, CreateMobTrade ou RemoveMob. Unidade (276
+PASS), build (0 avisos/0 erros) e E2E wire combinado em loopback passaram.
+E2E visual, evento AFK/ISTradTimer e ban/deteccao 7.69 continuam pendentes;
+nenhum deploy foi feito neste recorte.

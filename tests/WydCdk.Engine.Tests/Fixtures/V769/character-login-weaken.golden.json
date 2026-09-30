@@ -1,0 +1,51 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=10",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=10",
+  "cases": [
+    {
+      "name": "no-weaken-affect",
+      "records": [],
+      "targetExpected": { "damageReduction": 0 },
+      "w2ppExpected": { "damageReduction": 0 }
+    },
+    {
+      "name": "standard-level-and-value",
+      "records": [{ "slot": 0, "type": 10, "value": 15, "level": 100 }],
+      "targetExpected": { "damageReduction": 35 },
+      "w2ppExpected": { "damageReduction": 35 }
+    },
+    {
+      "name": "zero-level-with-value",
+      "records": [{ "slot": 0, "type": 10, "value": 50, "level": 0 }],
+      "targetExpected": { "damageReduction": 50 },
+      "w2ppExpected": { "damageReduction": 50 }
+    },
+    {
+      "name": "level-four-integer-division",
+      "records": [{ "slot": 0, "type": 10, "value": 10, "level": 4 }],
+      "targetExpected": { "damageReduction": 10 },
+      "w2ppExpected": { "damageReduction": 10 }
+    },
+    {
+      "name": "multiple-affects-accumulate",
+      "records": [
+        { "slot": 0, "type": 10, "value": 5, "level": 20 },
+        { "slot": 1, "type": 10, "value": 10, "level": 30 }
+      ],
+      "targetExpected": { "damageReduction": 25 },
+      "w2ppExpected": { "damageReduction": 25 }
+    },
+    {
+      "name": "level-only-zero-value",
+      "records": [{ "slot": 0, "type": 10, "value": 0, "level": 250 }],
+      "targetExpected": { "damageReduction": 50 },
+      "w2ppExpected": { "damageReduction": 50 }
+    },
+    {
+      "name": "other-affects-ignored",
+      "records": [{ "slot": 0, "type": 9, "value": 20, "level": 100 }],
+      "targetExpected": { "damageReduction": 0 },
+      "w2ppExpected": { "damageReduction": 0 }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\WydCdk.Protocol\WydCdk.Protocol.csproj" />
@@ -13,4 +13,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="WydCdk.Engine.Tests" />
+  </ItemGroup>
 </Project>

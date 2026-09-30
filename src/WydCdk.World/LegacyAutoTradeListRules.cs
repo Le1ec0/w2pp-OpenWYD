@@ -15,7 +15,7 @@ public static class LegacyAutoTradeListRules
         int targetId,
         LegacyAutoTradeListContext context)
     {
-        if (context.RequesterHp <= 0)
+        if (context.RequesterHp == 0)
             return LegacyAutoTradeListResult.RequesterNotAlive;
         if (!context.RequesterInPlay)
             return LegacyAutoTradeListResult.RequesterNotPlaying;

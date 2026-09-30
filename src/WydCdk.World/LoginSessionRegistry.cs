@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using WydCdk.Protocol;
 
 namespace WydCdk.World;
@@ -28,6 +29,7 @@ public enum MovementResult
     InvalidState,
     OutOfBounds,
     StepTooLarge,
+    RepeatedStop,
 }
 
 public enum AttackTimingResult
@@ -43,19 +45,20 @@ public enum AttackTimingResult
 /// <summary>
 /// Owns the login state transitions that the C++ server currently stores in pUser[conn].Mode.
 /// Authentication and persistence are intentionally outside this class.
+/// Different connections may update concurrently and readers observe immutable snapshots.
+/// Transitions for a given connection remain serialized by its transport dispatcher.
 /// </summary>
 public sealed class LoginSessionRegistry
 {
-    private readonly Dictionary<int, LoginSession> sessions = [];
+    private readonly ConcurrentDictionary<int, LoginSession> sessions = new();
 
     public bool Open(int connectionId)
     {
-        if (connectionId <= 0 || sessions.ContainsKey(connectionId)) return false;
-        sessions.Add(connectionId, new LoginSession(connectionId, LoginSessionState.Accepted, null, null, SecureVerified: false));
-        return true;
+        return connectionId > 0 && sessions.TryAdd(connectionId,
+            new LoginSession(connectionId, LoginSessionState.Accepted, null, null, SecureVerified: false));
     }
 
-    public bool Close(int connectionId) => sessions.Remove(connectionId);
+    public bool Close(int connectionId) => sessions.TryRemove(connectionId, out _);
 
     public bool TryGet(int connectionId, out LoginSession? session) => sessions.TryGetValue(connectionId, out session);
 
@@ -88,7 +91,15 @@ public sealed class LoginSessionRegistry
         if (!sessions.TryGetValue(connectionId, out var session)) return LoginTransitionResult.UnknownConnection;
         if (session.State != LoginSessionState.CharacterWait) return LoginTransitionResult.InvalidState;
 
-        sessions[connectionId] = session with { State = LoginSessionState.Playing, CharacterSlot = characterSlot, PositionX = positionX, PositionY = positionY };
+        sessions[connectionId] = session with
+        {
+            State = LoginSessionState.Playing,
+            CharacterSlot = characterSlot,
+            PositionX = positionX,
+            PositionY = positionY,
+            CrackErrorPoints = 0,
+            LastMoveType = 0,
+        };
         return LoginTransitionResult.Accepted;
     }
 
@@ -116,10 +127,18 @@ public sealed class LoginSessionRegistry
     {
         if (!sessions.TryGetValue(connectionId, out var session)) return MovementResult.UnknownConnection;
         if (session.State != LoginSessionState.Playing) return MovementResult.InvalidState;
+        if (request.WireType == ActionRequest.StopMessageType && session.LastMoveType == ActionRequest.StopMessageType)
+            return MovementResult.RepeatedStop;
         if (request.TargetX is <= 0 or >= 4096 || request.TargetY is <= 0 or >= 4096) return MovementResult.OutOfBounds;
         if (!LegacyMovementRules.IsTargetWithinViewGrid(session.PositionX, session.PositionY, request.TargetX, request.TargetY)) return MovementResult.StepTooLarge;
 
-        sessions[connectionId] = session with { PositionX = request.TargetX, PositionY = request.TargetY };
+        var targetChanged = request.TargetX != session.PositionX || request.TargetY != session.PositionY;
+        sessions[connectionId] = session with
+        {
+            PositionX = request.TargetX,
+            PositionY = request.TargetY,
+            LastMoveType = targetChanged ? request.WireType : session.LastMoveType,
+        };
         return MovementResult.Accepted;
     }
 
@@ -135,7 +154,15 @@ public sealed class LoginSessionRegistry
     /// The caller supplies the server's monotonic millisecond clock, equivalent to legacy <c>CurrentTime</c>.
     /// </summary>
     public AttackTimingResult TryAcceptAttackTiming(int connectionId, uint clientTick, uint serverTick)
+        => TryAcceptAttackTiming(connectionId, clientTick, serverTick, out _);
+
+    /// <summary>
+    /// Also reports the legacy nonterminal 4/type7 backstep side effect. That check follows the 800ms gate,
+    /// uses unsigned 32-bit arithmetic, updates LastAttackTick, and continues into the server-window gate.
+    /// </summary>
+    public AttackTimingResult TryAcceptAttackTiming(int connectionId, uint clientTick, uint serverTick, out bool hasBackwardTickError)
     {
+        hasBackwardTickError = false;
         if (!sessions.TryGetValue(connectionId, out var session)) return AttackTimingResult.UnknownConnection;
         if (session.State != LoginSessionState.Playing) return AttackTimingResult.InvalidState;
         if (!ClientTickPolicy.IsAllowedFromClient(clientTick)) return AttackTimingResult.ReservedTimestamp;
@@ -143,6 +170,8 @@ public sealed class LoginSessionRegistry
         if (session.LastAttackTick != ClientTickPolicy.SkipCheckTick)
         {
             if (clientTick < unchecked(session.LastAttackTick + 800u)) return AttackTimingResult.TooSoon;
+
+            hasBackwardTickError = clientTick < unchecked(session.LastAttackTick - 100u);
 
             // The legacy handler updates LastAttackTick before its clock-window rejection when there was a prior attack.
             session = session with { LastAttackTick = clientTick };
@@ -166,6 +195,20 @@ public sealed class LoginSessionRegistry
         return LoginTransitionResult.Accepted;
     }
 
+    public bool TryAddCrackError(int connectionId, int points, int type, out LegacyCrackErrorOutcome? outcome)
+    {
+        outcome = null;
+        while (sessions.TryGetValue(connectionId, out var session))
+        {
+            var candidate = LegacyCrackErrorRules.Add(session.CrackErrorPoints, points, type);
+            if (!sessions.TryUpdate(connectionId, session with { CrackErrorPoints = candidate.TotalPoints }, session))
+                continue;
+            outcome = candidate;
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Mirrors <c>pAccountList[Idx].SecurePass</c> (-1 = unverified/failed, 1 = verified) as a bool, set by
     /// <see cref="AccountSecureCoordinator"/>. Unlike the login transitions above, this is not gated by
@@ -180,4 +223,7 @@ public sealed class LoginSessionRegistry
 }
 
 /// <summary>Immutable snapshot; the password and reconnect token never enter connection state.</summary>
-public sealed record LoginSession(int ConnectionId, LoginSessionState State, string? AccountName, IReadOnlyList<uint>? AdapterName, bool SecureVerified = false, int CharacterSlot = -1, short PositionX = 0, short PositionY = 0, uint LastAttackTick = ClientTickPolicy.SkipCheckTick);
+public sealed record LoginSession(int ConnectionId, LoginSessionState State, string? AccountName, IReadOnlyList<uint>? AdapterName, bool SecureVerified = false, int CharacterSlot = -1, short PositionX = 0, short PositionY = 0, uint LastAttackTick = ClientTickPolicy.SkipCheckTick, int CrackErrorPoints = 0)
+{
+    public ushort LastMoveType { get; init; }
+}

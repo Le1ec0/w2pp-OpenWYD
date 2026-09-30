@@ -27,12 +27,16 @@ public static class LegacyExperienceMath
     /// The caller supplies the already-authoritative MOBEXTRA-independent snapshots;
     /// expired affects are assumed to have been cleared by the legacy tick path.
     /// </summary>
-    public static int GetEquipmentExperienceBonus(ReadOnlySpan<byte> mob, ReadOnlySpan<byte> affect, LegacyItemDataTable? itemData)
+    public static int GetEquipmentExperienceBonus(
+        ReadOnlySpan<byte> mob,
+        ReadOnlySpan<byte> affect,
+        LegacyItemDataTable? itemData,
+        IReadOnlyList<LegacyItem>? clientEquipment = null)
     {
         var bonus = 0;
-        if (mob.Length >= LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        if (HasEquipmentLayout(mob, clientEquipment))
         {
-            var fairy = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (13 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var fairy = ReadEquipmentItem(mob, clientEquipment, 13);
             bonus += fairy.Index switch
             {
                 3900 or 3903 or 3906 or 3911 or 3912 or 3913 => 16,
@@ -42,9 +46,9 @@ public static class LegacyExperienceMath
 
             if (itemData is not null)
             {
-                for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+                for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
                 {
-                    var item = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+                    var item = ReadEquipmentItem(mob, clientEquipment, slot);
                     if (item.Index <= 0 || item.Index >= LegacyItemDataTable.MaxItemIndex)
                         continue;
                     if (itemData.GetItemGrade(item) == 7)
@@ -63,13 +67,16 @@ public static class LegacyExperienceMath
     }
 
     /// <summary>Ports the equipment-only portion of CMob::GetCurrentScore DropBonus.</summary>
-    public static int GetEquipmentDropBonus(ReadOnlySpan<byte> mob, LegacyItemDataTable? itemData)
+    public static int GetEquipmentDropBonus(
+        ReadOnlySpan<byte> mob,
+        LegacyItemDataTable? itemData,
+        IReadOnlyList<LegacyItem>? clientEquipment = null)
     {
-        if (itemData is null || mob.Length < LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes))
+        if (itemData is null || !HasEquipmentLayout(mob, clientEquipment))
             return 0;
 
         var bonus = 0;
-        var fairy = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (13 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+        var fairy = ReadEquipmentItem(mob, clientEquipment, 13);
         bonus += fairy.Index switch
         {
             3901 => 32,
@@ -77,9 +84,9 @@ public static class LegacyExperienceMath
             _ => 0,
         };
 
-        for (var slot = 0; slot < LegacyCharacterSelection.EquipmentCount; slot++)
+        for (var slot = 0; slot < GetEquipmentCount(clientEquipment); slot++)
         {
-            var item = LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+            var item = ReadEquipmentItem(mob, clientEquipment, slot);
             if (item.Index <= 0 || item.Index >= LegacyItemDataTable.MaxItemIndex)
                 continue;
             if (itemData.GetItemGrade(item) == 5)
@@ -90,6 +97,20 @@ public static class LegacyExperienceMath
 
         return bonus;
     }
+
+    private static int GetEquipmentCount(IReadOnlyList<LegacyItem>? clientEquipment) =>
+        clientEquipment?.Count == CharacterMobV769.EquipmentCount
+            ? CharacterMobV769.EquipmentCount
+            : LegacyCharacterSelection.EquipmentCount;
+
+    private static bool HasEquipmentLayout(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment) =>
+        clientEquipment?.Count == CharacterMobV769.EquipmentCount ||
+        mob.Length >= LegacyAccountSnapshot.MobEquipmentOffset + (LegacyCharacterSelection.EquipmentCount * LegacyItem.SizeInBytes);
+
+    private static LegacyItem ReadEquipmentItem(ReadOnlySpan<byte> mob, IReadOnlyList<LegacyItem>? clientEquipment, int slot) =>
+        clientEquipment?.Count == CharacterMobV769.EquipmentCount
+            ? clientEquipment[slot]
+            : LegacyItem.Read(mob.Slice(LegacyAccountSnapshot.MobEquipmentOffset + (slot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
 
     public static int GetExpApply(LegacyExperienceEligibility eligibility, int experience, int attackerLevel, int targetLevel)
     {

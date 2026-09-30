@@ -14,7 +14,7 @@ public sealed class MariaDbAccountAuthenticator(Func<DbConnection> connectionFac
 
     public async ValueTask<AccountAuthenticationResult> AuthenticateAsync(AccountLoginRequest request, CancellationToken cancellationToken = default)
     {
-        if (!TryNormalizeAccountName(request.AccountName, out var normalized))
+        if (!LegacyAccountNameRules.TryNormalize(request.AccountName, out var normalized))
             return new(AccountAuthenticationStatus.InvalidAccountName, null);
 
         await using var connection = connectionFactory() ?? throw new InvalidOperationException("The MariaDB account connection factory returned null.");
@@ -53,9 +53,4 @@ public sealed class MariaDbAccountAuthenticator(Func<DbConnection> connectionFac
         command.Parameters.Add(parameter);
     }
 
-    private static bool TryNormalizeAccountName(string accountName, out string normalized)
-    {
-        normalized = accountName.ToUpperInvariant();
-        return normalized.Length is >= 1 and < 16 && normalized.All(static character => character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-');
-    }
 }

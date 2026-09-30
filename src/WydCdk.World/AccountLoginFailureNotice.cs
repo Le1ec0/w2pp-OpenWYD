@@ -7,6 +7,13 @@ namespace WydCdk.World;
 /// </summary>
 public static class AccountLoginFailureNotice
 {
+    public static string ForReview(AccountLoginRejection rejection) => rejection switch
+    {
+        AccountLoginRejection.AccountUnderAnalysis => "Estamos analisando sua conta. Entre em contato com o suporte.",
+        AccountLoginRejection.ReviewStoreUnavailable => "Nao foi possivel consultar a conta. Tente novamente mais tarde.",
+        _ => "Nao foi possivel autenticar a conta.",
+    };
+
     public static string For(AccountAuthenticationStatus status) => status switch
     {
         AccountAuthenticationStatus.AccountNotFound => "Conta nao encontrada.",

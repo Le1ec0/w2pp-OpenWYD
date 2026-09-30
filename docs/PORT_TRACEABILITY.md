@@ -1,5 +1,408 @@
 # Matriz de rastreabilidade do port
 
+## COMBAT-ATTACK-TIMING-001 - erros temporais de MSG_Attack (30/09/2026)
+
+TMProject 7.69 `Servidor/Source/Code/TMSrv/_MSG_Attack.cpp` e W2PP
+`Source/Code/TMSrv/_MSG_Attack.cpp` somam `AddCrackError(1,107)` quando
+`ClientTick < (uint)LastAttackTick+800` e quando o tick fica fora de
+`[max(0, CurrentTime-120000), CurrentTime+15000]`. Entre esses gates, se
+`ClientTick < (uint)LastAttackTick-100`, ambas somam `AddCrackError(4,7)` sem
+retornar; copiam o tick anterior, atualizam LastAttackTick/LastAttack e seguem
+para a janela do servidor. `LoginSessionRegistry.TryAcceptAttackTiming` agora
+reporta o efeito type7 depois do gate TooSoon e antes dessa atualizacao. O host
+registra type7 antes de type107; se type7 sozinho cruza o threshold, encerra
+antes de skill/mana/dano, e se acompanha OutsideServerWindow adia o logout ate
+adicionar type107. O contador e limite sao compartilhados. Tick reservado e
+rejeitado antes do handler; InvalidSkillId, atraso especifico de skill, mana e
+dano continuam fora deste recorte.
+
+A TMProject adiciona `SendBanAccount(Analise)` e `SaveInfoDetect` no TooSoon e
+ban `Tempo3horas`/`SaveInfoDetect` fora da janela. W2PP nao tem esses efeitos. O
+port nao os integrou aqui: Analise e restrita a Action pela regra vigente, e
+ban/sink para Attack ficam como divergencia pendente de decisao especifica.
+
+Engine.Tests verifica 4/type7 logado, acumulacao no mesmo contador type107,
+threshold, gate TooSoon, limites de 100/101 ms e wrap unsigned; 309/309 PASS.
+RED type107: `Backup/Build/AutoTradeCloseSmoke/14de35c8ddcd4e56a04c992051ef6e72`;
+RED type7: `Backup/Build/AutoTradeCloseSmoke/43a5a971c89b4a779ae06860223638b9`;
+GREEN: `Backup/Build/AutoTradeCloseSmoke/2c94658ad5b643f59052b752171f9a83`.
+Build solution SDK 10.0.401, 0 erros e 1 aviso CS8321 da funcao local
+`ExperienceBonus` sem uso em Program.cs, fora deste recorte. O smoke loopback confirmou um
+TooSoon e dois OutsideServerWindow com type107, duas InvalidSkillId e type7
+total6 apos wrap; sem relay/HP/MP, fixtures intactas e cleanup completo. Regressao
+HP0 passou em `Backup/Build/AutoTradeCloseSmoke/78af97932f8c4fcf86cd050b754189bb`,
+e RvR em `Backup/Build/AutoTradeCloseSmoke/02be512b091d4ab3aa4fed105df507b2`.
+E2E visual e outros ramos de Attack continuam pendentes.
+
+## COMBAT-ATTACK-RVR-001 - restricao RvR em MSG_Attack (30/09/2026)
+
+TMProject 7.69 `Servidor/Source/Code/TMSrv/_MSG_Attack.cpp` verifica, depois de
+TradeMode e USER_PLAY, `LastX / 128 == RvrMapX`, `LastY / 128 == RvrMapY` e
+`!MOB.Clan`; `Basedef.h` define `RvrMapX=13`, `RvrMapY=15`. O setor fechado
+corresponde a x1664..1791 e y1920..2047. A source envia a mensagem privada
+`Você não pode atacar nessa área.` e retorna antes do gate HP zero, tick, mana e
+combate, sem `AddCrackError`. W2PP `_MSG_Attack.cpp` nao contem esse ramo; para a
+release 7670 foi escolhida a regra da referencia 7.69 e a divergencia foi mantida
+explicita.
+
+`LegacyAttackRvrGateRules` implementa a regra. `WorldHub.TryGetAttackState` copia
+combat state, posicao viva e byte Clan do MOB sob um unico lock para evitar
+misturar snapshots. O listener, depois dos gates de TradeMode e USER_PLAY,
+responde ao autor com `MessagePanelConfirmation` `0x0101`/140 (ID/tick/keyword
+zero, texto Latin-1), sem relay do ataque, `SetHpMode`, `SetHpMp` ou CrackError.
+Unitarios cobrem os limites, os quatro setores adjacentes, Clan nao-zero e captura
+autoritaria; o smoke loopback testa tick atual e tick antigo 240 antes do gate de
+tick e confirma resposta privada e ausencia de relay ao observador.
+
+Engine.Tests 306 PASS; SDK .NET 10.0.401; build da solution e rebuild E2E
+0 avisos/0 erros.
+Evidencia de rede
+`Backup/Build/AutoTradeCloseSmoke/dceda13b6b7d4d35b05de1b3f0d33725`; regressao
+HP0 `349005fe16954ca4af140278992f9d24`. Fixtures originais intactas, cleanup
+concluido e porta18283 liberada. E2E visual, demais branches de Attack e deploy
+permanecem fora deste recorte.
+
+## MOVE-ACTION-ILLUSION-COOLDOWN-AUDIT-001 (30/09/2026)
+
+Auditoria somente de source em TMProject 7.69 e W2PP. O login atribui
+`LastActionTick=SKIPCHECKTICK` (`DataServerPackageHandler.cpp:820` na 7.69;
+`ProcessDBMessage.cpp:862` no W2PP). A busca por todas as referencias do campo
+nas duas arvores encontrou apenas essas inicializacoes. Os ramos normais de
+`MSG_Action` e `MSG_Action3` testam `LastActionTick != 235543242` antes do limite
+de 900 ms, com `1/type103` e `1/type105`, respectivamente; assim, ambos os
+checks ficam inativos no estado atual das fontes. `LastIllusionTick` e atualizado
+depois do tick valido, mas nao altera o sentinel. Nao adicionar gate type105 ao
+C# sem uma futura atribuicao comprovada e a semantica correspondente.
+
+Sem alteracao de runtime ou execucao de testes nesta auditoria. A camada visual
+do cliente 7.670 continua pendente.
+
+## MOVE-ACTION-ILLUSION-MANA-001 - custo e sincronizacao de MP em MSG_Action3 (29/09/2026)
+
+TMProject 7.69 `Servidor/Source/Code/TMSrv/_MSG_Action.cpp` e W2PP
+`Source/Code/TMSrv/_MSG_Action.cpp` leem o custo fixo de `g_pSpell[73].ManaSpent`
+no ramo Illusion. Na linha73 de `Servidor/Server/Common/skilldata.csv`, o valor39
+e `SkillPoint`; `ManaSpent` e45. Se `CurrentScore.Mp < 45`, ambas chamam
+`SendSetHpMp` para o autor e retornam. Caso contrario subtraem o custo antes dos
+gates type105 e type104. A referencia 7.69 deixa `pUser[conn].ReqMp -= mana`
+comentado; W2PP executa essa subtracao. O port escolhe o contrato 7.69: altera
+somente `CurrentScore.Mp`, preserva `ReqMp` e nao reutiliza `BASE_GetManaSpent`
+nem o desconto por SaveMana das skills de ataque.
+
+O listener requer a definicao carregada do skill73 para processar Action3; dado
+ausente/negativo falha fechado. MP insuficiente produz `SetHpMp` privado e nao
+relaya movimento. Movimento aceito relaya Action3 e depois envia `SetHpMp` ao
+autor. A despesa ocorre antes dos gates type105/type104; portanto tick invalido
+consome MP e soma type104, mas o retorno de tick nao envia sincronizacao. Cooldown
+permanece fora deste recorte.
+
+Unitario: custo fixo45 reduz MP100->55 mesmo com SaveMana100, preservando ReqMp100;
+MP44 nao e aceito nem mutado. E2E em loopback com a tabela primaria real semeou
+MP90: tick antigo consumiu45 e somou1/type104 sem relay/sync; Action3 valido
+consumiu os45 restantes, relayed a ator/peer e sincronizou MP0/ReqMp90 apenas ao
+autor; Action3 seguinte foi recusado por MP insuficiente com sync privado. Logout
+salvou MP0 e relogin confirmou persistencia. O RED inicial confundiu
+`SkillPoint=39` com `ManaSpent`; o GREEN corrigiu a fixture para45. O primeiro
+smoke client GREEN passou, mas o wrapper contou tambem os dois type17 de seus
+preflights; a assercao foi ajustada e o run final passou.
+
+Engine.Tests 303 PASS/0 FAIL; build da solution 0 erros e 1 warning CS8321
+(`ExperienceBonus` local sem uso, preexistente neste checkout); self-test do
+harness PASS. Evidencias finais: mana
+`Backup/Build/AutoTradeCloseSmoke/86016fe1f87c4d2f98100af962352841`, elegibilidade
+`9d730d8ca5c94b58b9133d55a77be4b9`, alcance
+`fba2c79f765f412384cc489449bb801f`. Hashes das fixtures originais intactos e
+porta18283 liberada. Wire/headless loopback, sem WYD.exe; sem deploy, Site,
+producao, commit ou push. E2E visual segue pendente; cooldown type105 foi
+auditado como inativo em `MOVE-ACTION-ILLUSION-COOLDOWN-AUDIT-001`.
+
+## MOVE-ACTION-ILLUSION-ELIGIBILITY-001 - classe e skill da MSG_Action3 (29/09/2026)
+
+Depois dos gates comuns de USER_PLAY, HP==0 e cancelamento de trade, TMProject
+7.69 `_MSG_Action.cpp` verifica no ramo `MSG_Action3` se `Class==3` e se
+`(LearnedSkill & 2)!=0`. Se qualquer requisito falhar e `Level<MAX_LEVEL`
+(`MAX_LEVEL=399`), chama `AddCrackError(10,28)`; somente o retorno de threshold
+encerra o handler. Abaixo do threshold, o pacote segue para os gates posteriores.
+W2PP `_MSG_Action.cpp` tem a mesma regra e a mesma ordem.
+
+O C# consulta `LegacyMobCombatState` autoritativo e aplica a regra antes do
+type104 de tick. O resultado `RequiresCharacterLogout` e a unica condicao nova
+de parada; type28 continua no contador compartilhado da sessao. Unitarios cobrem
+classe3 + bit2 valido, classe incorreta, bit ausente e niveis 398/399.
+`-ActionIllusionEligibility` usou copia isolada com classe2, bit ausente, level398
+e HP-1; Action3 foi relayed ao ator e ao observador, sem HpMode, e o `QuitTrade`
+subsequente observou type28=10 + seu proprio incremento type17=10 (total20).
+
+O RED `5215e9f6612940a6bac4c7cb68ea367b` confirmou a retransmissao, mas falhou
+na assercao de type28 ausente. O GREEN
+`ada5e06696e14e578146dfabc1f5f11c` passou com `ACTION_ILLUSION_ELIGIBILITY_NETWORK_PASS`,
+`CRACK_NETWORK_PASS`, `AUTOTRADE_NETWORK_PASS`, hashes originais intactos e
+porta18283 liberada. A regressao `-ActionRange` tambem passou em
+`d9c3973434c64e9c9d78e4c69f47c984`. Engine.Tests 303 PASS/0 FAIL; self-test do
+harness PASS. O custo e o sync de mana estao em
+`MOVE-ACTION-ILLUSION-MANA-001`; o check type105 de 900 ms foi auditado como
+inativo. A validacao visual do efeito de Illusion e E2E visual seguem pendentes.
+
+## MOVE-ACTION-ILLUSION-TICK-001 — janela ClientTick de MSG_Action3 (29/09/2026)
+
+TMProject 7.69 `_MSG_Action.cpp` e W2PP `_MSG_Action.cpp` validam o tick de
+`MSG_Action3` com os mesmos limites do `MSG_Action`: nao anterior a
+`max(0, CurrentTime-120000)` nem posterior a `CurrentTime+15000`. A rejeicao de
+Illusion soma `AddCrackError(1,104)` nas duas referencias e retorna antes dos
+gates comuns de velocidade/alcance/mapa e do relay. O C# aplica esses limites
+inclusivos ao `ActionRequest.IllusionMessageType`; Action normal conserva
+1/type102 e Action2 continua sem gate temporal.
+
+O intervalo de 900 ms (`type105`) nao foi incluido: a auditoria
+`MOVE-ACTION-ILLUSION-COOLDOWN-AUDIT-001` confirmou que a condicao legada depende
+de `LastActionTick != SKIPCHECKTICK`, mas as duas sources so inicializam o campo
+no login. A elegibilidade de classe/skill, executada antes do tick, foi concluida
+em `MOVE-ACTION-ILLUSION-ELIGIBILITY-001`; custo e sync de MP foram concluidos em
+`MOVE-ACTION-ILLUSION-MANA-001`.
+
+O RED reproduziu `MSG_Action3` com tick mais de 120 s antigo sendo relayed. No
+GREEN, `-120001 ms` e `+30001 ms` nao chegaram ao autor/peer e cada um somou
+1/type104. Action valido, Action2 com tick futuro, velocidade/range, estado
+persistido/relogin e carry/cargo/Gold tambem passaram. Engine.Tests 302 PASS/0
+FAIL; solution build 0 avisos/0 erros; self-test E2E PASS. RED:
+`Backup/Build/AutoTradeCloseSmoke/ce3d2ecd91c449c7a9905c41d443ff28`; GREEN:
+`Backup/Build/AutoTradeCloseSmoke/ba0b956c68134fd8821fc8467e9d6cc7`. Hashes das
+fixtures originais intactos e porta 18283 livre. Wire/headless em loopback, sem
+WYD.exe ou deploy; custo de mana esta em `MOVE-ACTION-ILLUSION-MANA-001`; o
+check type105 foi auditado como inativo e E2E visual segue pendente.
+Elegibilidade esta coberta em
+`MOVE-ACTION-ILLUSION-ELIGIBILITY-001`.
+Sem Site/producao, commit ou push.
+
+## MOVE-ACTION-TICK-001 — janela ClientTick do MSG_Action (29/09/2026)
+
+TMProject 7.69 `_MSG_Action.cpp` e W2PP `_MSG_Action.cpp` aplicam o gate no
+ramo normal de `MSG_Action`: `ClientTick` anterior a
+`max(0, CurrentTime-120000)` ou posterior a `CurrentTime+15000` gera
+`AddCrackError(1,102)` e retorna antes dos gates de velocidade/alcance, mapa,
+mutacao e relay. Os limites sao inclusivos: igualdade nos extremos e aceita.
+O C# aplica a janela usando ticks monotonicamente derivados de
+`Environment.TickCount64` e aritmetica `uint` unchecked compativel com o wire.
+`MSG_Action2` e um branch independente sem este gate; `MSG_Action3` tem gates de
+elegibilidade, mana e janela de tick em recortes proprios; o check type105 de
+900 ms e inativo conforme `MOVE-ACTION-ILLUSION-COOLDOWN-AUDIT-001`.
+
+A auditoria das duas sources encontrou `LastActionTick=SKIPCHECKTICK` no login
+e nenhuma atribuicao posterior no codigo pesquisado. Por isso, o check legado
+de intervalo minimo de 900 ms esta inativo e nao foi habilitado junto com a
+janela. O comportamento segue limitado ao tick velho/futuro descrito acima.
+
+O RED anterior a mudanca reproduziu relay de `MSG_Action` com tick mais de 120 s
+antigo. No GREEN, os casos `-120001 ms` e `+30001 ms` foram rejeitados, cada um
+somou 1/type102 e nenhum Action chegou ao autor/peer; o controle `Action2` com
+`ClientTick=uint.MaxValue` continuou relayado. A regressao tambem cobriu Action
+valido, limites de range/velocidade, persistencia/relogin e integridade das
+fixtures. Engine.Tests 302 PASS/0 FAIL; solution build 0 avisos/0 erros; self-test
+E2E PASS. Evidencia: `Backup/Build/AutoTradeCloseSmoke/b1d7e3f78bdb42d1a8bbbde9a4f5ff97`;
+hashes originais intactos e porta 18283 liberada. Validacao wire/headless em
+loopback, sem WYD.exe ou deploy; custo de mana de Action3 esta em
+`MOVE-ACTION-ILLUSION-MANA-001`; E2E visual permanece pendente e o cooldown
+type105 foi auditado como inativo.
+Elegibilidade e tick de Action3 estao em recortes proprios. Sem
+Site/producao, commit ou push.
+
+## MOVE-ACTION-RECALL-001 - recall pela origem (29/09/2026)
+
+TMProject 7.69 `_MSG_Action.cpp` chama `DoRecall` e retorna antes dos gates
+normais quando a posicao autoritativa cai nos setores Celestiais elegiveis ou
+(13,15) sem clan. `DoRecall` envia o `MSG_Action` com Effect=1 ao autor e chama
+`GridMulticast` para relay e transicao de visibilidade espacial. W2PP diverge:
+comenta o gate Celestial e nao tem o gate sem clan; a regra 7.69 permanece como
+contrato.
+
+`WorldHub.TryRecallForActionOriginWithViews` muda a posicao e captura sob o
+mesmo lock as duas janelas 33x33, os itens estaticos de mapa (`mapItems`) e os
+drops dinamicos (`groundItems`). TMProject 7.69 e W2PP usam a mesma tabela
+`pItem`: `InitItem` ocupa os primeiros slots e `CreateItem` usa `GetEmptyItem`
+para alocar no mesmo pool. O C# agora coordena os IDs das duas colecoes, limita
+o pool aos slots 1..4999 e rejeita IDs solicitados que colidam com item estatico.
+No `GridMulticast(conn, tx, ty, msg)`, as duas referencias enviam
+`MSG_DecayItem` de item que saiu e `MSG_CreateItem` de item que entrou somente
+ao personagem em transicao; o branch nao envia esses deltas aos observadores.
+`LegacyActionOriginRecallRelay` agora preserva isso: alem do Action e dos
+RemoveMob/CreateMob/PKInfo por visao, calcula os deltas pelos IDs dos snapshots
+atomicos e envia-os apenas ao autor. O relay nao chama `BroadcastAsync`. PKInfo
+usa o estado 7.69 comum de culpa/PK/castelo/torre/NewbieEvent; RvR continua fora
+do contrato.
+
+Testes de unidade verificam os IDs compartilhados, item estatico + drop nas
+visoes de origem/destino, opcodes/IDs/coordenadas dos frames e ausencia de relay
+dos itens aos outros participantes. O smoke TCP com quatro contas isoladas
+dropou itens 10001/10002 por `MSG_DropItem`, confirmou `MSG_DecayItem`/
+`MSG_CreateItem` no autor e nenhum desses deltas nos observadores; Action e
+transicoes de jogadores tambem passaram. Os blobs persistiram nas posicoes
+verificadas no logout. Engine.Tests 301 PASS/0 FAIL, solution build 0 avisos/0
+erros, self-test E2E PASS e regression `-ActionRange` PASS; hashes originais
+intactos e porta 18283 liberada. Evidencias: recall
+`Backup/Build/AutoTradeCloseSmoke/1bdcf451c5e94e5e814742d680829ea3`; regressao
+`Backup/Build/AutoTradeCloseSmoke/14f9767208e349e7b8d3bdc325cd9ac4`.
+Wire/headless validado; E2E visual segue pendente. Recall por restricao de mapa
+e outros teleportes usam caminhos separados; sem deploy, Site/producao, commit
+ou push.
+
+## MOVE-ACTION-STOP-001 — bloqueio de Action2 consecutivo (29/09/2026)
+
+TMProject 7.69 `_MSG_Action.cpp` e W2PP `_MSG_Action.cpp` conferem
+`LastMove == _MSG_Action2` no ramo de Stop, registram exatamente 1/type101 e
+retornam antes de velocidade/relay. O C# guarda o ultimo opcode de movimento na
+`LoginSession`; `CompleteCharacterLogin` o zera e o registry o troca somente
+quando um movimento aceito altera a posicao. O host pontua o stop repetido e
+interrompe o handler; movimento normal aceito libera o proximo Action2. O teste
+de dominio cobre rejeicao sem mutacao de coordenadas, liberacao por Action e
+reset por relogin.
+
+Engine.Tests: 298 PASS/0 FAIL; solution build: 0 avisos/0 erros; self-test do
+harness passou. TCP loopback `-ActionNegativeHp` confirmou primeiro Stop relayado,
+segundo Stop sem relay, restauracao por Action, Stop seguinte aceito, contador
+compartilhado type101, logout/relogin e integridade de posicao/carry/cargo/Gold.
+`-ActionRange` passou em regressao, incluindo os tres opcodes e os limites de
+range/velocidade. Evidencias:
+`Backup/Build/AutoTradeCloseSmoke/d39cfcf26dc143fb9e305bb553f77801` e
+`Backup/Build/AutoTradeCloseSmoke/463fd03be1864c37b574fbcaddf64063`; hashes das
+fixtures originais intactos e porta 18283 liberada. O smoke TCP de recall passou
+(ver MOVE-ACTION-RECALL-001); Illusion/ticks e E2E visual permanecem pendentes. Sem deploy,
+Site/producao, commit ou push.
+
+Recorte MOVE-ACTION-TRADE-001 (28/09/2026; escopo bilateral): TMProject 7.69
+`_MSG_Action.cpp:24-28` e W2PP `:40-44` concordam: HP==0 retorna antes da
+limpeza; caso contrario, `Trade.OpponentID` chama RemoveTrade para os dois
+participantes e interrompe Action antes de movimento. `WorldHub.TryCancelTradeForAction`
+faz a limpeza bilateral sob lock, sem passar pelo gate diferente de QuitTrade e
+sem mutar character state. O host envia `0x0384`/12 para cada jogador, com ID do
+destinatario e tick/keyword zero, e nao relaya Action. HP=-1 segue a limpeza;
+HP==0 preserva o par. Unidade verifica ambos os HP, close persistente pendente,
+os dois lados do trade e MOB/carry/Gold byte a byte; TCP loopback Debug HP0/-1
+passou. Suite273 PASS; solution build 0 avisos/0 erros; rastreio E2E detalhado
+em `CLIENT_E2E_SMOKE.md`. Esse recorte nao cobria `TradeMode`; seu fechamento
+acionado por Action esta rastreado em MOVE-ACTION-TRADEMODE-001 abaixo. O
+ban/deteccao exclusiva 7.69 continua fora do port.
+
+Recorte MOVE-ACTION-TRADEMODE-001 (28/09/2026): TMProject 7.69 e W2PP fazem
+`Action` retornar primeiro em `HP==0`, depois removem o par bilateral (se
+existir) ou `TradeMode` do autor. C# chama `CloseForActionAndCaptureAsync`, que
+usa as leases/expected-delete/recovery ja compartilhadas com compra, fechamento
+e saida; o hint `HasListing` so direciona e a operacao revalida o estado sob lease.
+Shop no autor ou parceiro fecha a transacao combinada e Action retorna antes de
+speed/range/movimento. HP negativo e aceito por este caminho, diferente do gate
+`HP<=0` de QuitTrade. Emite `0x0384`/12 por participante online e CreateMob
+normal/236 por shop aos destinatarios de visao; sem PK, relay Action,
+CreateMobTrade/260 ou RemoveMob. Nenhuma alteracao em carry/cargo/Gold/MOB.
+Engine.Tests 276 PASS; solution build 0 avisos/0 erros; E2E loopback combinado
+passou em `Backup/Build/AutoTradeCloseSmoke/39e5171332814620b95ebc0a671b0650`;
+fixtures originais intactas, porta liberada. E2E visual, evento AFK/ISTradTimer e
+ban/deteccao 7.69 continuam pendentes; sem deploy/site/commit/push.
+
+Recorte MOVE-ACTION-RANGE-001 (27/09/2026): `_MSG_Action.cpp` 7.69/W2PP compara
+destino com a posicao server-side antes do mapa; `VIEWGRID=33`, correcao privada
+Action3 apenas quando algum eixo e `>66`, AddCrackError `1/type5` em todo alvo
+`>33`. C# sincroniza snapshot WorldHub -> LoginSessionRegistry antes do gate,
+ignora origem/rota cliente na decisao, rejeita sem movimento/relay e filtra o
+relay aceito pela janela 33x33. `LegacyMovementRules` cobre limites/sinais e
+overflow long; unidade verifica o contador compartilhado. Suite267 PASS/build
+limpo; TCP loopback testa os tres opcodes, 42 rejeicoes, correcao/ausencia de
+correcao, relay dentro/fora de visao e destino/saldo/inventario apos relogin.
+Evidencia: `Backup/Build/AutoTradeCloseSmoke/40af9d46592a40659ea7a45765a3eb96`.
+Build self-contained smoke: `Backup/Build/AutoTradeCloseSmoke/d8b09ae5b15d47d791cad5c85a232f5c`;
+controle runtime anterior: `d022056beff04868a28a88ad814c04eb` falha na correcao
+privada, cleanup concluido. Motion regressao `e50cb81f4c5d4215a46b6673800f9428`,
+ReqTradeList `acc671ee731c44b6b92e7eedba2be226` e validador autotrade
+`d2880c6190514d66b4da312449e7b0d7` passaram. Package runtime-only197:
+`action-range-crack-20260927-runtime.zip`, SHA-256
+`04CF787E7CE983A269626F500AA378A6FB44508A4B255FF5ABAFFD239E5C47DF`;
+Core `AB7B1B147E5DE498A63762F3E79EC1AEF181D689B18D0C98D81D55E3CF7504EC`,
+World `0A716BBFAABE0BB2B4579B351AA47A402BA7B9698F4C1550171253AFF2462B0B`,
+Protocol `D6CE109145A1302832F763DE7E1917B9124B99B955E8A756A1E7EDE3BB4CC295`.
+Sandbox target `C:/WYDCDK/Server/test-releases/20260924-v7670/WydCdk.Server-v7670-20260924`;
+backup `backup-autotrade-close-293dd25bdc89446fb71c86beb3d0ba54`, UP/PVP Running,
+8281/8282 Listen, hashes e path do executable verificados. Threshold 2G apenas
+unitario; sem cliente visual, Site/producao, commit ou push.
+
+Recorte MOVE-ACTION-SPEED-001 (28/09/2026): `_MSG_Action.cpp` W2PP e TMProject
+7.69 limitam Speed a `CurrentScore.AttackRun & 0xF`, somam 5/type 4 no excesso e
+normalizam somente Speed antes do teste de range. C# usa o score autoritativo e
+o contador compartilhado para Action/Action2/Action3. Recursos WorldHub ausentes
+rejeitam a acao; com recursos presentes, HP==0 tem prioridade sobre score de
+velocidade ausente e envia HpMode20/Mode22 +5/type3. HP ausente ou AttackRun
+ausente em personagem vivo falha fechado. Depois de registrar erro de velocidade,
+a sessao e revalidada e o handler para se o threshold encerrou USER_PLAY. A source
+7.69 tambem aciona `SendBanAccount`/`SaveInfoDetect` em `Speed>=20` ou
+`AttackRun>=300`; esse efeito e deliberadamente pendente, ausente no W2PP.
+Suite 271 PASS/build 0/0; smokes TCP Debug+self-contained provam relay corrigido
+e violacao dupla sem relay; teste unitario de regressao cobre HP-zero/score
+ausente. Type4 5/10/15/20;
+type5 21..63; QuitTrade 73/relogin 10. Evidencias em `CLIENT_E2E_SMOKE.md`.
+Runtime-only197 sandbox: ZIP SHA-256
+`000F987FAF29C74F485D29F3F1B3CF3B2A97C1E2D960F7550918D5C1C7CCB5D9`, backup
+`backup-autotrade-close-0b04898eaf31414bae0f2005baa006ac`, UP/PVP Running e
+8281/8282 Listen; os 197 hashes do pacote comparados independentemente. Cinco
+extras preexistentes foram preservados. Sem threshold TCP, visual E2E,
+Site/producao, commit/push.
+
+Recorte MOVE-ACTION-CRACK-001 (27/09/2026): `_MSG_Action.cpp` 7.69/W2PP,
+ProcessClientMessage.cpp W2PP e PacketHandler.cpp alvo mapeiam os tres opcodes
+ao mesmo handler. Fora USER_PLAY nao pontua/nao envia HpMode; HP==0 envia
+HpMode20/Mode22 privado e soma5/type3 sem log; negativo segue caminho existente.
+Gate C# antes de sincronizacao/mapa/recall. Contador compartilhado e threshold
+2G cobertos em unidade; rede prova via QuitTrade totais10/20/25-ou10/reset10.
+265 PASS/build0/0; debug/self-contained HP0/-1, destino persistido e inventarios
+intactos; guardas relay opcode/ID/tick/payload e parser isolado executadas.
+Spawn real capturado: entrada de novato sorteia posicao, nao restaura SPX/SPY.
+Review gate sem achados; demais branches/threshold TCP/E2E3D nao cobertos.
+Controle runtime anterior falha no HpMode; runtime-only197 sandbox publicado
+com backup/hashes/UP-PVP Running/listeners conferidos. Runs em CLIENT_E2E_SMOKE.
+
+Recorte TRADE-LIST-CRACK-001 (27/09/2026): `_MSG_ReqTradeList.cpp`/SendAutoTrade
+7.69 e W2PP: HP==0 ou Mode!=USER_PLAY registra10/type87 antes do alvo;
+SendHpMode privado/silencioso fora playing. LegacyAutoTradeListRules corrigido
+<=0 -> ==0; negativo permitido. Host preserva captura/lista sob lease e relays
+existentes; rele combatstate apos await, release antes do ramo HP0/contador.
+Guard IDs adaptado ao contrato da lease C#1..ushortMax e NPC offline, nao
+transplanta MAX_USER da source nem altera alocacao. Wire039A/16 nao mudou.
+264 PASS/build0/0; debug/self-contained HP0/-1 e controles antigos falham;
+lista196/visual260 privados, payload/owner, logs ligados ao ator, estado duravel
+e relogin conferidos. Sandbox publicado runtime-only197 com backup/hashes.
+Review final sem bloqueadores; P3 morte durante espera da lease foi fechado no
+recorte TRADE-LIST-LEASE-RACE-001 abaixo. Threshold TCP e E2E3D pendentes.
+Ver CLIENT_E2E_SMOKE para os runs/hashes.
+
+Recorte TRADE-LIST-LEASE-RACE-001 (28/09/2026): as duas sources C++ fazem o
+gate HP==0/USER_PLAY antes do lookup e nao possuem a espera de lease do adapter
+C#. `TradeListRequestHandler` isola o fluxo host sem mudar wire/regra: rele HP
+depois do AcquireAsync, solta a lease antes de HpMode/resposta e soma 10/type87
+uma vez. Teste deterministico segura a lease do requester/loja, inicia o mesmo
+handler, muda HP para zero e libera; valida HpMode privado (checksum, ID, tick,
+HP e Mode), ausencia de list196/visual260, contador unico e reacquire da lease
+durante o callback de envio. Controle vivo recebe list196+visual260 sem novo
+erro. Controle negativo com a condicao pos-lease mutada para HP==int.MinValue
+falhou no assert da corrida; regra restaurada e suite272 PASS. Build da solucao
+0 avisos/0 erros. Smoke TCP loopback do host/listener/harness com fixture HP0
+passou, inclusive consultas vivas, logs10/20/type87, list196/visual260,
+QuitTrade30/type17, logout/relogin e estado persistido intacto. Essa rede
+valida a integracao normal do dispatcher, nao a corrida concorrente. O helper
+PowerShell nao iniciou o processo devido a colisao Path/PATH do Start-Process;
+o mesmo runtime foi iniciado diretamente no loopback e encerrado cooperativamente.
+Sem alterar policy permanente, VPS, Site, producao, commit ou push.
+
+Recorte MOVE-CRACK-001 (27/09/2026): `_MSG_Emotion.cpp` TMProject 7.69 e
+`_MSG_Motion.cpp` W2PP comparados: HP==0 ou Mode!=USER_PLAY soma4/type6;
+SendHpMode privado somente playing; HP negativo relaya. Host usa contador e
+logout comuns a QuitTrade, sem alterar wire/relay. Suite263/build0/0 e rede
+debug/self-contained HP0/-1 passaram; HpMode privado/vetor negativo e controle
+runtime antigo validados. Runtime sandbox publicado com backup/hashes/listeners.
+
+Recorte TRADE-CRACK-001 (27/09/2026): LegacyCrackErrorRules e
+LoginSessionRegistry/host QuitTrade comparados com Server.cpp::AddCrackError,
+_MSG_QuitTrade.cpp, SendFunc.cpp::SendHpMode e reset no character login das
+duas sources. Mesma regra10/type17/limite2G; C# satura contra overflow e reutiliza
+logout normal, sem ban novo. 262 PASS/build0/0; rede Accepted/Selection/HP0 e
+relogin/carry/Gold passaram. Limite unitario, nao E2E TCP; demais callers e resets
+periodicos/Restart/Attack pendentes. Ver CLIENT_E2E_SMOKE para evidencias/deploy.
+
 > Snapshot historico de 18/09/2026. A politica de referencias 7.59/7559 e
 > 7.60/7600 nao e mais vigente. Durante o reinicio, revalidar cada ficha contra
 > a referencia comunitaria 7.69 e registrar os hashes/releases efetivamente
@@ -8,6 +411,28 @@
 **Baseline historico:** 18/09/2026; linhas novas 7.69 verificadas em 19/09/2026  
 **Fonte de verdade:** esta matriz registra o estado atual das rotas; o detalhe de cada metodo deve ser mantido no formato da ficha do `PORT_ARCHITECTURE_BASELINE.md`.  
 **Regra:** `implementado` nao significa automaticamente `validado pelo cliente`.
+
+## Smoke de trade concluido e replay (26/09/2026)
+
+Replay somente Gold reproduziu segundo commit duravel no C#; corrigido apos
+teste de dominio vermelho. TryStageTradeOffer agora exige HasOffer nos dois
+lados antes de check e compara dados antes de SetOffer, inclusive no primeiro
+check. MyCheck nao entra na igualdade da oferta (transicao legitima 0->1).
+7.69/W2PP possuem memcmp contra oferta guardada; exigir staged bilateral em vez
+de aceitar fallback de check inicial e adaptacao explicita, sem mudar wire.
+Suite 218 PASS; E2E Gold recusa tres checks antigos, permite segunda troca
+legitima na mesma sessao e verifica blobs/relogin. Regressao item/Gold passou.
+Comportamento C++ nao executado. Fix publicado somente na VPS de teste:
+UP/PVP Running, 8281/8282 Listen e hashes World/Core iguais aos artefatos locais.
+Reproducao e resultados em `CLIENT_E2E_SMOKE.md`; sem anti-replay global.
+
+Evidencia adicional de trade em 26/09/2026: simulador headless em loopback com
+duas contas copiadas concluiu item por 1 Gold, recebeu `0x0185`/528 nos dois
+lados e conferiu os blobs duraveis antes do logout. Reenvio exato dos dois
+checks, duas vezes cada, preservou uma unica transferencia apos relogin.
+O ator foi rejeitado por ItemChanged; o par reabriu oferta sem novo commit.
+Ver `CLIENT_E2E_SMOKE.md`. Nao promove trade a C7: MariaDB, concorrencia,
+crash/recovery, troca somente Gold e E2E visual permanecem fora do recorte.
 
 ## Recalculo de personagem no login — recortes isolados (21/09/2026)
 
@@ -128,6 +553,22 @@ e `Ac += add` sequencialmente, com truncamento inteiro; a diferenca de comentari
 O `SkillData.csv` 7.69 confirma `Possuido -> Type=14` e `Samaritano -> Type=24`;
 RegenHP e dano fisico nao sao alterados nesses branches. O C# porta a formula
 comum como etapa pura, sem integrar o coordenador.
+O recorte [`character-login-frozen-blade.manifest.md`](../tests/WydCdk.Engine.Tests/Fixtures/V769/character-login-frozen-blade.manifest.md)
+fecha o `Affect.Type=7` (Lamina Congelada) em sete vetores: alvo e W2PP coincidem em subtrair
+`Level / 10 + 10` de AttackSpeed e, quando `headItemIndex > 50`, `Level / 10 + 20` de Int.
+O recorte [`character-login-weaken.manifest.md`](../tests/WydCdk.Engine.Tests/Fixtures/V769/character-login-weaken.manifest.md)
+fecha o `Affect.Type=10` (Enfraquecer) em sete vetores: alvo e W2PP coincidem na subtracao
+`Level / 5 + Value` de Damage.
+O recorte [`character-login-meditation.manifest.md`](../tests/WydCdk.Engine.Tests/Fixtures/V769/character-login-meditation.manifest.md)
+fecha o `Affect.Type=21` (Meditacao) em sete vetores: a reducao sequencial de AC `Level / 3 + 10`
+coincide entre as sources, mas o incremento no multiplicador de dano diverge (`Level / 25 + Value`
+no alvo contra `Level / 10 + Value` no W2PP).
+O recorte [`character-login-golden-shield.manifest.md`](../tests/WydCdk.Engine.Tests/Fixtures/V769/character-login-golden-shield.manifest.md)
+fecha o `Affect.Type=31` (Escudo Dourado) em sete vetores: o alvo soma `Level / 2 + Value` ao AC,
+enquanto o W2PP nao possui o affect em seu loop de score (adicao nula).
+O recorte [`character-login-elemental-protection-ac.manifest.md`](../tests/WydCdk.Engine.Tests/Fixtures/V769/character-login-elemental-protection-ac.manifest.md)
+fecha a parcela de ArmorClass do `Affect.Type=25` em sete vetores: o alvo soma `Level / 2 + Value`
+(+30 se `Level >= 255`) ao AC, enquanto o W2PP altera apenas as resistencias elementais sem tocar na defesa.
 O recorte [`character-login-armor-class-reduction.manifest.md`](../tests/WydCdk.Engine.Tests/Fixtures/V769/character-login-armor-class-reduction.manifest.md)
 fecha o `Affect.Type=12` em sete vetores: alvo e W2PP usam o mesmo fator `float`,
 truncamento para `int` e mutacao sequencial. O C# projeta AC depois de Type=6.
@@ -273,11 +714,11 @@ e E2E. Affect requer wire separado; EXT2 permanece zerado.
 | `Program` / `MainForm` (`WydCdk.Server.ControlPanel`) | sem equivalente: UI WinForms nova | sem equivalente: UI WinForms nova | manter fora do core e tratar como host local. O core aceita `stop`/`shutdown` pela entrada padrao e executa o `finally`/status offline; o painel solicita essa parada e usa `Process.Kill` somente apos timeout de cinco segundos. | encerramento cooperativo implementado; build/UI e fluxo real do painel pendentes |
 | `ClientPatcher` (`PatchDefinition`, `NativeHookPayload`, `X86Emitter`, `RelFixup`, `AbsoluteFixup`, `PeSection`, `PeLayout`) | sem equivalente no servidor 7.69; utilitario nativo historico do checkout C# | sem equivalente no W2PP servidor | estacionar como ferramenta de laboratorio/historico. O projeto esta listado na solution, mas nao e referencia do core; nao distribuir nem executar contra o cliente-alvo 7.670, cuja estrategia aprovada e source compilada sem DLL/hooks. | escopo auditado; exclusao do pacote de release precisa de gate automatizado/documentado |
 | `SetShortSkillRequest` | `Basedef.h::MSG_SetShortSkill`, `TMSrv/_MSG_SetShortSkill.cpp` | mesmos simbolos/handler | manter os 20 bytes de payload: `SkillBar[4]`, `ShortSkills[16]`; ambos os legados apenas copiam os vetores ao estado do personagem. O C# persiste de imediato depois de validar `USER_PLAY`, decisao de durabilidade que nao altera o wire. | auditado; parser e persistencia testados |
-| `PkInfoConfirmation` | `Basedef.h::_MSG_PKInfo` como `MSG_STANDARDPARM`, `TMSrv/_MSG_PKMode.cpp` | mesmos simbolos/handler | manter frame de 16 bytes com `state` int32 e ID do alvo, multicast na grade. O calculo comum cobre culpa/PK/castelo/torre; a zona RvR adicional esta no W2PP, nao na 7.69, logo nao entra sem regra de mundo propria. | auditado no wire; calculo/multicast de estado PK pendentes |
-| `ActionRequest` | `Basedef.h::MSG_Action`, `TMSrv/_MSG_Action.cpp` | mesmos simbolos | manter layout de 52 bytes e opcodes `Action`/`Action2`/`Action3`. O DTO preserva `WireType` ao reemitir e `TryApplyMovement` usa a janela inclusiva `VIEWGRIDX=VIEWGRIDY=33` sobre a posicao autoritativa, ignorando `PosX/PosY` enviados pelo cliente. `LegacyMovementMapRules`/`WorldHub` aplicam `0x80`/`0x20`, `BASE_GetGuild` para as cinco cidades e `DoRecall` com relay de `MSG_Action` de teleporte; os indices 46/47 de `Language.txt` sao enviados por `MSG_MessagePanel` antes do recall. Permanecem abertos trade e correcao/teleporte fora desse gate. | auditado; parser, round-trip dos tres opcodes, origem defasada, limites 33/34, gates de celula, avisos e recall autoritativo testados |
-| `MotionRequest` / `SetHpModeConfirmation` | `Basedef.h::MSG_Motion`, `Basedef.h::MSG_SetHpMode`, `TMSrv/_MSG_Emotion.cpp`, `SendFunc.cpp::SendHpMode` | mesmos simbolos | manter os 20 bytes de `Motion` e relay em `USER_PLAY`; com HP exatamente zero, enviar antes o `MSG_SetHpMode` de 20 bytes (`Hp`, `Mode=22`) e nao retransmitir a animacao. | auditado; wires de Motion e SetHpMode testados; gate HP integrado no listener; `AddCrackError` ainda nao possui equivalente |
+| `PkInfoConfirmation` | `Basedef.h::_MSG_PKInfo` como `MSG_STANDARDPARM`, `TMSrv/_MSG_PKMode.cpp` | mesmos simbolos/handler | manter frame de 16 bytes com `state` int32 e ID do alvo, multicast na grade. O calculo comum cobre culpa/PK/castelo/torre/NewbieEvent; a extensao RvR existe no W2PP, nao na 7.69. Action-origin usa esse estado para sincronizar um jogador que entra na visao dos dois lados; os demais fluxos PK seguem suas fichas proprias. | wire e relay Action-origin testados por TCP; RvR permanece fora do alvo |
+| `ActionRequest` | `Basedef.h::MSG_Action`, `TMSrv/_MSG_Action.cpp` | mesmos simbolos | manter layout de 52 bytes e opcodes `Action`/`Action2`/`Action3`. O DTO preserva `WireType`; HP==0 tem precedencia sobre score de velocidade ausente e envia HpMode20/Mode22 +5/type3; estado WorldHub ausente ou HP/AttackRun ausente para personagem vivo rejeita. Speed permitido e `CurrentScore.AttackRun & 0xF`; excesso soma `5/type4` no contador da sessao e corrige somente Speed antes do gate de range; depois de somar, revalida USER_PLAY para nao continuar apos logout por threshold. O side effect 7.69 de `Speed>=20` ou `AttackRun>=300` marca Analysis e fecha antes do relay; auditoria do log `SaveInfoDetect` esta em MOVE-ACTION-ANALYSIS-005. O gate de origem MOVE-ACTION-RECALL-001 precede velocidade/alcance: setores (9,1)/(8,2)/(10,2) para classMaster 3/4/5 com level>=180, ou setor (13,15) quando `MOB.Clan==0`. W2PP comenta o gate Celestial e nao tem o gate sem clan; 7.69 e a autoridade. `TryRecallForActionOriginWithViews` captura a visao de origem/destino na mesma mutacao protegida por lock; `LegacyActionOriginRecallRelay` envia Action apenas a visiveis, remove jogadores que deixam a janela e envia CreateMob/PKInfo a ambos os lados na entrada. O fluxo nao usa `BroadcastAsync`. Destino fora da janela inclusiva `VIEWGRID=33` e rejeitado pela posicao autoritativa; somente >66 em qualquer eixo envia Action3/Speed6 privado. Movimento aceito relaya ao autor e a jogadores na janela 33x33. `LegacyMovementMapRules`/`WorldHub` aplicam `0x80`/`0x20`, `BASE_GetGuild` para cinco cidades e `DoRecall`; indices46/47 de `Language.txt` precedem o recall por mapa. | Engine.Tests 299 PASS/0 FAIL, incluindo 11 vetores de origem e teste da captura espacial; build 0/0. TCP quatro contas confirmou Action/RemoveMob/CreateMob/PKInfo, negou relay distante e verificou posicoes no logout; `-ActionRange` regressou. Outros recalls/teleportes e E2E visual permanecem pendentes |
+| `MotionRequest` / `SetHpModeConfirmation` | `Basedef.h::MSG_Motion`, `Basedef.h::MSG_SetHpMode`, `TMSrv/_MSG_Emotion.cpp`, `SendFunc.cpp::SendHpMode` | `TMSrv/_MSG_Motion.cpp`, demais simbolos iguais | manter Motion20/relay; HP==0 ou fora USER_PLAY soma4/type6 por sessao; HpMode20/Mode22 privado somente playing; HP negativo relaya | MOVE-CRACK-001:263 PASS/build0/0; rede HP0/-1, Accepted/Selection, shared-counter e carry/cargo/Gold/relogin; sandbox runtime-only publicado; visual/threshold TCP pendentes |
 | `LoginSessionRegistry` | `pUser[conn].Mode`, `pMob[conn].TargetX/TargetY`, `LastActionTick` nos handlers TMSrv | mesmos campos/handlers | adaptador arquitetural C#, sem classe C++ equivalente. Manter transicoes de login; separar futuramente politica de movimento e timing de combate, hoje acopladas indevidamente ao registro de sessao. | auditado; transicoes/movimento/timing testados; extracao bloqueada ate caracterizacao |
-| `AttackRequest` / `AttackConfirmation` | `Basedef.h::MSG_Attack/MSG_AttackOne/MSG_AttackTwo`, `TMSrv/_MSG_Attack.cpp` | mesmos structs e handler | manter os tres wires: 168/68/80 bytes, offsets de posicao/alvo/atacante/skill e slots `STRUCT_DAM`. O cliente so declara marcador de dano (`-2` fisico, `-1` skill); HP, EXP, MP, ReqMp, cena e dano sao reescritos pelo servidor. O C# ja preserva `USER_PLAY`, vivo antes de timing, janela de tick e mana; ainda nao possui gate de trade. A 7.69 acrescenta bloqueio RvR sem equivalente no W2PP, portanto fica como decisao separada, nao importacao automatica. | auditado; parser e relay autoritativo testados; gates completos de mapa/PvP/efeitos/anti-cheat ainda nao equivalentes |
+| `AttackRequest` / `AttackConfirmation` | `Basedef.h::MSG_Attack/MSG_AttackOne/MSG_AttackTwo`, `TMSrv/_MSG_Attack.cpp` | mesmos structs e handler | manter os tres wires: 168/68/80 bytes, offsets de posicao/alvo/atacante/skill e slots `STRUCT_DAM`. O cliente so declara marcador de dano (`-2` fisico, `-1` skill); HP, EXP, MP, ReqMp, cena e dano sao reescritos pelo servidor. C# consulta a listing ativa (equivalente a `TradeMode`) antes de USER_PLAY e envia MessagePanel 170 privado `0x0101`/140 com cabecalho zero e texto Latin-1 de `Language.txt`; fora desse gate, exige USER_PLAY, aplica o RvR 7.69 a Clan zero no setor (13,15), depois rejeita HP exatamente0 salvo skill99 antes do timing/mana/dano, enviando SetHpMode privado 20/22 com cabecalho zero e AddCrackError(1,8). HP negativo nao aciona o gate de morte. TooSoon (< LastAttackTick+800) e tick fora da janela 120s/15s somam 1/type107 em 7.69 e W2PP; depois do gate de 800 ms, `ClientTick < (uint)LastAttackTick-100` soma 4/type7 sem retorno, antes da atualizacao do tick e da janela. C# reporta o type7, preserva a aritmetica unsigned e compartilha contador/limite; wrap pode produzir type7 seguido de type107. A 7.69 tambem bane e grava SaveInfoDetect nos ramos type107; W2PP nao, diferenca pendente de decisao, sem aplicar Analise fora de Action. RvR nao existe em W2PP e foi mantido pela referencia 7.69. | COMBAT-ATTACK-DEAD-001 + COMBAT-ATTACK-TRADEMODE-001 + COMBAT-ATTACK-RVR-001 + COMBAT-ATTACK-TIMING-001: Engine.Tests 309 PASS, solution build SDK 10.0.401 com 0 erros/1 aviso CS8321 em `ExperienceBonus` local sem uso, smokes wire/headless; timing confirmou TooSoon, duas rejeicoes OutsideServerWindow/type107 e 4/type7 total6 apos wrap, sem relay/HP/MP. Evidencias RED `Backup/Build/AutoTradeCloseSmoke/43a5a971c89b4a779ae06860223638b9`, GREEN `Backup/Build/AutoTradeCloseSmoke/2c94658ad5b643f59052b752171f9a83`; regressao Attack HP0/RvR aprovada. Outros gates de mapa/PvP/efeitos/anti-cheat pendentes; E2E visual pendente |
 | `NpcAttackConfirmation` | `Basedef.h::MSG_AttackOne`, `TMSrv/GetFunc.cpp::GetAttack` | mesmos simbolos/funcao | reutilizar o `MSG_AttackOne` de 68 bytes, `ID=ESCENE_FIELD`, atacante/posicoes/alvo autoritativos e dano no primeiro `STRUCT_DAM`. `GetAttack` define `SkillParm=0`, `SkillIndex=-1` e motion aleatorio 4..6; o C# ainda usa valores simplificados para summon, que precisam ser cotejados antes de afirmar equivalencia visual. | wire auditado; ataque autonomo C# testado; sem equivalencia integral de semantica/cliente |
 | `SetHpMpConfirmation` | `Basedef.h::MSG_SetHpMp`, `SendFunc.cpp::SendSetHpMp` | mesmos simbolos | manter frame de 28 bytes com HP/MP e ReqHp/ReqMp autoritativos; nao e resposta exclusiva de mana, tambem sincroniza dano, cura e ressurreicao. | auditado; wire e recursos testados |
 | `UpdateScoreConfirmationV769` / `W2ppUpdateScoreV1Adapter` | cliente `Projects/TMProject/Basedef.h::MSG_UpdateScore` (`0x0336`) | W2PP `MSG_UpdateScore` (`0x0336` com flags), `TMSrv/SendFunc.cpp::SendScore` | O cliente 7.69 mede frame/payload 152/140: `STRUCT_SCORE` 48, Critical/SaveMana, 32 affects, Guild/GuildLevel, Resist, padding de alinhamento, ReqHp/ReqMp, ushort Magic/Rsv e LearnedSkill. W2PP tambem mede 152/140, mas usa score com Level int e Merchant/Direction/ChaosRate, RegenHP/MP, CurrHp/CurrMp, Magic int e quatro Special bytes; o adapter mapeia CurrHp/MP para ReqHp/MP, verifica narrowing de Level/Magic e zera campos target-only. O header DBSrv comum 7.69 empacota a mesma lista para 147 bytes, divergencia que impede copiar o sender sem confirmar a unidade ABI efetiva. | DTO + adapter + golden Win32 + teste byte a byte executados; relay target integrado no login e nos caminhos de consumiveis, combate, guild refresh e ressurreicao; o encoder legado de 160 bytes permanece fora do caminho alvo; recomputacao completa e E2E pendentes |
@@ -348,13 +789,14 @@ de opcode/layout continuam possiveis, mas nao dispensam a versao exigida.
 | MOVE-002 | `_MSG_Motion` | `MotionRequest` `0x036A` | relay de movimento; `MSG_SetHpMode` quando HP=0 | sessao/HP | frame de motion ou SetHpMode | motion wire e gate de vida | C3 |
 | SKILL-001 | `_MSG_SetShortSkill` | `SetShortSkillRequest` `0x0378` | save de short skills | estado do personagem | sem confirmacao dedicada | wire 32 bytes e persistencia | C3 |
 | WORLD-001 | `_MSG_PKInfo` | `PkInfoConfirmation` `0x0366` | politica PK/multicast de visao | flag visual de PK/culpa | `MSG_STANDARDPARM` | wire 16 bytes; politica/multicast pendentes | C2 |
-| COMBAT-001 | `_MSG_Attack` | `AttackRequest` `0x0367/039D/039E` | `TryConsumeSkillMana`, `TryApplyPhysicalAttack` | HP/MP, alvo, drops, XP | `AttackConfirmation`, `SetHpMpConfirmation`, `UpdateEtc` | wire 168/68/80, mana e dano fisico autoritativos testados; ordem integral de gates/anti-cheat/mapa/PvP pendente | C3 |
+| COMBAT-001 | `_MSG_Attack` | `AttackRequest` `0x0367/039D/039E` | `LegacyAutoTradeBook.HasListing`, `LegacyAttackRvrGateRules`, `WorldHub.TryGetAttackState`, `TryConsumeSkillMana`, `TryApplyPhysicalAttack` | listing, posicao/Clan, HP/MP, alvo, drops, XP | `MessagePanelConfirmation`, `AttackConfirmation`, `SetHpMpConfirmation`, `UpdateEtc`, `SetHpModeConfirmation` | wire 168/68/80; TradeMode responde MessagePanel 170 privado antes de USER_PLAY; gate 7.69 RvR bloqueia Clan zero no setor `(13,15)` com MessagePanel privado antes de HP0/tick/mana; W2PP nao tem esse gate. HP0/skill99 e type8 compartilhado, mana e dano fisico testados; outros gates/branches pendentes. Ver `CLIENT_E2E_SMOKE.md` | C3 |
 | COMBAT-002 | ataque de skill | `AttackRequest` + skill index | `TryApplySkillAttack` | HP/MP, efeitos, summon | ataque, recursos, morte | gate/formulas e ramos iniciais de NPC testados; delays, todos os efeitos e equivalencia de area pendentes | C3 |
 | ITEM-001 | `_MSG_UseItem` | `UseItemRequest` `0x0373` | `TryApplyPotion` | MOB/carry/HP/MP | `SetHpMpConfirmation`, `SendItem` | potion, reset, item families | C3 |
 | ITEM-002 | `_MSG_DropItem` | `DropItemRequest` `0x0272` | `TryDropItem` | carry -> ground item | drop/create/broadcast | wire e ground drop | C3 |
 | ITEM-003 | `_MSG_GetItem` | `GetItemRequest` `0x0270` | `TryGetGroundItem` | ground -> carry | get/decay/send item | wire e pickup | C3 |
 | ITEM-004 | 7.69 `Basedef.h::MSG_SwapItem`, `SGrid.cpp`, cliente `TMHuman.cpp` e `TMSrv/_MSG_Move_Item.cpp` (`0x0376`) | `TradingItemRequest` / `TradingItemConfirmation`, payload 8 bytes / frame 20 bytes | `WorldHub.TryTradeItems` | carry 0..59 e carry↔equipamento; C# permite destino Equip 0..14 e origem Equip 1..14; cargo estacionado | echo + dois `SendItem` | C# valida a mesma faixa de slot que o handler TMSrv/W2PP e preserva a ordem de campos 7.69 no request; wire de mesmo tamanho ainda nao distingue layouts, pois W2PP usa ordem inversa e `WarpID` int. UI 7.69 expoe indices 16/17, mas a rota TMSrv os rejeita pelo header privado de 16 e pelo limite `MAX_EQUIP-1`; a regra client-side de `EF_POS` nao os habilita no servidor. A compilacao TMSrv do `..\Basedef.cpp` com header comum 18 cria conflito de layout com os translation units 16-slot, portanto a equivalencia observada da rota nao resolve os efeitos das helpers ligadas. | C3; comparacao de faixa concluida; indices 15..17 sem suporte nessa rota; fechamento de ABI TMSrv e golden 7.69 pendentes |
-| ITEM-005 | `_MSG_SplitItem` | `SplitItemRequest` `0x02E5` | `TrySplitCarryItem` | stack origem -> primeiro carry livre | dois `SendItem`, destino depois origem | wire, quantidade, item permitido, sem espaco | C3 |
+| ITEM-005 | `_MSG_SplitItem` | `SplitItemRequest` `0x02E5` | `TrySplitCarryItem` | stack origem -> primeiro carry livre | dois `SendItem`, destino depois origem | wire, quantidade, item permitido, sem espaco; smoke E2E confirmou checksum, ordem e persistencia 7/3 apos relogin | C4 |
+| ITEM-007 | `_MSG_DeleteItem` | `DeleteItemRequest` `0x02E4`/20 | `TryDeleteCarryItem` | carry 0..59 -> vazio | aviso `MessagePanel` se conta bloqueada; `0x0384`/12 aos dois lados se cancelar trade; sem resposta dedicada no aceite | 7.69/W2PP enviam sinal 900 via `RemoveTrade` aos dois participantes; 7.69 barra conta bloqueada e W2PP nao. C# preserva adicionalmente a checagem do indice atual contra pacote obsoleto. Smoke E2E confirmou bloqueio, remocao persistida, cancelamento bilateral com item retido apos relogin | C4 |
 | SOCIAL-001 | `_MSG_MessageChat` | `MessageChatRequest` `0x0333` | view relay | nenhum | chat para visao | wire e player view | C3 |
 | SOCIAL-002 | `_MSG_MessageWhisper` | `MessageWhisperRequest` `0x0334` | busca por nome + `SendAsync` | nenhum | whisper privado | wire e target | C3 |
 | SOCIAL-003 | `_MSG_SendReqParty` | `PartyInviteRequest` `0x037F` | `TryPreparePartyInvite` | pending party | confirmation/panel | party wire/lifecycle | C3 |
@@ -377,13 +819,14 @@ Estas entradas aparecem na referencia `ProcessClientMessage.cpp` ou nos objetos 
 | ID | Simbolo legado | Situacao atual | Dependencia para implementar |
 |---|---|---|---|
 | ITEM-006 | `_MSG_UpdateItem` | wire, agregado de `InitItem`, mascara oficial, mutacao de altura, chave, dispatcher, multicast, inicio/portoes Zakum, `_MSG_StartTime`, timer de expiracao, fechamento automatico estatico por minuto e decay dinamico C3 | validar E2E; `pItem[]` permanece volátil |
-| ITEM-007 | `_MSG_DeleteItem` | referencia localizada | validacao de slot e rollback |
 | ITEM-008 | `_MSG_CombineItem*` | varias variantes legadas | servico de inventario e tabela de regras |
 | ITEM-009 | `_MSG_ApplyBonus` | referencia localizada | efeitos, limites e persistencia |
 | TRADE-001 | `_MSG_ReqTradeList` / `_MSG_SendAutoTrade` | `TradeListRequest` isolado; parser/encoder de `MSG_STANDARDPARM` (`0x039A`, 16 bytes) testado; `LegacyAutoTradeListRules` cobre solicitante vivo/em `USER_PLAY`, alvo existente/ativo/em `USER_PLAY` e janela inclusiva `VIEWGRIDX/Y=33`; `LegacyAutoTradeLocationRules` reproduz os cinco limites de vila, a área protegida de Armia e a taxa por `CityTax`; `AutoTradeListConfirmation` e `AutoTradeStartRequest` compartilham e testam o layout client/server de `MSG_SendAutoTrade`/`MSG_AutoTrade` (`0x0397`, 196 bytes) com 12 slots; `LegacyAutoTradeBook` valida uma oferta autoritativa em memoria, incluindo cargo 7.69 de 120 slots, preço, taxa, título, conta bloqueada e `EF_NOTRADE`; o dispatcher abre a loja, consulta o book, reaplica os gates e `LegacyAutoTradeListRelay` entrega a resposta ao solicitante; `LegacyAutoTradeVisualRelay` projeta o MOB/affects autoritatorios e o titulo para `MSG_CreateMobTrade` 7.69 de 260 bytes, enviando ao dono, à vizinhanca e ao solicitante de lista; `LegacyAutoTradeRemovalRelay` monta `MSG_RemoveMob` de 16 bytes no logout/desconexao, enviado somente à vizinhanca 33x33 antes de `WorldHub.Leave`; `LegacyAutoTradeFileStore` persiste owner/listing, localizacao e taxa em documento versionado quando `--autotrade-state` esta ativo, e o host salva na abertura e remove na saida; `MariaDbAutoTradeStateStore` usa `wyd_autotrade_state` no modo MariaDB; `LegacyAutoTradeRehydrator` restaura o MOB offline no boot e projeta `MSG_CreateMobTrade` para novos logins | migração e round-trip local no MariaDB aprovados; banco externo, política de reconexão do dono e E2E pendentes |
 | TRADE-005 | `_MSG_ReqBuy` / `MSG_ReqBuy` / `_MSG_ItemSold` | `AutoTradePurchaseRequest` preserva `0x0398`, payload 24/frame 36, `Pos`, `TargetID`, padding ABI, `Price`, `Tax` e `STRUCT_ITEM`; `LegacyAutoTradePurchaseRules` valida alvo/alcance, loja ativa, posição, preço/taxa/item do request contra o listing, cargo do vendedor contra o item, Gold do comprador, espaço 0..59, vila 0..4 e limite de 2G do vendedor, inclusive alvo offline explicitamente reidratado; `ItemSoldConfirmation` preserva `0x039B`, standard-parm2 de 20 bytes e `ESCENE_FIELD`; `LegacyAutoTradeSettlementMath` reproduz o limiar de 100 mil e o truncamento inteiro do imposto; `LegacyAutoTradePurchasePlanBuilder` produz cópias do carry/cargo, saldos e listing pós-venda sem mutar as fontes; `LegacyAutoTradePurchaseCommitRequest` separa o MOB runtime do comprador do MOB persistido e fecha os dois blobs com o listing na mesma transação serializável no MariaDB ou via journal/recovery no file store; `LegacyAutoTradeBook` protege o slot, `WorldHub` aplica/rollbacka o comprador, `LegacyAutoTradePurchaseCoordinator` prepara o request do host e `LegacyAutoTradePurchaseExecutor` coordena book/NPC offline/comprador/commit com rollback reverso; o dispatcher emite `MSG_UpdateCarry`, `MSG_ItemSold` e o visual offline somente depois do commit | 211 testes deterministas, incluindo coordinator, relay pós-commit, CAS distintos, commit/recovery do file store e a fatia 18-slot; smoke local do MariaDB passou com compra, verificação pós-commit e replay CAS; banco remoto, interrupção e E2E continuam pendentes |
 | TRADE-002 | `_MSG_Trade` / `_MSG_CNFCheck` | `TradeOfferRequest` e `TradeCheckConfirmation` testados; `WorldHub.TryStageTradeOffer` cobre estado bilateral em memoria, carry autoritativo, saldo, duplicidade, `EF_NOTRADE`, guilda, PK e checks; `LegacyTradeOfferRelay` encaminha a oferta e o dispatcher conclui os dois checks com `TryCompleteTrade` + `LegacyTradeCompletionRelay`/`UpdateCarryConfirmation` para os dois participantes; `LegacyTradePersistence` monta os dois estados e o host chama `IAtomicCharacterStateStore` quando disponivel; `MariaDbWorldCharacterStore` e `LegacyFileAccountStore` fazem o commit dos dois blobs em transacao serializavel ou journal/recovery, respectivamente | transacao MariaDB ainda sem teste contra banco vivo; mesma conta, ciclo completo e E2E |
-| TRADE-003 | `_MSG_QuitTrade` | `TradeCloseRequest` isolado; dispatcher implementado no host; `WorldHub.TryCloseTrade` limpa os dois lados em memoria; `WorldHub.Leave` reporta o par cancelado no disconnect sem mutar carry/Gold | sinal visual legado `900`, refresh de PK equivalente, ciclo completo e E2E |
+| TRADE-003 | `_MSG_QuitTrade` / `RemoveTrade` 7.69 e W2PP; `GetGuilty` / `GridMulticast` | `TradeCloseRequest` `0x0384`/12; HP <=0 retorna SetHpMode sem limpar par; aceite envia cancelamento a ambos e PK `0x0366`/16 ao autor/vizinhos 33x33; sem par, NoActiveTrade carrega plano com OpponentId0: sinal proprio e PK sem cancelar ex-parceiro. `LegacyTradePkRules` usa guilty/PKMode/Newbie/Castle/Tower sob lock, sem RvR extra W2PP | 220 PASS/build limpa; rede HP0/-1 preserva par, sem PK/cancelamento; redes PK0/1 por guilty e dois reenvios idle passam com carry/Gold completos intactos nos blobs/relogin. Controles negativos dominio/rede antigos falham. Deploy sandbox com backup/hashes UP/PVP conferidos; ver CLIENT_E2E_SMOKE. Pendentes: PK1 por PKMode/Newbie/Castle/Tower e exclusao do distante na rede, AddCrackError, ISTradTimer, concorrencia fora do fechamento coordenado e E2E visual. O reset/visual normal para loja online no Action esta no recorte MOVE-ACTION-TRADEMODE-001. |
+| TRADE-AFK-001 | 7.69 `CUser.h`, `_MSG_SendAutoTrade.cpp:112`, `_MSG_QuitTrade.cpp:16`, `ProcessSecMinTimer.cpp:928-988`; W2PP `CUser.h`, `_MSG_SendAutoTrade`, `ProcessSecMinTimer.cpp:912-972` | auditoria sem implementacao: ISTradTimer e timestamp de abertura de autotrade, nao contador/cooldown bilateral; 7.69 grava timeGetTime e zera no QuitTrade; consumidor usa LojinhaTimer, MAC e escolha por timestamp no evento AFK. W2PP tem consumidor, mas nenhuma atribuicao no handler de abertura auditado | C# sem equivalente; nao adicionar estado sem consumidor. Premio 7.69 premioLojaAfk/OnlyTrade difere do W2PP titulo #VemProCdK/item475. Evento, recompensa, cadencia real, selecao por MAC e reset ficam pendentes em trilha propria, sem port automatico ou mudanca de runtime |
+| TRADE-CLOSE-001 | `_MSG_QuitTrade` / `RemoveTrade` 7.69 e W2PP; extensao C# de loja persistida | T1..T6 no recorte: reserva/HP/recovery, captura sob leases e host QuitTrade; registry compartilhado/concurrente; planos sinais/PK/CreateMob236/view33x33; recovery por AffectedOwners; abertura/consulta196+260; logout/disconnect save/Leave protegidos contra compra/rollback, sockets depois da lease; cleanup detached expected-delete/barreira atomica owner sem tocar ID reutilizado; ver ledger | 259 PASS/build limpa/MariaDB isolado; smoke TCP real debug e self-contained abriu/consultou loja, fechou normal236 sem RemoveMob, rejeitou compra posterior e dois retries/relogin preservaram carry/cargo/Gold. Controle negativo anterior falhou. Dois Important do review do harness corrigidos RED->GREEN (porta18283/barreira comprador), dois minors deferidos no ledger. Runtime-only publicado no sandbox com backup/UP-PVP Running/8281-8282 Listen/hashes iguais. Politica ordinaria de remocao preservada, E2E visual cliente3D e port inteiro nao concluidos |
 | TRADE-004 | `_MSG_TradingItem` completo (cliente 7.69 `MSG_SwapItem`) | apenas carry 0..59 | cargo, equipamento, merge, validade e regras especiais |
 | SHOP-005 | `_MSG_Buy` / `_MSG_Sell` | nao portado neste fluxo | catalogo de NPC, Gold, estoque e transacao |
 | SHOP-006 | `_MSG_Deposit` / `_MSG_Withdraw` | nao portado | banco/cargo e lock por conta |
@@ -435,7 +878,7 @@ O gerador e uma leitura mecanica auxiliar, nao substitui a analise semantica da 
 
 ## Proximo bloco controlado
 
-O wire e o caminho normal de dominio de `_MSG_UpdateItem` foram fechados em C3. Em paralelo, a validacao dos dois `MSG_SendItem` do split no cliente/rede continua pendente.
+O wire e o caminho normal de dominio de `_MSG_UpdateItem` foram fechados em C3. O bloco ITEM-005 tambem passou pelo smoke de cliente/rede sintetico em loopback: os dois `MSG_SendItem` foram conferidos na ordem destino/origem e o estado foi relido depois de logout/login.
 
 ## Ficha ITEM-005 — `_MSG_SplitItem`
 
@@ -497,10 +940,14 @@ O wire e o caminho normal de dominio de `_MSG_UpdateItem` foram fechados em C3. 
 - carry cheio rejeitado sem mutacao;
 - `sIndex` informado diferente do item real nao altera o resultado;
 - dois frames `MSG_SendItem` emitidos na ordem destino, origem;
-- estado salvo e restaurado no logout/desconexao.
+- estado salvo e restaurado no logout/desconexao;
+- smoke E2E wire com `WydCdk.Client.E2E`, incluindo checksum, relogin e leitura do carry.
 
 **Status atual:** C3 — wire, dominio, dispatcher e testes deterministas implementados.  
-**Proxima acao:** validar os dois `MSG_SendItem` no cliente/rede e fechar a evidencia de persistencia no logout/desconexao antes de elevar para C4/C5.
+**Proxima acao:** selecionar o proximo bloco controlado apos a suite completa; a validacao com o `WYD.exe` visual continua pendente.
+**Evidencia C4 (25/09/2026):** `WydCdk.Client.E2E` confirmou `0x02E5`/24,
+dois `0x0182`/24 com checksum valido na ordem destino/origem e persistencia
+7/3 apos logout e novo login. O status C5 permanece reservado ao cliente visual real.
 
 ## Ficha ITEM-006 — `_MSG_UpdateItem`
 
@@ -554,3 +1001,214 @@ O contrato wire foi implementado em `WydCdk.Protocol.UpdateItemMessages` e `WydC
 ### Proxima acao
 
 `LegacyMapItemCatalog`/`LegacyMapItemState`/`LegacyGroundMaskTable` estao integrados ao `WorldHub`; `--init-item` carrega o catalogo, o login envia `MSG_CreateItem` dos itens estaticos e o caminho Zakum valida `EF_QUEST`, gera a quest, envia `_MSG_StartTime`, abre os portoes internos, fecha portoes estaticos no timer de minuto, decai drops dinamicos com `MSG_DecayItem` e limpa a arena ao expirar. A leitura do legado confirmou a volatilidade de `pItem[]`; o proximo passo e validar o fluxo no cliente 7559/7600/7662.
+
+## MOVE-ACTION-ANALYSIS-001 — conta em Analise por velocidade severa (28/09/2026)
+
+### Referencia e decisao
+
+TMProject 7.69 `Servidor/Source/Code/TMSrv/_MSG_Action.cpp` aplica o efeito
+somente dentro de uma violacao real de velocidade: `requestedSpeed >
+(AttackRun & 0xF)`, seguida pelo limite inclusivo `requestedSpeed >= 20 ||
+AttackRun >= 300`. A comparacao usa o `AttackRun` completo no segundo limite.
+Depois dos cancelamentos de trade/loja, o handler marca a conta, persiste a
+informacao de deteccao e impede que o Action continue. O `_MSG_AccountLogin.cpp`
+consulta o estado de Analysis antes de autenticar a senha. O W2PP local confirma
+a mascara de velocidade e o clamp, mas nao possui esse side effect severo de
+conta; a regra nova e, portanto, especifica da referencia 7.69.
+
+Ressalva de ABI: `STRUCT_SCORE.AttackRun` e `BYTE` no header servidor 7.69 e
+`unsigned char` no header W2PP; o modelo ativo C# tambem e `byte`. Logo, embora
+o predicado puro preserve o comparador `AttackRun >= 300`, essa metade do gate
+nao e alcancavel com o campo autoritativo atual. `requestedSpeed >= 20` e o
+gatilho severo efetivamente alcançavel. Nao alargar o campo nem o wire para
+fabricar o score 300; o teste separa o limiar abstrato do maximo runtime 255.
+
+O port nao copia `Ban/<conta>.bin` nem integra a variante binaria do W2PP. Usa
+`IAccountReviewStore` e `FileAccountReviewStore`, independentes do backend de
+senha/personagem e do Site. Cada conta normalizada tem `<CONTA>.review.json`,
+schema `version=1`, `status=Analysis`, timestamp UTC e evidencia minima: motivo
+estavel, personagem opcional, IP remoto opcional, velocidade pedida/permitida e
+`AttackRun`. A primeira evidencia e mantida; arquivo temporario no mesmo volume,
+flush e rename sem overwrite tornam visiveis somente documentos completos.
+Locks locais e entre processos usam as mesmas 128 faixas. A faixa e calculada
+com FNV-1a sobre o nome ASCII normalizado, de forma deterministica entre UP/PVP;
+cada faixa tem um arquivo persistente `.account-review-lock-NNN.lck` aberto com
+`FileShare.None`. `ReadStatus` e `MarkForAnalysis` adquirem o lock antes de ler
+ou alterar o sidecar; a espera e cancelavel. Os arquivos de lock nao devem ser
+apagados enquanto houver servidores ativos, e seus handles sao liberados pelo
+sistema operacional no encerramento do processo. A quantidade fica limitada a
+128, evitando criar um arquivo por tentativa de login. Isto e coordenacao entre
+processos que compartilham o mesmo host e volume local, nao um lock distribuido
+entre maquinas ou uma garantia para qualquer filesystem de rede.
+
+`--account-review-root` e obrigatorio ao habilitar autenticacao por arquivo ou
+MariaDB. Login de conta valida/normaliza a identidade, consulta o sidecar antes
+da senha e fecha a sessao ao encontrar Analysis ou erro/corrupcao/raiz ausente.
+O Action severo soma o `5/type 4` comum, adia o logout generico de crack-error,
+grava a marca antes do relay, envia aviso neutro somente quando a persistencia
+confirma e fecha a conexao. Falha de escrita envia aviso generico, fecha e nao
+move. Violacao nao severa mantem o clamp anterior; score alto sem violacao nao
+marca. Nenhum detalhe de senha, PIN, token ou MAC entra na evidencia.
+
+O painel WinForms expoe a raiz em `%LOCALAPPDATA%\WydCdk\account-review`; o
+construtor estatico de argumentos do instalador aponta para uma raiz persistente
+fora da release. O arquivo nao expira e nao ha painel/operacao de liberacao neste
+bloco. Host deve ser configurado com a mesma raiz persistente e acessivel em todos
+os processos autenticados no host.
+
+Validacao local em 28/09: suite `WydCdk.Engine.Tests` passou, solution build
+terminou com 0 avisos/erros, e o harness loopback passou startup sem raiz,
+falha de escrita, marca duravel, restart/login marcado com senha incorreta,
+conta-controle e falha de leitura da raiz. Evidencia:
+`Backup/Build/AutoTradeCloseSmoke/89f07045fd124e328a47c0b84fe6b08a`; hashes das
+fixtures originais intactos e porta 18283 liberada. O leitor E2E consome frames
+anteriores de inicializacao ate o `MessagePanel` (limite 32) e exige ausencia de
+relay Action antes do aviso.
+
+Validacao adicional local em 28/09 (MOVE-ACTION-ANALYSIS-002): harness abriu dois
+processos reais do runner sob uma barreira comum. Com o lock mantido, ambos
+aguardaram; apos a liberacao, uma marcacao retornou `Marked`, a outra
+`AlreadyMarked`, e a evidencia da vencedora permaneceu no JSON. Um processo
+leitor tambem aguardou o lock e leu `Analysis`. 160 contas de teste produziram
+no maximo 128 arquivos de lock. Suite completa passou e `WydCdk.Engine.slnx`
+buildou com 0 avisos/erros. O smoke TCP `ActionAnalysis` tambem passou contra o
+listener local, cobrindo escrita indisponivel, marca duravel antes do EOF sem
+relay/movimento, relogin bloqueado antes da senha, conta-controle aceita e raiz
+indisponivel; fixtures originais intactas e porta 18283 liberada. Evidencia:
+`Backup/Build/AutoTradeCloseSmoke/eda6e8c5b8084aa4a3b080a6c7f42498`. Esta
+validacao e local; o runtime sandbox nao inclui este subbloco.
+
+Deploy sandbox em 28/09: pacote runtime self-contained com 197 arquivos, sem
+PDB/source/docs/segredos, SHA-256
+`B70F7F6C5318EC54BBC879D8711B0624716768CE32A4D0C103422B71AD703E88`. As tarefas
+UP/PVP estao Running em 8281/8282, servindo do executavel atualizado; `servtest.htm`
+e os heartbeats `Site\.wyd-status\slot-1.heartbeat`/`slot-2.heartbeat` foram
+atualizados. A raiz `C:\WYDCDK\account-review` e protegida por ACL para
+SYSTEM/Administradores. Backup reversivel em
+`C:\WYDCDK\Server\test-releases\backup-action-analysis-70c4d907`: runtime
+anterior (202 arquivos, hashes 202/202 conferidos), wrappers, XML das tarefas e
+ZIP original. Runtime novo tem 199 arquivos apos criar os dois logs de execucao,
+zero PDB. Validacao remota e operacional; nao inclui login com conta real nem
+smoke visual do WYD.exe. Site source/schema, producao, commit e push nao foram
+alterados.
+
+## MOVE-ACTION-ANALYSIS-003 — integracao concorrente UP/PVP local (28/09/2026)
+
+Sem mudanca do runtime neste recorte: a meta foi fechar a evidencia TCP entre
+dois hosts reais. Cada host usa uma raiz propria de contas (`UP/accounts` ou
+`PVP/accounts`) e ambos recebem a mesma `--account-review-root`. Dois clientes
+E2E independentes autenticam copias sinteticas da mesma identidade; caminhos de
+estado e arquivos de barreira sao validados pelo parser contra a pasta isolada
+do smoke. O harness segura o Action ate os dois clientes estarem prontos.
+
+No run `Backup/Build/AutoTradeCloseSmoke/dual-world-analysis-64dd28c435ba434da3d724c8540e35d9`,
+UP escutou em `127.0.0.1:18283` e PVP em `127.0.0.2:18283`. O runner manteve
+aberto, com compartilhamento exclusivo, o `.account-review-lock-022.lck` da
+conta normalizada `TESTE2`; os dois servidores registraram a chegada ao ramo
+severo antes de persistir e nenhum marcou enquanto o lock externo estava retido.
+Depois da liberacao, os resultados foram exatamente `Marked` e `AlreadyMarked`,
+com um unico JSON `TESTE2.review.json` em `Analysis`. Os dois processos E2E
+retornaram 0 e verificaram aviso, EOF e ausencia de relay Action; o autor nao
+moveu e carry/cargo/Gold dos dois personagens permaneceram intactos. Hashes das
+fixtures-fonte intactos; ambos os listeners foram encerrados e a porta ficou
+livre. O mesmo diretorio
+retém `engine-tests.log` com 296 PASS/0 FAIL.
+
+A bateria single-host completa voltou a passar em
+`Backup/Build/AutoTradeCloseSmoke/6a91756bb9b449de984a009b0728171e`; cobre
+startup fail-closed, falha de escrita, marcacao duravel, relogin bloqueado antes
+da senha, conta-controle e indisponibilidade de leitura. Build da solution:
+0 avisos/0 erros; self-test dos caminhos/barreiras passou. Evidencia apenas
+local e wire/headless: nao publica o runtime que esta no sandbox em ANALYSIS-001,
+nao testa filesystem distribuido/entre maquinas nem substitui E2E visual. Site,
+producao, commit e push ficaram intocados.
+
+## MOVE-ACTION-ANALYSIS-004 - limites severos por TCP (28/09/2026)
+
+O smoke `-ActionAnalysis` foi ampliado sem alterar o listener/runtime. Uma copia
+isolada da conta de controle recebe `CurrentScore.AttackRun=255` no slot 0, valor
+verificado no `CharacterLoginConfirmation` real. Speed15 (igual ao nibble
+permitido) foi relayed ao autor e ao observador sem criar sidecar: score alto,
+sozinho, nao marca. Speed19 produz uma violacao real contra `255 & 0xF == 15`,
+mas fica abaixo do limite severo; o relay confirmou o clamp para Speed15, ambos
+os clientes permaneceram conectados e nenhuma conta foi marcada. O caso
+positivo Speed20 continua no mesmo smoke: aviso Analysis, sidecar duravel e EOF
+antes de qualquer relay Action.
+
+Isso fecha por rede o limiar inclusivo `requestedSpeed >= 20`, o requisito
+`requestedSpeed > (AttackRun & 0xF)` e o controle de score maximo 255; nao alarga
+o campo byte nem simula `AttackRun >= 300`. Continua deliberadamente sem copiar
+`Ban/*.bin`; a semantica `SaveInfoDetect` nao foi auditada alem da evidencia
+minima ja persistida pelo sidecar. O comparativo permanece: o clamp comum existe
+no W2PP, o side effect severo e especifico da referencia 7.69.
+
+`Engine.Tests`: 296 PASS/0 FAIL; `WydCdk.Engine.slnx`: build 0 avisos/0 erros;
+self-test do harness e bateria TCP completa passaram. Evidencia retida:
+`Backup/Build/AutoTradeCloseSmoke/4b071419ef1c4c01a127f4d55d10f615`; hashes das
+fixtures-fonte intactos, listener filho encerrado e porta 18283 livre. O
+readiness do smoke agora usa PID de `netstat`: foi reproduzido que
+`Get-NetTCPConnection` retornava zero linhas mesmo com o listener real aceitando
+conexao. Validacao continua local wire/headless; sem E2E visual, deploy, Site,
+producao, commit ou push.
+
+## MOVE-ACTION-ANALYSIS-005 - auditoria da evidencia SaveInfoDetect (28/09/2026)
+
+### Fluxo observado na source 7.69
+
+No ramo de violacao de velocidade de `_MSG_Action.cpp`, o servidor gera a
+mensagem `etc,diffrent movement. <requestedSpeed>-<AttackRun>`, aplica o limite
+severo e, quando atendido, chama `SendBanAccount(..., Banned::Analise)` seguido
+de `SaveInfoDetect`. `SendBanAccount` define `Analyze`, registra uma primeira
+linha em `LogType::Banned`, persiste o estado legado, envia a mensagem ao cliente
+e chama `CloseUser`. Em uma sessao `USER_PLAY`, `CloseUser` inicia o save/quit e
+`DeleteMob` marca o MOB como vazio/HP zero; em seguida o fluxo retorna a
+`SaveInfoDetect`, que ainda le os campos da sessao e chama `MyLog` para uma
+segunda linha. Essa ordem e comportamento estatico observado; nao foi executado
+o binario C++ para confirmar os valores apos a desconexao.
+
+`SaveInfoDetect` e generica e tambem aparece em branches de `Attack` e
+`MessageChat`; esses gatilhos nao foram portados por esta auditoria. Para o ramo
+Action, ela prefixa a conta e a descricao recebida e passa personagem, descricao
+e IP a `MyLog(LogType::Banned, ...)`. `MyLog` formata data/hora usando `localtime`,
+inclui o IP quando diferente de zero e escreve no handle `FBanned`. `StartLog`
+abre `Log\Banned\Banned_DD_MM_YYYY_hh_mm_ss.txt` em modo `wt`; seu uso observado
+e na inicializacao e no comando explicito de reinicio de logs. `LastLogBanned` e
+atribuido, mas nao ha consumidor encontrado para rotacao automatica por dia.
+O `SendBanAccount` tambem produz sua propria linha Banned antes de
+`SaveInfoDetect`; portanto o legado pode emitir duas linhas para a deteccao.
+Na source 7.69, a mensagem/log dessa rotina sobrescreve o texto inicial e chama
+o caso `Analise` de `Tipo: Mac`, uma inconsistência textual de copy/paste que nao
+foi adotada pelo port.
+
+### Comparacao e decisao de escopo
+
+O W2PP implementa `MyLog` com categoria/arquivo Banned e seu
+`SendBanAccount(Analise)` registra uma linha dessa categoria, mas nao define ou
+chama `SaveInfoDetect`; o handler Action W2PP mantem o clamp comum sem o side
+effect severo 7.69. Logo, a evidencia extra e especifica do fluxo 7.69, nao uma
+equivalencia herdada do port antigo.
+
+O documento JSON versionado atual preserva conta, personagem opcional, endereco
+remoto opcional, `reasonCode`, velocidade pedida e permitida, `AttackRun` e
+`DetectedAtUtc`. Isso cobre de forma estruturada os fatos uteis da primeira
+ocorrencia, sem copiar a formatacao textual nem o relogio local do logger. O
+store e estado de revisao por conta: `AlreadyMarked` mantem a primeira evidencia
+e nao acrescenta eventos. Portanto ele nao substitui um historico operacional
+append-only equivalente ao `MyLog` quando houver repeticoes/concorrencia.
+
+Decisao deste bloco: manter o sidecar atual como estado de Analysis e nao criar
+um segundo logger sem requisito explicito de historico por ocorrencia. Se essa
+necessidade for aprovada, tratar sink, retencao, concorrencia e privacidade em
+recorte proprio. Nenhum runtime/schema/teste foi alterado; `Ban/*.bin`, outros
+branches de deteccao e integracao Site continuam fora.
+
+Fontes estaticas conferidas: TMProject 7.69, commit
+`3ccc4d3377a1226648d58d59f87d7a020cabc8a1`; SHA-256 de `_MSG_Action.cpp`
+`B4C1F469BF2A13616C7427904956131CF4AD417BFFA19A8040F49F0B28797907`,
+`IlegalCMD.cpp` `3C14F2E759A3D9BBAFEDA281465435AD9134615C3E50B4D4B0475F9F813ADBC8`,
+`SendFunc.cpp` `99C0B11FA212B4DE7F09F54B27E7378E39712C7C6B85FE1D366A93D8AD081E60`
+e `Server.cpp` `F36EDBADD99529BA2E79143FA6933854EA30B1235B27CFBF17BCC0F47D4B3C5D`.
+No W2PP local: `_MSG_Action.cpp`
+`631E251BAB16F29D5015D02284F74112ED90FB5B4352A048B04A54A2B0483810`,
+`SendFunc.cpp` `E1C02F89F8D4661E8D1C52A5EE5F8DC08AABB1FE7A0B2E9466F3BB2C3821045E`
+e `Server.cpp` `08A444B0B13116C6ABCCECD42836A4F8948008884DFF1C0219D1DE1D291D10C4`.

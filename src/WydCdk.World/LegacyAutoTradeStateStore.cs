@@ -70,7 +70,7 @@ public interface ILegacyAutoTradeStateStore
 /// Writes use a temporary file followed by replacement so a process stop does
 /// not intentionally truncate the active document.
 /// </summary>
-public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILegacyAutoTradePurchaseCommitStore
+public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILegacyAutoTradePurchaseCommitStore, ILegacyAutoTradeCloseStore
 {
     private const int CurrentVersion = 1;
     private const int JournalVersion = 1;
@@ -101,6 +101,58 @@ public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILega
     }
 
     public string WorldKey { get; }
+
+    public async ValueTask<LegacyAutoTradeCloseStoreResult> RemoveExpectedAsync(
+        LegacyAutoTradeCloseRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null) return LegacyAutoTradeCloseStoreResult.InvalidRequest;
+        await gate.WaitAsync(cancellationToken);
+        var writing = false;
+        try
+        {
+            await RecoverPendingAsync(cancellationToken);
+            var document = await ReadDocumentAsync(cancellationToken);
+            var found = false;
+            foreach (var expected in request.ExpectedListings)
+            {
+                var matching = document.Listings.Where(value => LegacyAutoTradeCloseRequest.SameOwner(value, expected)).ToArray();
+                if (matching.Length > 1 || matching.Length == 1 &&
+                    !LegacyAutoTradePurchaseCommitRules.SameListing(matching[0], expected))
+                    return LegacyAutoTradeCloseStoreResult.Conflict;
+                found |= matching.Length == 1;
+            }
+            if (!found) return LegacyAutoTradeCloseStoreResult.AlreadyAbsent;
+            var remaining = document.Listings.Where(value => !request.ExpectedListings.Any(expected =>
+                LegacyAutoTradeCloseRequest.SameOwner(value, expected))).ToArray();
+            cancellationToken.ThrowIfCancellationRequested();
+            writing = true;
+            // One document replacement, never a sequence of owner deletions.
+            await WriteDocumentAsync(new StateDocument(CurrentVersion, WorldKey, remaining), cancellationToken);
+            return LegacyAutoTradeCloseStoreResult.Removed;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            return writing ? LegacyAutoTradeCloseStoreResult.Ambiguous : LegacyAutoTradeCloseStoreResult.Unavailable;
+        }
+        finally { gate.Release(); }
+    }
+
+    public async ValueTask<LegacyAutoTradeCloseReadState> ReadCloseStateAsync(
+        LegacyAutoTradeCloseRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null) return LegacyAutoTradeCloseReadState.Unknown;
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            await RecoverPendingAsync(cancellationToken);
+            return request.Classify((await ReadDocumentAsync(cancellationToken)).Listings);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            return LegacyAutoTradeCloseReadState.Unknown;
+        }
+        finally { gate.Release(); }
+    }
 
     public async ValueTask<LegacyAutoTradeStateResult> SaveAsync(
         string accountName,
@@ -339,6 +391,13 @@ public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILega
             throw new InvalidDataException("The autotrade state document version or world key is unsupported.");
         if (document.Listings is null)
             throw new InvalidDataException("The autotrade state document has no listings array.");
+        if (document.Listings.Any(value => value is null ||
+            !TryNormalizeOwner(value.AccountName, value.CharacterSlot, out var normalized) || normalized != value.AccountName ||
+            value.Items is null || value.CarryPositions is null || value.Prices is null ||
+            value.Items.Count != AutoTradeListConfirmation.SlotCount || value.CarryPositions.Count != AutoTradeListConfirmation.SlotCount ||
+            value.Prices.Count != AutoTradeListConfirmation.SlotCount) ||
+            document.Listings.GroupBy(value => (value.AccountName, value.CharacterSlot)).Any(group => group.Count() > 1))
+            throw new InvalidDataException("The autotrade document contains invalid or duplicate listings.");
         return document;
     }
 

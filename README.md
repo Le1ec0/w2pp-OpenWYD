@@ -1,11 +1,11 @@
 # WydCdk.Engine
 
-> Direcao vigente (19/09/2026): este checkout documenta a implementacao existente,
-> mas o projeto passa a ser tratado como um emulador WYD novo em C#/.NET. A
-> arquitetura atual sera inventariada e reconstruida em 20/09; seus modulos sao
-> material reutilizavel, nao fronteiras arquiteturais definitivas. A referencia
-> primaria e a engenharia reversa comunitaria 7.69; o cliente 7662 e o alvo
-> preferido de E2E. Nao existe source oficial vazada.
+> Direcao vigente (25/09/2026): este checkout documenta a implementacao existente,
+> mas o projeto e tratado como um emulador WYD novo em C#/.NET. A arquitetura e
+> um monolito modular em reconstrucao; seus modulos sao material reutilizavel,
+> nao fronteiras definitivas. A referencia primaria e a engenharia reversa
+> comunitaria 7.69; o cliente unico da release e 7.670. Nao existe source oficial
+> vazada.
 
 Port C#/.NET do servidor WYD CDK, mantido em paralelo ao C++ legado em
 `W2PP`. O comportamento do legado so entra no port depois de existir
@@ -35,6 +35,24 @@ PVP -> 8282 -> --world PVP -> precos de Donate/Gold zerados pela politica
 
 ## Build e testes
 
+### Plataforma e pratica de build
+
+Todos os projetos desta solucao usam `net10.0`, exceto o painel WinForms, que
+usa `net10.0-windows`. .NET 10 e a linha LTS atual; usar o ultimo patch estavel
+validado e nao adotar preview/STS automaticamente. O SDK observado nesta
+maquina em 25/09/2026 foi `10.0.401`; como ainda nao existe `global.json`, registrar
+`dotnet --info` junto com cada evidencia de build. O pinning do SDK e o item
+`BL-025`.
+
+Aplicam-se as seguintes praticas: nullable e implicit usings permanecem ativos;
+servicos entram por injecao de dependencia e configuracao tipada; I/O usa
+`async`/`await` com cancelamento, sem `Task.Run`; logs nao carregam credenciais ou
+payload de autenticacao; e o shutdown precisa ser cooperativo. Melhorias de
+framework ou pacote entram somente depois de testes de contrato, integracao e
+smoke local. Se o restore emitir `NU1900` por indisponibilidade do feed de
+auditoria do NuGet, registrar que a compilacao passou mas a verificacao de
+vulnerabilidades ficou inconclusiva.
+
 Na raiz do repositorio:
 
 ```powershell
@@ -42,7 +60,9 @@ dotnet build .\Server\WydCdk.Engine.slnx --nologo -v:q
 dotnet run --no-build --project .\Server\tests\WydCdk.Engine.Tests\WydCdk.Engine.Tests.csproj
 ```
 
-O estado documentado em 18/09/2026 e build limpo com 124 testes passando.
+Em 25/09/2026, a build/teste local registrada no contexto passou com 211 testes,
+0 avisos e 0 erros; o harness E2E de wire confirmou o fluxo de loopback, enquanto
+o E2E visual e a movimentacao real no cliente continuam pendentes.
 
 ### Status HTTP do serverlist
 

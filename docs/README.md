@@ -26,6 +26,15 @@
 > `D3DPOOL_DEFAULT`; no smoke de 23/09/2026 o cliente abriu uma janela responsiva
 > sem o erro gráfico. A janela nativa não foi exposta ao controle CUA, portanto o
 > teste de login e o E2E seguem pendentes.
+> Em 25/09/2026, o novo harness `tests/WydCdk.Client.E2E` reutilizou o codec C# e
+> confirmou em loopback handshake, login 7.670 (`0x010A`/1928), verificacao do PIN
+> (`0x0FDE`/12), login de personagem (`0x0114`/1728) e logout (`0x0116`/12),
+> todos com checksum valido. O harness tambem drenou os frames de estado pendentes
+> apos o login; o E2E visual e a movimentacao no cliente seguem separados.
+> O bloco seguinte validou `_MSG_SplitItem` (`0x02E5`/24), dois `MSG_SendItem`
+> (`0x0182`/24) na ordem destino/origem e persistencia 7/3 apos relogin. O
+> runtime self-contained de teste foi republicado na VPS com UP/PVP ouvindo em
+> 8281/8282; Site, source e segredos ficaram fora do pacote.
 > O restante deste documento e indice/evidencia historica e deve ser revisto por
 > modulo durante o reinicio arquitetural ja aprovado.
 
@@ -46,7 +55,28 @@ O backlog priorizado fica na raiz em [BACKLOG.md](../../BACKLOG.md), e o checkli
 - Ao migrar uma mensagem ou sistema, atualizar o documento tematico com o wire, validacoes, estado alterado, custo de processamento e teste que protege o comportamento.
 - Manter a compatibilidade antes de otimizar. Melhorias so entram depois de medir impacto e sem substituir a autoridade do servidor.
 
+## Plataforma .NET e praticas obrigatorias
+
+O target vigente e .NET 10 LTS no ultimo patch estavel validado, com suporte
+indicado ate 14/11/2028. Protocol,
+World, Server, ferramentas, testes e o launcher usam `net10.0`; o painel usa
+`net10.0-windows` por depender de WinForms. A equipe deve preferir o patch mais
+novo suportado da linha 10.0, mas nao deve trocar automaticamente para preview,
+STS ou outro major. O SDK deve ser fixado por `global.json` com prerelease
+desabilitado e roll-forward limitado a patch assim que o item `BL-025` for
+executado; ate la, a evidencia de build inclui `dotnet --info`.
+
+Ao evoluir o port, manter nullable/implicit usings, injecao por construtor,
+Options para configuracao, `async`/`await` com `CancellationToken` em I/O, logs
+estruturados sem segredos, shutdown cooperativo e health/status local por padrao.
+Nao introduzir pacote, API ou upgrade de framework sem teste de contrato/wire,
+teste de dominio, integracao local e smoke correspondente. A referencia de
+release e suporte e a [politica oficial de releases do .NET](https://github.com/dotnet/core/blob/main/releases.md);
+para o SDK, consultar [global.json](https://learn.microsoft.com/dotnet/core/tools/global-json).
+
 ## Indice
+
+- [Action severo / conta em Analise](superpowers/specs/2026-09-28-action-account-analysis.md) — implementado, validado localmente e publicado no sandbox em 28/09; deploy operacional e limites wire/headless em [PORT_TRACEABILITY.md](PORT_TRACEABILITY.md) e [CLIENT_E2E_SMOKE.md](CLIENT_E2E_SMOKE.md).
 
 - [Baseline de arquitetura e DTOs](PORT_ARCHITECTURE_BASELINE.md) — decisoes arquiteturais, contratos x86 e estagio de migracao.
 - [Rastreabilidade por modulo](PORT_TRACEABILITY.md) — comparacao 7.69/W2PP/C# e estado das evidencias.
@@ -95,6 +125,16 @@ As tabelas de estado pertencentes ao servidor estão descritas em
 Donate continuam sendo pré-requisitos externos do Site.
 
 ## Estado de validacao atual (23/09/2026)
+
+### Atualizacao vigente — 25/09/2026
+
+- A suite atual passou com 211 `PASS`; o build da solucao concluiu, com os
+  avisos `NU1900` limitados a consulta de vulnerabilidades do NuGet sem acesso
+  ao feed. O harness wire confirmou login/logout e o split `0x02E5` com dois
+  `MSG_SendItem` em ordem destino/origem e persistencia 7/3 apos relogin.
+- A build self-contained de teste foi publicada na VPS autorizada; o EXE e a
+  DLL de protocolo tiveram seus hashes conferidos e UP/PVP estao ouvindo em
+  8281/8282. Nao houve commit, push, Site ou producao.
 
 - Suite local: `dotnet run --project ./tests/WydCdk.Engine.Tests/WydCdk.Engine.Tests.csproj --no-restore` — 207 testes passaram, incluindo os contratos byte a byte isolados de CreateMob, CreateMobTrade, UpdateEquip, RemoveMob, UpdateAffect, UpdateScore e UpdateEtc 7.69, os adapters W2PP de CreateMobTrade e os relays visual/de remoção de autotrade, o DTO do request de abertura, o `LegacyAutoTradeBook`, o `LegacyAutoTradeFileStore` versionado, o `LegacyAutoTradeRehydrator` e o fechamento de reconexão do mesmo account/slot, as regras de vila/taxa, o gate explícito de alvo offline e o relay de `MSG_AutoTrade`, os DTOs/fixtures de `MSG_ReqBuy` e `MSG_ItemSold`, os gates puros de compra e o settlement de imposto, mais o contrato de commit compare-and-swap, a mutação/rollback do comprador no `WorldHub` e a proteção do slot no book, as fixtures de UpdateCarry e `MSG_SendAutoTrade`, o leitor server-side de ItemList, a integridade concorrente de `SerializedNetworkStream` em loopback, o round-trip dos tres opcodes de `ActionRequest` com a janela `VIEWGRIDX/Y=33`, o wire de `MSG_SetHpMode` usado pelo gate de HP de `Motion`, os gates de celula `0x80`/`0x20`, o recall autoritativo de movimento no `WorldHub`, os DTOs wire de trade, o estado bilateral em memoria de ofertas, o cancelamento bilateral no disconnect sem mutar carry/Gold, os gates isolados de listagem de autotrade, o plano dos dois personagens para persistencia, os planos de relay de `MSG_CNFCheck` e `MSG_UpdateCarry` e a conclusao atomica de carry/Gold em memoria. O dispatcher do host tambem passou em build separado; as migracoes MariaDB foram aplicadas no banco local `wyd_cdk` e o `MariaDbAutoTradeStateStore` passou round-trip; banco externo e compra atomica seguem pendentes.
 - Suite atualizada em 24/09/2026: 207 testes passaram; a build da solução passou com 0 avisos/0 erros. O runner de migrações confirmou cinco tabelas do servidor, o round-trip de autotrade e o smoke de compra atômica/replay CAS no MariaDB local; VPS, banco externo e E2E continuam pendentes.

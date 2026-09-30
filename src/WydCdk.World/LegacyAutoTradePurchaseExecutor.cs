@@ -11,6 +11,7 @@ public enum LegacyAutoTradePurchaseExecutionResult
     BuyerStateChanged,
     CommitRejected,
     RollbackFailed,
+    PendingRecovery,
 }
 
 /// <summary>
@@ -32,7 +33,8 @@ public sealed record LegacyAutoTradePurchaseExecutionRequest(
     string SellerAccountName,
     int SellerCharacterSlot,
     LegacyAutoTradePersistedListing ExpectedListing,
-    bool TargetIsOfflineNpc);
+    bool TargetIsOfflineNpc,
+    long ExpectedGeneration);
 
 public sealed record LegacyAutoTradePurchaseExecutionOutcome(
     LegacyAutoTradePurchasePlan Plan,
@@ -60,20 +62,50 @@ public static class LegacyAutoTradePurchaseExecutor
         LegacyAutoTradePurchaseExecutionRequest request,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(book);
+        ArgumentNullException.ThrowIfNull(request);
+        request = Freeze(request);
+        await using var lease = await book.AcquireAsync(
+            [request.BuyerConnectionId, request.Context.TargetId], cancellationToken);
+        return await ExecuteUnderLeaseAsync(world, book, lease, commitStore, request, cancellationToken);
+    }
+
+    internal static async ValueTask<LegacyAutoTradePurchaseExecution> ExecuteUnderLeaseAsync(
+        WorldHub world,
+        LegacyAutoTradeBook book,
+        LegacyAutoTradeOperationLease lease,
+        ILegacyAutoTradePurchaseCommitStore? commitStore,
+        LegacyAutoTradePurchaseExecutionRequest request,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(book);
         ArgumentNullException.ThrowIfNull(request);
 
+        request = Freeze(request);
+
         if (commitStore is null)
             return new(LegacyAutoTradePurchaseExecutionResult.PersistenceUnavailable, null);
+
+        if (book.TryGetPendingClose(lease, request.BuyerConnectionId, out _) ||
+            book.IsOwnerPending(new(request.BuyerAccountName, request.BuyerCharacterSlot)))
+            return new(LegacyAutoTradePurchaseExecutionResult.PendingRecovery, null);
+
+        if (!lease.Covers(request.BuyerConnectionId) ||
+            !book.TryGet(lease, request.Context.TargetId, out var original) || original is null ||
+            original.Generation != request.ExpectedGeneration ||
+            original.Owner != new LegacyAutoTradeOwner(request.SellerAccountName.Trim().ToUpperInvariant(), request.SellerCharacterSlot) ||
+            !SameListing(original.Snapshot, request.Context.Listing))
+            return new(LegacyAutoTradePurchaseExecutionResult.ListingChanged, null);
 
         var planResult = LegacyAutoTradePurchasePlanBuilder.TryBuild(request.Context, out var plan);
         if (planResult != LegacyAutoTradePurchaseResult.Accepted || plan is null)
             return new(LegacyAutoTradePurchaseExecutionResult.InvalidPlan, null);
 
-        var bookResult = book.TryApplyPurchase(request.Context.TargetId, plan, out var updatedListing);
-        if (bookResult != LegacyAutoTradePurchaseResult.Accepted || updatedListing is null)
+        var bookResult = book.TryApplyPurchase(lease, original, plan, out var updatedHandle);
+        if (bookResult != LegacyAutoTradePurchaseResult.Accepted || updatedHandle is null)
             return new(LegacyAutoTradePurchaseExecutionResult.ListingChanged, null);
+        var updatedListing = updatedHandle.Snapshot;
 
         var offlineVisualUpdated = false;
         if (request.TargetIsOfflineNpc)
@@ -84,7 +116,7 @@ public static class LegacyAutoTradePurchaseExecutor
                 updatedListing);
             if (!offlineVisualUpdated)
             {
-                return book.TryRollbackPurchase(request.Context.TargetId, updatedListing, request.Context.Listing)
+                return book.TryRollbackPurchase(lease, updatedHandle, original)
                     ? new(LegacyAutoTradePurchaseExecutionResult.OfflineVisualChanged, null)
                     : new(LegacyAutoTradePurchaseExecutionResult.RollbackFailed, null);
             }
@@ -102,9 +134,7 @@ public static class LegacyAutoTradePurchaseExecutor
                 updatedListing,
                 request.Context.Listing);
             var bookRolledBack = book.TryRollbackPurchase(
-                request.Context.TargetId,
-                updatedListing,
-                request.Context.Listing);
+                lease, updatedHandle, original);
             return visualRolledBack && bookRolledBack
                 ? new(LegacyAutoTradePurchaseExecutionResult.BuyerStateChanged, null)
                 : new(LegacyAutoTradePurchaseExecutionResult.RollbackFailed, null);
@@ -137,20 +167,20 @@ public static class LegacyAutoTradePurchaseExecutor
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (!TryRollback(world, book, request, updatedListing, buyerOutcome, offlineVisualUpdated))
+            if (!TryRollback(world, book, lease, original, updatedHandle, request, buyerOutcome, offlineVisualUpdated))
                 return new(LegacyAutoTradePurchaseExecutionResult.RollbackFailed, null);
             throw;
         }
         catch
         {
-            if (!TryRollback(world, book, request, updatedListing, buyerOutcome, offlineVisualUpdated))
+            if (!TryRollback(world, book, lease, original, updatedHandle, request, buyerOutcome, offlineVisualUpdated))
                 return new(LegacyAutoTradePurchaseExecutionResult.RollbackFailed, null);
             return new(LegacyAutoTradePurchaseExecutionResult.CommitRejected, null);
         }
 
         if (commitResult != LegacyAutoTradePurchaseCommitResult.Committed)
         {
-            if (!TryRollback(world, book, request, updatedListing, buyerOutcome, offlineVisualUpdated))
+            if (!TryRollback(world, book, lease, original, updatedHandle, request, buyerOutcome, offlineVisualUpdated))
                 return new(LegacyAutoTradePurchaseExecutionResult.RollbackFailed, null);
             return new(LegacyAutoTradePurchaseExecutionResult.CommitRejected, null);
         }
@@ -168,22 +198,51 @@ public static class LegacyAutoTradePurchaseExecutor
     private static bool TryRollback(
         WorldHub world,
         LegacyAutoTradeBook book,
+        LegacyAutoTradeOperationLease lease,
+        LegacyAutoTradeListingHandle original,
+        LegacyAutoTradeListingHandle updated,
         LegacyAutoTradePurchaseExecutionRequest request,
-        LegacyAutoTradeSnapshot updatedListing,
         LegacyAutoTradeBuyerPurchaseOutcome buyerOutcome,
         bool offlineVisualUpdated)
     {
         var buyerRolledBack = world.TryRollbackAutoTradeBuyerPurchase(buyerOutcome);
         var visualRolledBack = !offlineVisualUpdated || world.TryUpdateAutoTradeNpcSnapshot(
             request.Context.TargetId,
-            updatedListing,
+            updated.Snapshot,
             request.Context.Listing);
         var bookRolledBack = book.TryRollbackPurchase(
-            request.Context.TargetId,
-            updatedListing,
-            request.Context.Listing);
+            lease, updated, original);
         return buyerRolledBack && visualRolledBack && bookRolledBack;
     }
+
+    private static bool SameListing(LegacyAutoTradeSnapshot left, LegacyAutoTradeSnapshot right) =>
+        left.ConnectionId == right.ConnectionId && left.PositionX == right.PositionX && left.PositionY == right.PositionY &&
+        left.Title == right.Title && left.Tax == right.Tax && left.Items.SequenceEqual(right.Items) &&
+        left.CarryPositions.SequenceEqual(right.CarryPositions) && left.Prices.SequenceEqual(right.Prices);
+
+    private static LegacyAutoTradePurchaseExecutionRequest Freeze(LegacyAutoTradePurchaseExecutionRequest request) => request with
+    {
+        ExpectedBuyerMob = request.ExpectedBuyerMob.ToArray(),
+        ExpectedPersistedBuyerMob = request.ExpectedPersistedBuyerMob.ToArray(),
+        BuyerMobExtra = request.BuyerMobExtra.ToArray(),
+        Context = request.Context with
+        {
+            Listing = request.Context.Listing with
+            {
+                Items = request.Context.Listing.Items.ToArray(),
+                CarryPositions = request.Context.Listing.CarryPositions.ToArray(),
+                Prices = request.Context.Listing.Prices.ToArray(),
+            },
+            SellerCargo = request.Context.SellerCargo.ToArray(),
+            BuyerCarry = request.Context.BuyerCarry.ToArray(),
+        },
+        ExpectedListing = request.ExpectedListing with
+        {
+            Items = request.ExpectedListing.Items.ToArray(),
+            CarryPositions = request.ExpectedListing.CarryPositions.ToArray(),
+            Prices = request.ExpectedListing.Prices.ToArray(),
+        },
+    };
 
     private static LegacyAutoTradePersistedListing ToPersistedListing(
         string accountName,

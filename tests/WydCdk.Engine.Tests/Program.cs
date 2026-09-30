@@ -5,12 +5,121 @@ using System.Text.Json;
 using WydCdk.Protocol;
 using WydCdk.World;
 
+if (args.Length > 0 && args[0] == "--account-review-process-worker")
+{
+    try { Environment.ExitCode = await AccountReviewProcessTests.RunWorkerAsync(args); }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"FAIL account review process worker: {error}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
+if (args.Length == 1 && args[0] == "--account-review-process-test")
+{
+    try { await AccountReviewProcessTests.RunAllAsync(); }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"FAIL account review process tests: {error}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
 var tests = new (string Name, Action Run)[] { ("header round-trip", HeaderRoundTrip), ("frame round-trip with real legacy table", FrameRoundTrip), ("stream accepts partial and concatenated frames", StreamFraming), ("checksum detects incompatible key table", ChecksumDetectsIncompatibleKeyTable), ("account login parser", AccountLoginParser), ("create character parser", CreateCharacterParser), ("delete character wire", DeleteCharacterWire), ("character logout wire", CharacterLogoutWire), ("login session transitions", LoginSessionTransitions), ("legacy account store is read-only", LegacyAccountStoreIsReadOnly), ("account login coordinator", AccountLoginCoordinatorFlow), ("character selection wire layout", CharacterSelectionWireLayout), ("account login confirmation wire layout", AccountLoginConfirmationWireLayout), ("new character confirmation wire layout", NewCharacterConfirmationWireLayout), ("legacy account snapshot reads fixture", LegacyAccountSnapshotReadsFixture), ("legacy character name validation", LegacyCharacterNameValidation), ("legacy character template store reads class files", LegacyCharacterTemplateStoreReadsClassFiles), ("create character coordinator persists character", CreateCharacterCoordinatorPersistsCharacter), ("create character coordinator rejects invalid requests", CreateCharacterCoordinatorRejectsInvalidRequests), ("character login parser", CharacterLoginParser), ("character login confirmation wire layout", CharacterLoginConfirmationWireLayout), ("character login coordinator reads persisted character", CharacterLoginCoordinatorReadsPersistedCharacter), ("character login coordinator rejects invalid requests", CharacterLoginCoordinatorRejectsInvalidRequests), ("account secure parser", AccountSecureParser), ("account secure signal wire layout", AccountSecureSignalWireLayout), ("account secure coordinator first time setup", AccountSecureCoordinatorFirstTimeSetup), ("account secure coordinator verifies and changes pin", AccountSecureCoordinatorVerifiesAndChangesPin), ("account secure coordinator rejects wrong pin and unverified change", AccountSecureCoordinatorRejectsWrongPinAndUnverifiedChange) };
-tests = tests.Append(("client tick policy", ClientTickPolicyRules)).Append(("attack timing gate", AttackTimingGate)).Append(("attack parser", AttackParser)).Append(("attack response wire", AttackResponseWire)).Append(("attack authoritative pipeline", AttackAuthoritativePipeline)).Append(("set hp mp wire", SetHpMpWire)).Append(("set hp mode wire", SetHpModeWire)).Append(("send item wire", SendItemWire)).Append(("update carry wire", UpdateCarryWire)).Append(("physical combat formula", PhysicalCombatFormula)).Append(("skill combat formula", SkillCombatFormula)).Append(("experience formula", ExperienceFormula)).Append(("weapon damage formula", WeaponDamageFormula)).Append(("item data table", ItemDataTable)).Append(("item bonus math", ItemBonusMath)).Append(("item refinement bonus math", ItemRefinementBonusMath)).Append(("use item wire and class reset", UseItemWireAndClassReset)).Append(("world physical attack", WorldPhysicalAttack)).Append(("world npc experience", WorldNpcExperience)).Append(("world npc skill", WorldNpcSkill)).Append(("world npc party experience", WorldNpcPartyExperience)).Append(("world experience hold", WorldExperienceHold)).Append(("party experience modifiers", PartyExperienceModifiers)).Append(("experience bonus", ExperienceBonus)).Append(("world skill attack", WorldSkillAttack)).Append(("world summon skill", WorldSummonSkill)).Append(("world npc summon", WorldNpcSummon)).Append(("world ethereal flames", WorldEtherealFlames)).Append(("skill data table", SkillDataTable)).Append(("skill attack gate", SkillAttackGate)).Append(("legacy mob combat layout", LegacyMobCombatLayout)).Append(("legacy map grid attributes", LegacyMapGridAttributes)).Append(("legacy release map recall", LegacyReleaseMapRecall)).Append(("character login spawn", CharacterLoginSpawnPosition)).Append(("legacy guild zone state", LegacyGuildZoneStateFile)).Append(("short skill wire and persistence", ShortSkillWireAndPersistence)).Append(("action parser", ActionParser)).Append(("motion wire", MotionWire)).Append(("world hub broadcast", WorldHubBroadcast)).Append(("world skill mana mutation", WorldSkillManaMutation)).Append(("world guild invite", WorldGuildInvite)).Append(("guild invite visual update", GuildInviteVisualUpdate)).Append(("create mob wire", CreateMobWire)).Append(("initial world state wire", InitialWorldStateWire)).Append(("guild invite wire", GuildInviteWire)).Append(("message panel wire", MessagePanelWire)).Append(("pk info wire", PkInfoWire)).Append(("npc chat wire", NpcChatWire)).Append(("message chat wire", MessageChatWire)).Append(("world player chat view", WorldPlayerChatView)).Append(("message whisper wire", MessageWhisperWire)).Append(("world whisper target", WorldWhisperTarget)).Append(("get item wire", GetItemWire)).Append(("world ground item pickup", WorldGroundItemPickup)).Append(("donate shop wire", DonateShopWire)).Append(("donate shop client state", DonateShopClientStateFlow)).Append(("donate shop catalog and purchase", DonateShopCatalogAndPurchase)).ToArray();
+tests = tests.Append(("client tick policy", ClientTickPolicyRules)).Append(("attack timing gate", AttackTimingGate)).Append(("attack parser", AttackParser)).Append(("attack response wire", AttackResponseWire)).Append(("attack authoritative pipeline", AttackAuthoritativePipeline)).Append(("set hp mp wire", SetHpMpWire)).Append(("set hp mode wire", SetHpModeWire)).Append(("send item wire", SendItemWire)).Append(("update carry wire", UpdateCarryWire)).Append(("physical combat formula", PhysicalCombatFormula)).Append(("skill combat formula", SkillCombatFormula)).Append(("experience formula", ExperienceFormula)).Append(("weapon damage formula", WeaponDamageFormula)).Append(("item data table", ItemDataTable)).Append(("item bonus math", ItemBonusMath)).Append(("item refinement bonus math", ItemRefinementBonusMath)).Append(("use item wire and class reset", UseItemWireAndClassReset)).Append(("world physical attack", WorldPhysicalAttack)).Append(("world npc experience", WorldNpcExperience)).Append(("world npc skill", WorldNpcSkill)).Append(("world npc party experience", WorldNpcPartyExperience)).Append(("world experience hold", WorldExperienceHold)).Append(("party experience modifiers", PartyExperienceModifiers)).Append(("experience bonus", ExperienceBonus)).Append(("world skill attack", WorldSkillAttack)).Append(("world summon skill", WorldSummonSkill)).Append(("world npc summon", WorldNpcSummon)).Append(("world ethereal flames", WorldEtherealFlames)).Append(("skill data table", SkillDataTable)).Append(("skill attack gate", SkillAttackGate)).Append(("legacy mob combat layout", LegacyMobCombatLayout)).Append(("legacy map grid attributes", LegacyMapGridAttributes)).Append(("legacy release map recall", LegacyReleaseMapRecall)).Append(("character login spawn", CharacterLoginSpawnPosition)).Append(("legacy guild zone state", LegacyGuildZoneStateFile)).Append(("short skill wire and persistence", ShortSkillWireAndPersistence)).Append(("action parser", ActionParser)).Append(("motion wire", MotionWire)).Append(("world hub broadcast", WorldHubBroadcast)).Append(("world skill mana mutation", WorldSkillManaMutation)).Append(("world illusion fixed mana mutation", WorldIllusionFixedManaMutation)).Append(("world guild invite", WorldGuildInvite)).Append(("guild invite visual update", GuildInviteVisualUpdate)).Append(("create mob wire", CreateMobWire)).Append(("initial world state wire", InitialWorldStateWire)).Append(("guild invite wire", GuildInviteWire)).Append(("message panel wire", MessagePanelWire)).Append(("pk info wire", PkInfoWire)).Append(("npc chat wire", NpcChatWire)).Append(("message chat wire", MessageChatWire)).Append(("world player chat view", WorldPlayerChatView)).Append(("message whisper wire", MessageWhisperWire)).Append(("world whisper target", WorldWhisperTarget)).Append(("get item wire", GetItemWire)).Append(("world ground item pickup", WorldGroundItemPickup)).Append(("donate shop wire", DonateShopWire)).Append(("donate shop client state", DonateShopClientStateFlow)).Append(("donate shop catalog and purchase", DonateShopCatalogAndPurchase)).ToArray();
 tests = tests.Append(("party wire", PartyWire)).Append(("world party lifecycle", WorldPartyLifecycle)).ToArray();
 tests = tests.Append(("world npc common drop", WorldNpcCommonDrop)).Append(("world npc boss drop", WorldNpcBossDrop)).Append(("castle quest configuration", CastleQuestConfiguration)).Append(("castle quest rewards", CastleQuestRewards)).Append(("npc generation catalog", NpcGenerationCatalogFlow)).Append(("pista mob-left wire and area", PistaMobLeftWireAndArea)).Append(("quest request parser", QuestRequestParser)).Append(("pista registration flow", PistaRegistrationFlow)).Append(("pista entry schedule", PistaEntrySchedule)).Append(("pista fixed entry spawns", PistaFixedEntrySpawns)).Append(("pista entry generator matrix", PistaEntryGeneratorMatrix)).Append(("pista level 0 retry", PistaLevel0Retry)).Append(("pista level 2 reward", PistaLevel2Reward)).Append(("pista level 1 counters", PistaLevel1Counters)).Append(("pista level 1 exit reward", PistaLevel1ExitReward)).Append(("pista level 4 progression", PistaLevel4Progression)).Append(("pista level 3 progression", PistaLevel3Progression)).Append(("pista level 5 progression", PistaLevel5Progression)).ToArray();
 tests = tests.Append(("world trade disconnect cleanup", WorldTradeDisconnectCleanup)).ToArray();
-tests = tests.Append(("autotrade list gates", AutoTradeListGates)).ToArray();
+tests = tests.Append(("crack error rules and threshold", () => CrackErrorTests.Rules().GetAwaiter().GetResult()))
+    .Append(("crack error session lifetime", () => CrackErrorTests.SessionLifetime().GetAwaiter().GetResult()))
+    .Append(("crack error concurrent counters", () => CrackErrorTests.ConcurrentCounters().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("motion and QuitTrade shared crack counter", () => CrackErrorTests.MotionSharesQuitTradeCounter().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("ReqTradeList shared crack counter", () => CrackErrorTests.TradeListSharesCounter().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("ReqTradeList rechecks death after waiting for lease", () => TradeListLeaseRaceTests.RunAsync().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("Action suppressed shared crack counter", () => CrackErrorTests.ActionSuppressedSharedCounter().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("dead Attack shared crack counter", () => CrackErrorTests.AttackDeadSharesCounter().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("Attack timing shared crack counter", () => CrackErrorTests.AttackTimingSharesCounter().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("Attack 4/type7 backstep counter", () => CrackErrorTests.AttackBackstepSharesCounter().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("Attack backstep unsigned wrap policy", () => CrackErrorTests.AttackBackstepWrapPolicy())).ToArray();
+tests = tests.Append(("dead Attack gate policy", () => CrackErrorTests.AttackDeadGatePolicy().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("Attack RVR sector gate and authoritative snapshot", AttackRvrGateTests.Run)).ToArray();
+tests = tests.Append(("Action origin recalls", LegacyActionOriginRecall)).ToArray();
+tests = tests.Append(("Action origin recall view transition", LegacyActionOriginRecallViewTransition)).ToArray();
+tests = tests.Append(("movement restriction recall view transition", LegacyMovementRecallViewTransition)).ToArray();
+tests = tests.Append(("ground item ids follow configured map item slots", GroundItemIdsFollowConfiguredMapItemSlots)).ToArray();
+tests = tests.Append(("Action origin recall relays visible ground items", LegacyActionOriginRecallRelaysVisibleGroundItems)).ToArray();
+tests = tests.Append(("Action range inclusive boundaries", MovementRangeTests.Boundaries)).ToArray();
+tests = tests.Append(("Action3 illusion eligibility class skill and level gate", MovementRangeTests.IllusionEligibilityUsesLegacyClassSkillAndLevelGate)).ToArray();
+tests = tests.Append(("Action range state and shared counter", MovementRangeTests.RejectionPreservesPositionAndSharedCounter)).ToArray();
+tests = tests.Append(("Action movement speed requires authoritative AttackRun", MovementRangeTests.AllowedSpeedRequiresAuthoritativeAttackRun))
+    .Append(("dead Action precedes unavailable speed state", MovementRangeTests.DeadActionPrecedesUnavailableSpeed))
+    .Append(("Action speed and range share crack counter", MovementRangeTests.SpeedViolationSharesCrackErrorCounter))
+    .Append(("Action speed threshold logout stops continuation", MovementRangeTests.SpeedThresholdLogoutStopsActionContinuation)).ToArray();
+tests = tests.Append(("account review missing status", () => AccountReviewStoreTests.MissingRecordIsUnmarked().GetAwaiter().GetResult()))
+    .Append(("account review missing root fails closed", () => AccountReviewStoreTests.MissingConfiguredRootFailsClosed().GetAwaiter().GetResult()))
+    .Append(("account review durable round-trip and first evidence", () => AccountReviewStoreTests.RoundTripAndPreserveFirstEvidence().GetAwaiter().GetResult()))
+    .Append(("account review concurrent idempotent marks", () => AccountReviewStoreTests.ConcurrentMarksAreIdempotentAcrossStoreInstances().GetAwaiter().GetResult()))
+    .Append(("account review marks serialize across server processes", () => AccountReviewProcessTests.ConcurrentMarksAcrossProcesses().GetAwaiter().GetResult()))
+    .Append(("account review reads serialize across server processes", () => AccountReviewProcessTests.ReadWaitsForCrossProcessLock().GetAwaiter().GetResult()))
+    .Append(("account review lock files remain bounded", () => AccountReviewStoreTests.LockFileCountIsBoundedByStripeCount().GetAwaiter().GetResult()))
+    .Append(("account review rejects invalid names", () => AccountReviewStoreTests.InvalidNamesCannotResolveOutsideRoot().GetAwaiter().GetResult()))
+    .Append(("account review rejects invalid records", () => AccountReviewStoreTests.InvalidRecordsFailClosed().GetAwaiter().GetResult()))
+    .Append(("account review rejects sidecar symlinks", () => AccountReviewStoreTests.SidecarSymlinkCannotEscapeRoot().GetAwaiter().GetResult()))
+    .Append(("account review account-name normalization", () => AccountReviewStoreTests.AccountNameNormalizationMatchesAuthenticationContract().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("account review blocks login before password auth", () => AccountReviewLoginTests.AnalysisClosesBeforeAuthentication().GetAwaiter().GetResult()))
+    .Append(("account review preserves unmarked login", () => AccountReviewLoginTests.UnmarkedAccountUsesExistingAuthentication().GetAwaiter().GetResult()))
+    .Append(("account review read failure denies login", () => AccountReviewLoginTests.ReviewReadFailureFailsClosed().GetAwaiter().GetResult()))
+    .Append(("invalid account skips review lookup", () => AccountReviewLoginTests.InvalidAccountNameKeepsAuthenticationRejection().GetAwaiter().GetResult()))
+    .Append(("account review login notices", () => AccountReviewLoginTests.ReviewFailureMessagesStayDistinct().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("Action Analysis severity thresholds", () => AccountReviewActionTests.HighSeverityRequiresAnActualSpeedViolation().GetAwaiter().GetResult()))
+    .Append(("Action Analysis persistence failure", () => AccountReviewActionTests.PersistenceFailureIsDistinctAndClosed().GetAwaiter().GetResult()))
+    .Append(("Action Analysis survives crack logout boundary", () => AccountReviewActionTests.CrackLogoutThresholdDoesNotSuppressAnalysisMark().GetAwaiter().GetResult()))
+    .Append(("non-severe Action does not use review store", () => AccountReviewActionTests.NonSevereViolationDoesNotUseReviewStore().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("autotrade list gates", AutoTradeListGates))
+    .Append(("autotrade purchase close race", AutoTradeCloseTests.PurchaseCloseRace))
+    .Append(("autotrade lease order and cancellation", AutoTradeCloseTests.LeaseOrderAndCancellation))
+    .Append(("autotrade lease ownership and generation", AutoTradeCloseTests.LeaseBookOwnershipAndGeneration)).ToArray();
+tests = tests.Append(("autotrade conditional file close batch", AutoTradeCloseTests.FileCloseBatch)).ToArray();
+tests = tests.Append(("autotrade close atomic and retry", AutoTradeCloseCoordinatorTests.CloseAtomicAndRetry)).ToArray();
+tests = tests.Append(("autotrade dead close preserves everything", AutoTradeCloseCoordinatorTests.DeadClosePreservesEverything))
+    .Append(("autotrade close durability and HP acceptance", AutoTradeCloseCoordinatorTests.CloseWaitsDurabilityAndHpAcceptance))
+    .Append(("autotrade close failures preserve pair", AutoTradeCloseCoordinatorTests.CloseFailuresPreservePair))
+    .Append(("autotrade close cancellation boundaries", AutoTradeCloseCoordinatorTests.CloseCancellation))
+    .Append(("autotrade ambiguous close and recovery", AutoTradeCloseCoordinatorTests.CloseAmbiguityAndRecovery))
+    .Append(("autotrade recovery after disconnect and ID reuse", AutoTradeCloseCoordinatorTests.RecoveryAfterDisconnectDoesNotTouchNewSession))
+    .Append(("autotrade close pair changes while waiting", AutoTradeCloseCoordinatorTests.PairChangesWhileWaiting))
+    .Append(("autotrade close reservation tokens and no shop", AutoTradeCloseCoordinatorTests.ReservationTokensAndNoShop)).ToArray();
+tests = tests.Append(("autotrade pending buyer cannot purchase other shop", AutoTradeCloseCoordinatorTests.PendingBuyerCannotPurchaseOtherShop)).ToArray();
+tests = tests.Append(("autotrade pending owner without listing cannot reopen", AutoTradeCloseCoordinatorTests.PendingOwnerWithoutListingCannotReopen)).ToArray();
+tests = tests.Append(("autotrade duplicate owners reject before reservation", AutoTradeCloseCoordinatorTests.DuplicateOwnersRejectBeforeReservation)).ToArray();
+tests = tests.Append(("autotrade mixed durable recovery remains blocked", AutoTradeCloseCoordinatorTests.MixedDurableRecoveryRemainsBlocked)).ToArray();
+tests = tests.Append(("autotrade close normal relay and recipients", AutoTradeCloseCoordinatorTests.CloseRelayNormalAndRecipients)).ToArray();
+tests = tests.Append(("Action closes bilateral AFK shops with normal visual", AutoTradeCloseCoordinatorTests.ActionClosePersistsAndUsesActionRelay))
+    .Append(("Action AFK close solo no-op and HP boundary", AutoTradeCloseCoordinatorTests.ActionCloseSoloNoopAndHpBoundary))
+    .Append(("Action AFK close recovery preserves relay semantics", AutoTradeCloseCoordinatorTests.ActionCloseRecoveryKeepsActionRelay)).ToArray();
+tests = tests.Append(("autotrade departure waits purchase and rollback", AutoTradeCloseTests.DepartureWaitsPurchase))
+    .Append(("autotrade departure captures before Leave", AutoTradeCloseCoordinatorTests.DepartureCapturesBeforeLeave))
+    .Append(("autotrade disconnect preserves pending recovery", AutoTradeCloseCoordinatorTests.DisconnectPreservesPendingRecovery))
+    .Append(("autotrade listing capture freezes before sending", AutoTradeCloseCoordinatorTests.ListingCaptureFreezesBeforeSending))
+    .Append(("autotrade listing offline capture lease validation", AutoTradeCloseCoordinatorTests.ListingCaptureOfflineAndLeaseValidation))
+    .Append(("autotrade shared session concurrent connections", AutoTradeCloseCoordinatorTests.SharedSessionRegistryConcurrentConnections))
+    .Append(("autotrade owner recovery after disconnect", AutoTradeCloseCoordinatorTests.OwnerRecoveryAfterDisconnect))
+    .Append(("autotrade owner recovery without own listing", AutoTradeCloseCoordinatorTests.OwnerRecoveryWithoutOwnListing))
+    .Append(("autotrade owner recovery unknown and unchanged", AutoTradeCloseCoordinatorTests.OwnerRecoveryUnknownAndUnchanged))
+    .Append(("autotrade owner recovery captures original author", AutoTradeCloseCoordinatorTests.OwnerRecoveryCapturesOriginalAuthor))
+    .Append(("autotrade stale cleanup conflict and reused id", AutoTradeCloseCoordinatorTests.StaleCleanupConflictAndReusedId))
+    .Append(("autotrade stale cleanup ambiguity owner barrier", AutoTradeCloseCoordinatorTests.StaleCleanupAmbiguityBlocksOwner))
+    .Append(("autotrade departure does not Leave replacement", AutoTradeCloseCoordinatorTests.DepartureDoesNotLeaveReplacement))
+    .Append(("autotrade pending close rejects outside owner", AutoTradeCloseCoordinatorTests.PendingCloseRejectsOutsideOwner))
+    .Append(("autotrade reconnect waits purchase rollback", AutoTradeCloseTests.ReconnectWaitsPurchase)).ToArray();
+tests = tests.Append(("autotrade close dispatch capture and reuse", AutoTradeCloseCoordinatorTests.CloseDispatchCapturesBeforeReuse))
+    .Append(("autotrade close recovery dispatch original author", AutoTradeCloseCoordinatorTests.CloseDispatchRecoveryUsesOriginalAuthor)).ToArray();
+tests = tests.Append(("autotrade purchase lease and cancellation", AutoTradeCloseTests.PurchaseLeaseAndCancellation))
+    .Append(("autotrade committed purchase blocks close", AutoTradeCloseTests.PurchaseCommitBlocksClose))
+    .Append(("autotrade purchase request snapshot", AutoTradeCloseTests.PurchaseRequestSnapshot))
+    .Append(("autotrade close request immutable snapshot", AutoTradeCloseTests.CloseRequestSnapshot)).ToArray();
 tests = tests.Append(("autotrade location rules", AutoTradeLocationRules)).ToArray();
 tests = tests.Append(("autotrade listing wire", AutoTradeListingWire)).ToArray();
 tests = tests.Append(("autotrade start request wire", AutoTradeStartRequestWire)).Append(("world autotrade book", WorldAutoTradeBook)).Append(("autotrade runtime mutation", AutoTradeRuntimeMutation)).Append(("autotrade purchase executor", AutoTradePurchaseExecutor)).Append(("autotrade purchase coordinator", AutoTradePurchaseCoordinator)).Append(("autotrade file purchase commit", AutoTradeFilePurchaseCommit)).Append(("autotrade purchase relay", AutoTradePurchaseRelay)).ToArray();
@@ -21,7 +130,7 @@ tests = tests.Append(("drop item wire", DropItemWire)).Append(("world ground ite
 tests = tests.Append(("world carry stack merge", WorldCarryItemMerge)).Append(("world trading item carry compatibility", WorldTradingItemCarryCompatibility)).ToArray();
 tests = tests.Append(("legacy equipment eligibility", LegacyEquipmentEligibilityRules)).ToArray();
 tests = tests.Append(("legacy movement map gate", LegacyMovementMapGate)).ToArray();
-tests = tests.Append(("legacy mob ability aggregation", LegacyMobAbilityAggregation)).Append(("legacy mob ability includes client extension slots", LegacyMobAbilityIncludesClientExtensionSlots)).ToArray();
+tests = tests.Append(("legacy mob ability aggregation", LegacyMobAbilityAggregation)).Append(("legacy mob ability includes client extension slots", LegacyMobAbilityIncludesClientExtensionSlots)).Append(("legacy experience includes client extension slots", LegacyExperienceIncludesClientExtensionSlots)).ToArray();
 tests = tests.Append(("world client 18-slot equipment state", WorldClient18SlotEquipmentState)).ToArray();
 tests = tests.Append(("legacy current score base equipment stage", LegacyCurrentScoreBaseEquipmentStage)).ToArray();
 tests = tests.Append(("legacy current score special stage", LegacyCurrentScoreSpecialStage)).ToArray();
@@ -43,6 +152,11 @@ tests = tests.Append(("legacy login Athena Touch affect stage", LegacyLoginAthen
 tests = tests.Append(("legacy login Fanaticism affect stage", LegacyLoginFanaticismAffectStage)).ToArray();
 tests = tests.Append(("legacy login Dexterity affect stage", LegacyLoginDexterityAffectStage)).ToArray();
 tests = tests.Append(("legacy login ArmorClass reduction affect stage", LegacyLoginArmorClassReductionAffectStage)).ToArray();
+tests = tests.Append(("legacy login frozen blade affect stage", LegacyLoginFrozenBladeAffectStage)).ToArray();
+tests = tests.Append(("legacy login weaken affect stage", LegacyLoginWeakenAffectStage)).ToArray();
+tests = tests.Append(("legacy login meditation affect stage", LegacyLoginMeditationAffectStage)).ToArray();
+tests = tests.Append(("legacy login golden shield affect stage", LegacyLoginGoldenShieldAffectStage)).ToArray();
+tests = tests.Append(("legacy login elemental protection AC affect stage", LegacyLoginElementalProtectionArmorClassAffectStage)).ToArray();
 tests = tests.Append(("legacy login transformation speed affect stage", LegacyLoginTransformationSpeedAffectStage)).ToArray();
 tests = tests.Append(("legacy login transformation damage affect stage", LegacyLoginTransformationDamageAffectStage)).ToArray();
 tests = tests.Append(("legacy login transformation armor class affect stage", LegacyLoginTransformationArmorClassAffectStage)).ToArray();
@@ -79,10 +193,30 @@ tests = tests.Append(("7.69 character selection golden", CharacterSelectionV769G
     .Append(("serialized network stream concurrent writes", SerializedNetworkStreamConcurrentWrites))
     .Append(("trade wire", TradeWire))
     .Append(("world bilateral trade state", WorldBilateralTradeState))
+    .Append(("Action trade cancellation HP boundary", WorldActionTradeCancellation))
+    .Append(("Action2 consecutive stop movement state", Action2ConsecutiveStopMovementState))
+    .Append(("trade close PK target rules", TradeClosePkTargetRules))
+    .Append(("world trade close PK plan", WorldTradeClosePkPlan))
+    .Append(("world trade check requires staged offer", WorldTradeCheckRequiresStagedOffer))
     .Append(("world trade completion", WorldTradeCompletion))
     .Append(("legacy file atomic trade persistence", LegacyFileAtomicTradePersistence))
     .ToArray();
-foreach (var test in tests) { test.Run(); Console.WriteLine($"PASS {test.Name}"); }
+var failures = 0;
+foreach (var test in tests)
+{
+    try
+    {
+        test.Run();
+        Console.WriteLine($"PASS {test.Name}");
+    }
+    catch (Exception error)
+    {
+        failures++;
+        Console.Error.WriteLine($"FAIL {test.Name}: {error}");
+    }
+}
+Console.WriteLine($"RESULT tests={tests.Length} passed={tests.Length - failures} failed={failures}");
+if (failures != 0) Environment.ExitCode = 1;
 
 static void ServerStatusFilePublisherFlow()
 {
@@ -203,6 +337,8 @@ static void AutoTradeListGates()
     Assert(LegacyAutoTradeListRules.Validate(12, atEdge with { TargetInPlay = false, TargetOfflineAutoTrade = true }) == LegacyAutoTradeListResult.Accepted, "The autotrade list gate rejected an explicitly rehydrated offline shop.");
     Assert(LegacyAutoTradeListRules.Validate(0, atEdge) == LegacyAutoTradeListResult.TargetNotFound, "The autotrade list gate accepted an invalid target id.");
     Assert(LegacyAutoTradeListRules.Validate(12, atEdge with { RequesterHp = 0 }) == LegacyAutoTradeListResult.RequesterNotAlive, "The autotrade list gate accepted a dead requester.");
+    Assert(LegacyAutoTradeListRules.Validate(12, atEdge with { RequesterHp = -1 }) == LegacyAutoTradeListResult.Accepted, "ReqTradeList incorrectly treats negative HP as zero.");
+    Assert(LegacyAutoTradeListRules.Validate(0, atEdge with { RequesterHp = 0 }) == LegacyAutoTradeListResult.RequesterNotAlive, "ReqTradeList checks target before dead requester.");
     Assert(LegacyAutoTradeListRules.Validate(12, atEdge with { RequesterInPlay = false }) == LegacyAutoTradeListResult.RequesterNotPlaying, "The autotrade list gate accepted a requester outside USER_PLAY.");
 }
 
@@ -628,7 +764,8 @@ static void AutoTradePurchaseExecutor()
             "SELLER",
             1,
             expectedListing,
-            TargetIsOfflineNpc: true);
+            TargetIsOfflineNpc: true,
+            ExpectedGeneration: book.Snapshot().Single().Generation);
         return (world, book, executionRequest, listing);
     }
 
@@ -843,6 +980,129 @@ static void AutoTradeListRelay()
         "The autotrade list relay did not preserve the client response header and listing bytes.");
 }
 
+static void WorldTradeCheckRequiresStagedOffer()
+{
+    var hub = new WorldHub();
+    var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(50, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.Enter(1, "CHECK_A", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "CHECK_B", (_, _) => ValueTask.CompletedTask), "Check participants missing.");
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 100, 2000, 2000, mob) && hub.SetCharacterState(2, 0, 0, 0, 0, 200, 2000, 2000, mob), "Check state missing.");
+    var actor = new TradeOfferRequest(new LegacyItem[TradeOfferRequest.ItemCount], Enumerable.Repeat((sbyte)-1, TradeOfferRequest.ItemCount).ToArray(), 0, 0, 2);
+    var peer = actor with { OpponentId = 1, TradeMoney = 1 };
+    Assert(hub.TryStageTradeOffer(1, actor with { MyCheck = 1 }, out _) != LegacyTradeOfferResult.Accepted &&
+        !hub.IsLiveTradeActive(1) && !hub.IsLiveTradeActive(2), "A check opened a new trade without a staged offer.");
+    Assert(hub.TryStageTradeOffer(1, actor, out _) == LegacyTradeOfferResult.Accepted, "Initial unchecked offer failed.");
+    Assert(hub.TryStageTradeOffer(2, peer with { MyCheck = 1 }, out _) != LegacyTradeOfferResult.Accepted, "A check registered the peer's first offer.");
+    Assert(hub.TryStageTradeOffer(2, peer, out _) == LegacyTradeOfferResult.Accepted, "Peer unchecked offer failed.");
+    Assert(hub.TryStageTradeOffer(2, peer with { MyCheck = 1, TradeMoney = 2 }, out _) == LegacyTradeOfferResult.OfferChangedAfterCheck,
+        "The first check replaced the staged Gold amount.");
+    Assert(!hub.IsLiveTradeActive(1) && !hub.IsLiveTradeActive(2), "Changed confirmation left a trade active.");
+
+    for (var round = 1; round <= 2; round++)
+    {
+        Assert(hub.TryStageTradeOffer(1, actor, out _) == LegacyTradeOfferResult.Accepted && hub.TryStageTradeOffer(2, peer, out _) == LegacyTradeOfferResult.Accepted,
+            "A legitimate new trade could not stage both offers.");
+        Assert(hub.TryStageTradeOffer(1, actor with { MyCheck = 1 }, out _) == LegacyTradeOfferResult.Accepted &&
+            hub.TryStageTradeOffer(2, peer with { MyCheck = 1 }, out _) == LegacyTradeOfferResult.BothChecked, "Legitimate checks failed.");
+        Assert(hub.TryCompleteTrade(1, out var completed) == LegacyTradeCompletionResult.Accepted && completed is not null &&
+            completed.FirstCoin == 100 + round && completed.SecondCoin == 200 - round, "A legitimate trade did not transfer exactly one Gold.");
+        Assert(hub.TryStageTradeOffer(1, actor with { MyCheck = 1 }, out _) != LegacyTradeOfferResult.Accepted &&
+            hub.TryStageTradeOffer(2, peer with { MyCheck = 1 }, out _) != LegacyTradeOfferResult.Accepted &&
+            hub.TryStageTradeOffer(1, actor with { MyCheck = 1 }, out _) != LegacyTradeOfferResult.Accepted,
+            "Old checks restaged a completed Gold trade.");
+        Assert(hub.TryCompleteTrade(1, out _) == LegacyTradeCompletionResult.NoActiveTrade, "Old checks enabled another commit.");
+    }
+}
+
+static void TradeClosePkTargetRules()
+{
+    var ordinary = new LegacyCombatWorldState();
+    var vectors = new (int Guilty, bool Pk, int X, int Y, LegacyCombatWorldState World, int Want)[]
+    {
+        (0, false, 2000, 2000, ordinary, 0), (1, false, 2000, 2000, ordinary, 1),
+        (50, false, 2000, 2000, ordinary, 1), (0, true, 2000, 2000, ordinary, 1),
+        (0, false, 2000, 2000, ordinary with { NewbieEventServer = true }, 1),
+        (0, false, 1024, 1664, ordinary with { CastleState = 1 }, 1),
+        (0, false, 1153, 1793, ordinary with { CastleState = 1 }, 1),
+        (0, false, 1023, 1664, ordinary with { CastleState = 1 }, 0),
+        (0, false, 1154, 1793, ordinary with { CastleState = 1 }, 0),
+        (0, false, 1024, 1663, ordinary with { CastleState = 1 }, 0),
+        (0, false, 1153, 1794, ordinary with { CastleState = 1 }, 0),
+        (0, false, 1024, 1664, ordinary, 0),
+        (0, false, 2430, 1825, ordinary with { GuildTowerState = 1 }, 1),
+        (0, false, 2560, 1925, ordinary with { GuildTowerState = 1 }, 1),
+        (0, false, 2429, 1825, ordinary with { GuildTowerState = 1 }, 0),
+        (0, false, 2561, 1925, ordinary with { GuildTowerState = 1 }, 0),
+        (0, false, 2430, 1824, ordinary with { GuildTowerState = 1 }, 0),
+        (0, false, 2560, 1926, ordinary with { GuildTowerState = 1 }, 0),
+        (0, false, 2430, 1825, ordinary, 0),
+        // W2PP adds an RvR rectangle; the canonical 7.69 QuitTrade branch does not.
+        (0, false, 1040, 1950, ordinary with { RvrWarActive = true, RvrState = 1 }, 0),
+    };
+    foreach (var v in vectors)
+        Assert(LegacyTradePkRules.Resolve(v.Guilty, v.Pk, v.X, v.Y, v.World) == v.Want,
+            $"Trade-close PK state mismatch at {v.X},{v.Y}, expected {v.Want}.");
+}
+
+static void WorldTradeClosePkPlan()
+{
+    static byte[] PkMob()
+    {
+        var mob = new byte[816];
+        BinaryPrimitives.WriteInt32LittleEndian(mob.AsSpan(92 + 24), 100);
+        return mob;
+    }
+    foreach (var scenario in new (byte Guilty, bool Newbie, bool Pk)[]
+        { (0, false, false), (8, false, false), (50, false, false), (51, false, false), (51, true, false), (0, false, true) })
+    {
+        var guilty = scenario.Guilty;
+        var hub = new WorldHub();
+        hub.SetCombatWorldState(new LegacyCombatWorldState(NewbieEventServer: scenario.Newbie));
+        var mob = PkMob();
+        var marker = LegacyAccountSnapshot.MobCarryOffset + LegacyAccountSnapshot.LegacyKillMarkCarrySlot * 8 + 4;
+        mob[marker] = guilty;
+        for (var id = 1; id <= 4; id++)
+        {
+            Assert(hub.Enter(id, "PK_" + id, (_, _) => ValueTask.CompletedTask), "PK plan registration failed.");
+            Assert(hub.SetCharacterState(id, 0, 0, 0, 0, 100, (short)(id == 3 ? 2016 : id == 4 ? 2017 : 2000),
+                (short)(id == 3 ? 2016 : 2000), id == 1 ? mob : PkMob()), "PK plan state failed.");
+        }
+        var offer = new TradeOfferRequest(new LegacyItem[TradeOfferRequest.ItemCount],
+            Enumerable.Repeat((sbyte)-1, TradeOfferRequest.ItemCount).ToArray(), 0, 0, 2);
+        Assert(hub.TryStageTradeOffer(1, offer, out _) == LegacyTradeOfferResult.Accepted, "PK plan offer failed.");
+        var dead = mob.ToArray();
+        BinaryPrimitives.WriteInt32LittleEndian(dead.AsSpan(92 + 24), 0);
+        Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 100, 2000, 2000, dead), "Dead PK plan state failed.");
+        Assert(hub.TryCloseTrade(1, out var rejected) == LegacyTradeCloseResult.NotAlive && rejected is null,
+            "Dead QuitTrade exposed a PK refresh plan.");
+        Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 100, 2000, 2000, mob), "Live PK plan state failed.");
+        Assert(hub.SetCombatEligibilityState(1, scenario.Pk, false, 0), "PK-mode plan state failed.");
+        Assert(hub.TryCloseTrade(1, out var closed) == LegacyTradeCloseResult.Accepted && closed is not null,
+            "Live PK plan close failed.");
+        Assert(closed!.PkState == (scenario.Newbie || scenario.Pk || guilty is > 0 and <= 50 ? 1 : 0), "PK plan did not use normalized KILL_MARK guilty.");
+        Assert(closed.PkRecipients.Order().SequenceEqual(new[] { 1, 2, 3 }), "PK plan omitted owner/edge neighbor or included a distant player.");
+        // SetCharacterState already normalizes >50 when loading the MOB.
+        Assert(hub.TryGetCharacterSnapshot(1, out var after, out _, out _) && after![marker] == (guilty > 50 ? 0 : guilty),
+            "GetGuilty normalization did not match 7.69.");
+        Assert(hub.TryCloseTrade(1, out var empty) == LegacyTradeCloseResult.NoActiveTrade && empty is not null,
+            "No-active-trade QuitTrade omitted the legacy refresh plan.");
+        Assert(empty!.OpponentId == 0 && empty.PkState == closed.PkState &&
+            empty.PkRecipients.Order().SequenceEqual(new[] { 1, 2, 3 }),
+            "No-active-trade refresh reused a former opponent or lost PK/view state.");
+        Assert(hub.TryGetCharacterSnapshot(1, out var idleMob, out _, out _) && idleMob!.SequenceEqual(after!),
+            "No-active-trade refresh mutated character inventory/state.");
+        foreach (var hp in new[] { 0, -1 })
+        {
+            var deadIdle = after!.ToArray();
+            BinaryPrimitives.WriteInt32LittleEndian(deadIdle.AsSpan(92 + 24), hp);
+            Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 100, 2000, 2000, deadIdle), "Dead idle state failed.");
+            Assert(hub.TryCloseTrade(1, out var deadPlan) == LegacyTradeCloseResult.NotAlive && deadPlan is null,
+                "Idle refresh bypassed the zero/negative HP gate.");
+        }
+    }
+}
+
 static void WorldBilateralTradeState()
 {
     var firstItem = new LegacyItem(700, 1, 2, 3, 4, 5, 6);
@@ -867,6 +1127,21 @@ static void WorldBilateralTradeState()
     var secondOffer = TradeOffer(2, 8, secondItem, 30, 0, 1);
     Assert(hub.TryStageTradeOffer(2, secondOffer, out var paired) == LegacyTradeOfferResult.Accepted && paired is not null && paired.Paired, "The second side did not pair with the pending trade.");
     Assert(paired!.OwnState.TradeMoney == 30 && paired.OpponentState.TradeMoney == 0 && paired.OwnState.MyCheck == 0 && paired.OpponentState.MyCheck == 0, "The bilateral trade snapshot did not preserve each side's staged offer.");
+
+    var deadFirstMob = (byte[])firstMob.Clone();
+    var firstScore = LegacyScore.Read(deadFirstMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    (firstScore with { Hp = 0 }).Write(deadFirstMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 100, 2000, 2000, deadFirstMob), "The dead trade participant state was not installed.");
+    Assert(hub.TryCloseTrade(1, out _) == LegacyTradeCloseResult.NotAlive,
+        "QuitTrade closed a bilateral trade for a participant with zero HP.");
+    Assert(hub.IsLiveTradeActive(1) && hub.IsLiveTradeActive(2),
+        "QuitTrade with zero HP cleared the bilateral trade state.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var afterDeadClose, out _, out _) && afterDeadClose is not null &&
+        LegacyItem.Read(afterDeadClose.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (7 * LegacyItem.SizeInBytes))) == firstItem,
+        "QuitTrade with zero HP changed the carry item.");
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 100, 2000, 2000, firstMob), "The living trade participant state was not restored.");
+    Assert(hub.TryStageTradeOffer(1, TradeOffer(1, 7, firstItem, 20, 0, 2), out _) == LegacyTradeOfferResult.Accepted,
+        "The first side did not stage its Gold after pairing.");
 
     Assert(hub.TryStageTradeOffer(1, TradeOffer(1, 7, firstItem, 20, 1, 2), out var firstCheck) == LegacyTradeOfferResult.Accepted && firstCheck is not null && firstCheck.OwnState.MyCheck == 1 && firstCheck.OpponentState.MyCheck == 0, "The first trade check did not remain unilateral.");
     Assert(hub.TryStageTradeOffer(2, TradeOffer(2, 8, secondItem, 30, 1, 1), out var bothChecked) == LegacyTradeOfferResult.BothChecked && bothChecked is not null && bothChecked.OwnState.MyCheck == 1 && bothChecked.OpponentState.MyCheck == 1, "Both trade checks were not retained in the bilateral state.");
@@ -910,6 +1185,75 @@ static void WorldBilateralTradeState()
     }
 }
 
+static void WorldActionTradeCancellation()
+{
+    static byte[] ActionMob(LegacyItem item, int carrySlot, int hp, int coin)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        BinaryPrimitives.WriteInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), hp);
+        BinaryPrimitives.WriteInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobCoinOffset), coin);
+        item.Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (carrySlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+        return mob;
+    }
+
+    static TradeOfferRequest Offer(LegacyItem item, int slot, ushort opponentId)
+    {
+        var items = new LegacyItem[TradeOfferRequest.ItemCount];
+        var positions = Enumerable.Repeat((sbyte)-1, TradeOfferRequest.ItemCount).ToArray();
+        items[0] = item;
+        positions[0] = checked((sbyte)slot);
+        return new TradeOfferRequest(items, positions, 0, 0, opponentId);
+    }
+
+    var itemA = new LegacyItem(720, 1, 2, 3, 4, 5, 6);
+    var itemB = new LegacyItem(721, 6, 5, 4, 3, 2, 1);
+    var mobA = ActionMob(itemA, 7, 100, 1234);
+    var mobB = ActionMob(itemB, 8, 100, 5678);
+    var hub = new WorldHub();
+    Assert(hub.Enter(1, "ACTION_TRADE_A", (_, _) => ValueTask.CompletedTask) &&
+        hub.Enter(2, "ACTION_TRADE_B", (_, _) => ValueTask.CompletedTask), "Action trade participants were not registered.");
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 1234, 2000, 2000, mobA) &&
+        hub.SetCharacterState(2, 0, 0, 0, 0, 5678, 2000, 2000, mobB), "Action trade participant state was not initialized.");
+
+    Assert(hub.TryStageTradeOffer(1, Offer(itemA, 7, 2), out _) == LegacyTradeOfferResult.Accepted,
+        "Action trade offer did not stage.");
+    Assert(hub.TryReserveTradeClose(1, 2, out var pendingClose) == LegacyTradeClosePrepareResult.Prepared && pendingClose is not null,
+        "Action trade close-pending fixture could not reserve the pair.");
+    Assert(hub.TryCancelTradeForAction(1, out var pendingOutcome) == LegacyActionTradeCancellationResult.TradeClosePending &&
+        pendingOutcome is null && hub.IsLiveTradeActive(1) && hub.IsLiveTradeActive(2),
+        "Action raced and cleared a trade with a durable close in progress.");
+    Assert(hub.TryAbortTradeClose(pendingClose!), "Action trade close-pending fixture could not release its reservation.");
+
+    var negativeHpMob = mobA.ToArray();
+    BinaryPrimitives.WriteInt32LittleEndian(negativeHpMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), -1);
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 1234, 2000, 2000, negativeHpMob), "Negative-HP Action state could not be installed.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var beforeA, out _, out _) && beforeA is not null,
+        "First Action trade snapshot was unavailable before cancellation.");
+    Assert(hub.TryGetCharacterSnapshot(2, out var beforeB, out _, out _) && beforeB is not null,
+        "Second Action trade snapshot was unavailable before cancellation.");
+    Assert(hub.TryCancelTradeForAction(1, out var cancelled) == LegacyActionTradeCancellationResult.Cancelled &&
+        cancelled is { ConnectionId: 1, OpponentId: 2 }, "Negative-HP Action did not cancel the bilateral trade.");
+    Assert(!hub.IsLiveTradeActive(1) && !hub.IsLiveTradeActive(2), "Action cancellation left one side of the trade active.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var afterA, out _, out _) && beforeA!.SequenceEqual(afterA!) &&
+        hub.TryGetCharacterSnapshot(2, out var afterB, out _, out _) && beforeB!.SequenceEqual(afterB!),
+        "Action trade cancellation mutated items, Gold, or other character bytes.");
+
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 1234, 2000, 2000, mobA), "Live Action trade state could not be restored.");
+    Assert(hub.TryStageTradeOffer(1, Offer(itemA, 7, 2), out _) == LegacyTradeOfferResult.Accepted,
+        "Action trade did not reopen after cancellation.");
+    var zeroHpMob = mobA.ToArray();
+    BinaryPrimitives.WriteInt32LittleEndian(zeroHpMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    Assert(hub.SetCharacterState(1, 0, 0, 0, 0, 1234, 2000, 2000, zeroHpMob), "Zero-HP Action state could not be installed.");
+    Assert(hub.TryCancelTradeForAction(1, out var deadOutcome) == LegacyActionTradeCancellationResult.CharacterDead && deadOutcome is null,
+        "HP-zero Action did not take precedence over trade cancellation.");
+    Assert(hub.IsLiveTradeActive(1) && hub.IsLiveTradeActive(2), "HP-zero Action cleared the staged bilateral trade.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var deadSnapshot, out _, out _) && deadSnapshot!.SequenceEqual(zeroHpMob),
+        "HP-zero Action changed the character snapshot.");
+    Assert(hub.TryCancelTradeForAction(2, out var peerCancelled) == LegacyActionTradeCancellationResult.Cancelled &&
+        peerCancelled is { ConnectionId: 2, OpponentId: 1 } && !hub.IsLiveTradeActive(1) && !hub.IsLiveTradeActive(2),
+        "The living peer could not cancel the trade after the dead player's Action preserved it.");
+}
+
 static void WorldTradeCompletion()
 {
     var firstItem = new LegacyItem(710, 1, 2, 3, 4, 5, 6);
@@ -922,6 +1266,8 @@ static void WorldTradeCompletion()
 
     Assert(hub.TryStageTradeOffer(1, Offer(2, [(0, firstItem)], 20, 0), out _) == LegacyTradeOfferResult.Accepted, "The completion offer from the first participant was not staged.");
     Assert(hub.TryStageTradeOffer(2, Offer(1, [(0, secondItem)], 30, 0), out _) == LegacyTradeOfferResult.Accepted, "The completion offer from the second participant was not staged.");
+    Assert(hub.TryStageTradeOffer(1, Offer(2, [(0, firstItem)], 20, 0), out _) == LegacyTradeOfferResult.Accepted,
+        "The first completion offer did not stage its Gold after pairing.");
     Assert(hub.TryStageTradeOffer(1, Offer(2, [(0, firstItem)], 20, 1), out _) == LegacyTradeOfferResult.Accepted, "The first completion check was not staged.");
     Assert(hub.TryStageTradeOffer(2, Offer(1, [(0, secondItem)], 30, 1), out _) == LegacyTradeOfferResult.BothChecked, "The second completion check did not close the check phase.");
 
@@ -1357,6 +1703,234 @@ static void LegacyMovementMapGate()
     Assert(hub.SetCharacterState(1, 0, 7, 1, 0, 0, 2000, 2000, mob) && hub.EvaluateMovementMapTarget(1, (short)guildX, (short)guildY) == LegacyMovementMapRestriction.None, "A level above MAX_LEVEL was blocked by a 0x20 city guild zone.");
 }
 
+static void LegacyActionOriginRecall()
+{
+    var cases = new (string Name, short X, short Y, short ClassMaster, int Level, byte Clan, bool Recall)[]
+    {
+        ("celestial sector 9,1 at level 180", 1152, 128, LegacyExperienceMath.ClassMasterCelestial, 180, 1, true),
+        ("celestial CS sector 8,2", 1024, 256, LegacyExperienceMath.ClassMasterCelestialCs, 180, 1, true),
+        ("sub-celestial sector 10,2", 1280, 256, LegacyExperienceMath.ClassMasterSCelestial, 180, 1, true),
+        ("celestial below level 180", 1152, 128, LegacyExperienceMath.ClassMasterCelestial, 179, 1, false),
+        ("non-celestial in celestial sectors", 1152, 128, LegacyAccountSnapshot.ClassMasterArch, 399, 1, false),
+        ("left edge is outside sector 9", 1151, 128, LegacyExperienceMath.ClassMasterCelestial, 180, 1, false),
+        ("top edge is outside sector 1", 1152, 127, LegacyExperienceMath.ClassMasterCelestial, 180, 1, false),
+        ("unclanned character in sector 13,15", 1664, 1920, LegacyAccountSnapshot.ClassMasterMortal, 35, 0, true),
+        ("clanned character in sector 13,15", 1664, 1920, LegacyAccountSnapshot.ClassMasterMortal, 35, 1, false),
+        ("left edge is outside sector 13", 1663, 1920, LegacyAccountSnapshot.ClassMasterMortal, 35, 0, false),
+        ("top edge is outside sector 15", 1664, 1919, LegacyAccountSnapshot.ClassMasterMortal, 35, 0, false),
+    };
+
+    foreach (var test in cases)
+    {
+        var hub = new WorldHub();
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        mob[LegacyAccountSnapshot.MobClanOffset] = test.Clan;
+        new LegacyScore(test.Level, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+        Assert(hub.Enter(1, "ORIGIN_RECALL", (_, _) => ValueTask.CompletedTask), $"{test.Name}: player session was not created.");
+        Assert(hub.SetCharacterState(1, 0, 0, test.Clan, 0, 0, test.X, test.Y, mob, test.ClassMaster,
+            ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty), $"{test.Name}: authoritative character state was not set.");
+
+        var recalled = hub.TryRecallForActionOrigin(1, out var outcome, cityRandomX: 0, cityRandomY: 0);
+        Assert(recalled == test.Recall, $"{test.Name}: recall decision was {recalled}, expected {test.Recall}.");
+        Assert(hub.TryGetCharacterSnapshot(1, out _, out var actualX, out var actualY), $"{test.Name}: character snapshot disappeared.");
+        if (test.Recall)
+        {
+            Assert(outcome is { FromX: var fromX, FromY: var fromY, ToX: 2086, ToY: 2093 } &&
+                fromX == test.X && fromY == test.Y && actualX == 2086 && actualY == 2093,
+                $"{test.Name}: recall did not move and report the authoritative character position.");
+        }
+        else
+        {
+            Assert(outcome is null && actualX == test.X && actualY == test.Y,
+                $"{test.Name}: rejected origin rule moved the authoritative character.");
+        }
+    }
+}
+
+static void LegacyMovementRecallViewTransition()
+{
+    var height = new byte[LegacyMapGrid.HeightMapSize];
+    var attributes = new byte[LegacyMapGrid.AttributeMapSize];
+    attributes[(2100 >> 2) * LegacyMapGrid.AttributeWidth + (2100 >> 2)] = LegacyMovementMapRules.NewbieZoneAttribute;
+    var hub = new WorldHub(new LegacyMapGrid(height, attributes));
+    hub.ConfigureMapItems(
+    [
+        new LegacyMapItemState(1, new LegacyItem(501, 0, 0, 0, 0, 0, 0), 2001, 2000, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+        new LegacyMapItemState(2, new LegacyItem(502, 0, 0, 0, 0, 0, 0), 2087, 2093, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+    ]);
+
+    void AddPlayer(int id, string name, short x, short y, int level)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        new LegacyScore(level, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        Assert(hub.Enter(id, name, (_, _) => ValueTask.CompletedTask), $"Movement recall player {id} was not registered.");
+        Assert(hub.SetCharacterState(id, 0, 0, 1, 0, 0, x, y, mob, LegacyAccountSnapshot.ClassMasterMortal,
+            ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty), $"Movement recall player {id} state was not initialized.");
+    }
+
+    AddPlayer(1, "MAP_RECALL_ACTOR", 2000, 2000, 35);
+    AddPlayer(2, "MAP_RECALL_ORIGIN", 2001, 2000, 1);
+    AddPlayer(3, "MAP_RECALL_DESTINATION", 2093, 2100, 1);
+    AddPlayer(4, "MAP_RECALL_DISTANT", 1900, 1900, 1);
+
+    Assert(hub.TryRecallForMovementRestrictionWithViews(1, out var transition, cityRandomX: 0, cityRandomY: 0) && transition is not null,
+        "Movement restriction recall did not atomically capture its spatial transition.");
+    var result = transition!;
+    Assert(result.ConnectionId == 1 && result.Recall is { FromX: 2000, FromY: 2000, ToX: 2086, ToY: 2093 },
+        "Movement restriction recall snapshot lost the authoritative source or deterministic city destination.");
+    Assert(result.OriginViewIds.Order().SequenceEqual([1, 2]) && result.DestinationViewIds.Order().SequenceEqual([1, 3]),
+        "Movement restriction recall snapshot included an observer outside its origin/destination 33x33 view.");
+    Assert(result.OriginItems.Select(static item => item.WireItemId).SequenceEqual(new ushort[] { 10_001 }) &&
+        result.DestinationItems.Select(static item => item.WireItemId).SequenceEqual(new ushort[] { 10_002 }),
+        "Movement restriction recall did not capture origin and destination map items under the world lock.");
+
+    var codec = LegacyFrameCodec.CreateDefault();
+    var action = new ActionRequest(2000, 2000, 1, 2, new byte[24], result.Recall.ToX, result.Recall.ToY)
+        .ToFrame(codec, 200, 16, 1);
+    Assert(LegacyRecallRelay.TryBuild(hub, result, action, codec, 200, 16, out var plans),
+        "Movement restriction recall relay did not build a complete view-scoped plan.");
+    var actionRecipients = plans.Where(plan => codec.Decode(plan.Frame).Header.Type == ActionRequest.MessageType)
+        .Select(static plan => plan.RecipientId).Order().ToArray();
+    Assert(actionRecipients.SequenceEqual([2, 3]),
+        "Movement restriction recall Action was not limited to origin viewers and destination entrants.");
+    var itemPlans = plans.Select(plan => (plan.RecipientId, Frame: codec.Decode(plan.Frame)))
+        .Where(entry => entry.Frame.Header.Type is CreateItemConfirmation.MessageType or DecayItemConfirmation.MessageType)
+        .ToArray();
+    Assert(itemPlans.Length == 2 && itemPlans.All(static entry => entry.RecipientId == 1),
+        "Movement restriction recall ground-item deltas escaped the recalling player.");
+}
+
+static void LegacyActionOriginRecallViewTransition()
+{
+    var hub = new WorldHub();
+
+    void AddPlayer(int id, string name, short x, short y, byte clan)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        mob[LegacyAccountSnapshot.MobClanOffset] = clan;
+        new LegacyScore(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        Assert(hub.Enter(id, name, (_, _) => ValueTask.CompletedTask), $"Recall view player {id} was not registered.");
+        Assert(hub.SetCharacterState(id, 0, 0, clan, 0, 0, x, y, mob, LegacyAccountSnapshot.ClassMasterMortal,
+            ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty), $"Recall view player {id} state was not initialized.");
+    }
+
+    AddPlayer(1, "RECALL_ACTOR", 1664, 1920, 0);
+    AddPlayer(2, "RECALL_ORIGIN", 1664, 1920, 1);
+    AddPlayer(3, "RECALL_DESTINATION", 2112, 2042, 1);
+    AddPlayer(4, "RECALL_DISTANT", 2100, 2100, 1);
+
+    Assert(hub.TryRecallForActionOriginWithViews(1, out var transition) && transition is not null,
+        "Action-origin recall did not produce its spatial transition snapshot.");
+    var result = transition!;
+    Assert(result.ConnectionId == 1 && result.Recall is { FromX: 1664, FromY: 1920 } && result.Recall.ToX is >= 2110 and <= 2114 && result.Recall.ToY is >= 2040 and <= 2044,
+        "Action-origin recall transition lost its authoritative source or destination.");
+    Assert(result.OriginViewIds.Order().SequenceEqual([1, 2]),
+        "Origin view snapshot included the destination/distant observer or omitted the nearby observer.");
+    Assert(result.DestinationViewIds.Order().SequenceEqual([1, 3]),
+        "Destination view snapshot omitted its entrant or included the origin/distant observer.");
+    Assert(hub.TryGetCharacterSnapshot(1, out _, out var actualX, out var actualY) &&
+        actualX == result.Recall.ToX && actualY == result.Recall.ToY,
+        "The view transition snapshot did not accompany the authoritative position mutation.");
+}
+
+static void GroundItemIdsFollowConfiguredMapItemSlots()
+{
+    var hub = new WorldHub();
+    hub.ConfigureMapItems(
+    [
+        new LegacyMapItemState(1, new LegacyItem(501, 0, 0, 0, 0, 0, 0), 100, 100, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+        new LegacyMapItemState(2, new LegacyItem(502, 0, 0, 0, 0, 0, 0), 101, 100, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+    ]);
+
+    var firstWireId = hub.EnterGroundItem(new LegacyItem(503, 0, 0, 0, 0, 0, 0), 102, 100);
+    var secondWireId = hub.EnterGroundItem(new LegacyItem(504, 0, 0, 0, 0, 0, 0), 103, 100);
+    var duplicateWireId = hub.EnterGroundItem(new LegacyItem(505, 0, 0, 0, 0, 0, 0), 104, 100, requestedItemId: 2);
+
+    Assert(firstWireId == 10_003 && secondWireId == 10_004,
+        $"Dynamic ground items must use the first free shared item slots after configured static items; actual IDs were {firstWireId} and {secondWireId}.");
+    Assert(duplicateWireId == 0,
+        "An explicitly requested dynamic item ID colliding with a configured static map-item slot was accepted.");
+
+    var sparseHub = new WorldHub();
+    sparseHub.ConfigureMapItems(
+    [
+        new LegacyMapItemState(1, new LegacyItem(501, 0, 0, 0, 0, 0, 0), 100, 100, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+        new LegacyMapItemState(3, new LegacyItem(502, 0, 0, 0, 0, 0, 0), 101, 100, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+    ]);
+    var firstFreeWireId = sparseHub.EnterGroundItem(new LegacyItem(503, 0, 0, 0, 0, 0, 0), 102, 100);
+    Assert(firstFreeWireId == 10_002,
+        $"The shared legacy pItem allocator must fill the first free slot; actual wire ID was {firstFreeWireId}.");
+}
+
+static void LegacyActionOriginRecallRelaysVisibleGroundItems()
+{
+    var hub = new WorldHub();
+    hub.ConfigureMapItems(
+    [
+        new LegacyMapItemState(1, new LegacyItem(501, 0, 0, 0, 0, 0, 0), 1664, 1920, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+        new LegacyMapItemState(2, new LegacyItem(502, 0, 0, 0, 0, 0, 0), 2112, 2042, 0, 0, LegacyMapItemStateCodes.Open, 0, 90),
+    ]);
+
+    void AddPlayer(int id, string name, short x, short y, byte clan)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        mob[LegacyAccountSnapshot.MobClanOffset] = clan;
+        new LegacyScore(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        Assert(hub.Enter(id, name, (_, _) => ValueTask.CompletedTask), $"Recall item player {id} was not registered.");
+        Assert(hub.SetCharacterState(id, 0, 0, clan, 0, 0, x, y, mob, LegacyAccountSnapshot.ClassMasterMortal,
+            ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty), $"Recall item player {id} state was not initialized.");
+    }
+
+    AddPlayer(1, "RECALL_ITEM_ACTOR", 1664, 1920, 0);
+    AddPlayer(2, "RECALL_ITEM_ORIGIN", 1664, 1920, 1);
+    AddPlayer(3, "RECALL_ITEM_DESTINATION", 2112, 2042, 1);
+    AddPlayer(4, "RECALL_ITEM_DISTANT", 2100, 2100, 1);
+    Assert(hub.EnterGroundItem(new LegacyItem(503, 0, 0, 0, 0, 0, 0), 1665, 1920) == 10_003,
+        "The origin drop did not receive the next unique shared item ID.");
+    Assert(hub.EnterGroundItem(new LegacyItem(504, 0, 0, 0, 0, 0, 0), 2113, 2042) == 10_004,
+        "The destination drop did not receive the next unique shared item ID.");
+    Assert(hub.TryRecallForActionOriginWithViews(1, out var transition) && transition is not null,
+        "Action-origin recall did not capture its item visibility transition.");
+
+    var codec = LegacyFrameCodec.CreateDefault();
+    var action = new ActionRequest(1664, 1920, 1, 2, new byte[24], transition!.Recall.ToX, transition.Recall.ToY)
+        .ToFrame(codec, 200, 16, 1);
+    Assert(LegacyRecallRelay.TryBuild(hub, transition, action, codec, 200, 16, out var plans),
+        "Action-origin recall item relay did not build a complete plan.");
+
+    var itemPlans = plans.Select(plan => (Plan: plan, Frame: codec.Decode(plan.Frame)))
+        .Where(entry => entry.Frame.Header.Type is CreateItemConfirmation.MessageType or DecayItemConfirmation.MessageType)
+        .ToArray();
+    var actorItems = itemPlans.Where(entry => entry.Plan.RecipientId == 1).ToArray();
+    var decayedIds = actorItems.Where(entry => entry.Frame.Header.Type == DecayItemConfirmation.MessageType)
+        .Select(entry => BinaryPrimitives.ReadInt16LittleEndian(entry.Frame.Payload.Span)).Order().ToArray();
+    var created = actorItems.Where(entry => entry.Frame.Header.Type == CreateItemConfirmation.MessageType)
+        .Select(entry => (
+            X: BinaryPrimitives.ReadUInt16LittleEndian(entry.Frame.Payload.Span),
+            Y: BinaryPrimitives.ReadUInt16LittleEndian(entry.Frame.Payload.Span[2..]),
+            Id: BinaryPrimitives.ReadUInt16LittleEndian(entry.Frame.Payload.Span[4..])))
+        .OrderBy(item => item.Id).ToArray();
+
+    Assert(decayedIds.SequenceEqual(new short[] { 10_001, 10_003 }),
+        $"Recall must remove source-only map/drop items from the actor; actual wire IDs were [{string.Join(',', decayedIds)}].");
+    Assert(created.SequenceEqual(new[] { (X: (ushort)2112, Y: (ushort)2042, Id: (ushort)10_002), (X: (ushort)2113, Y: (ushort)2042, Id: (ushort)10_004) }),
+        "Recall must recreate destination-only map/drop items for the actor with their original coordinates and IDs.");
+    Assert(itemPlans.All(entry => entry.Plan.RecipientId == 1),
+        "Ground-item view changes during recall must not be relayed to other players.");
+
+    var duplicateOriginItem = transition with
+    {
+        OriginItems = transition.OriginItems.Append(transition.OriginItems[0]).ToArray(),
+    };
+    Assert(!LegacyRecallRelay.TryBuild(hub, duplicateOriginItem, action, codec, 200, 16, out _),
+        "A malformed recall snapshot with duplicate ground-item IDs must be rejected without throwing.");
+}
+
 static void LegacyReleaseMapRecall()
 {
     var run = FindReference759TmsrvRun();
@@ -1637,6 +2211,8 @@ static void SendItemWire()
     var frame = codec.Decode(new SendItemConfirmation(1, 7, item).ToFrame(codec, 123456, 17, 4));
     Assert(frame.IsChecksumValid && frame.Header.Type == SendItemConfirmation.MessageType && frame.Header.Size == SendItemConfirmation.PacketSize && frame.Header.Id == 4, "SendItem response header differs from the legacy wire.");
     Assert(BinaryPrimitives.ReadInt16LittleEndian(frame.Payload.Span) == 1 && BinaryPrimitives.ReadInt16LittleEndian(frame.Payload.Span[2..]) == 7 && LegacyItem.Read(frame.Payload.Span[4..]) == item, "SendItem response fields differ from MSG_SendItem.");
+    Assert(SendItemConfirmation.TryParse(frame, out var parsed) && parsed is not null && parsed.InventoryType == 1 && parsed.Slot == 7 && parsed.Item == item, "MSG_SendItem parser did not preserve the destination slot and item.");
+    Assert(!SendItemConfirmation.TryParse(frame with { IsChecksumValid = false }, out _), "MSG_SendItem parser accepted a frame with an invalid checksum.");
     var equipmentFrame = codec.Decode(new SendItemConfirmation(0, 14, item).ToFrame(codec, 123456, 17, 4));
     Assert(BinaryPrimitives.ReadInt16LittleEndian(equipmentFrame.Payload.Span) == 0 && BinaryPrimitives.ReadInt16LittleEndian(equipmentFrame.Payload.Span[2..]) == 14, "Equipment SendItem response did not preserve the legacy type and slot used by LinkMountHp.");
 }
@@ -1929,6 +2505,29 @@ static void LegacyMobAbilityIncludesClientExtensionSlots()
         "The legacy 16-slot view unexpectedly read beyond its source layout.");
     Assert(LegacyMobAbilityMath.GetAbility(clientEquipment, 0, 0, LegacyItemEffect.Magic, table) == 13,
         "The 7.69 18-slot view did not include NewSlot1/NewSlot2 in equipment ability aggregation.");
+}
+
+static void LegacyExperienceIncludesClientExtensionSlots()
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 5, "XP EXTENSION ITEM", unique: 0, position: 0, grade: 7);
+    WriteItemListRecord(body, 6, "DROP EXTENSION ITEM", unique: 0, position: 0, grade: 5);
+    var table = LoadLegacyItemDataTable(body);
+    var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var affect = new byte[LegacyAccountSnapshot.AffectStride];
+    var legacyEquipment = new LegacyItem[LegacyCharacterSelection.EquipmentCount];
+    var clientEquipment = new LegacyItem[CharacterMobV769.EquipmentCount];
+    clientEquipment[16] = new LegacyItem(5, 0, 0, 0, 0, 0, 0);
+    clientEquipment[17] = new LegacyItem(6, 0, 0, 0, 0, 0, 0);
+
+    Assert(LegacyExperienceMath.GetEquipmentExperienceBonus(mob, affect, table, legacyEquipment) == 0,
+        "The legacy 16-slot experience view unexpectedly read the client extension slots.");
+    Assert(LegacyExperienceMath.GetEquipmentExperienceBonus(mob, affect, table, clientEquipment) == 2,
+        "The 7.69 experience bonus did not include the grade-7 item in NewSlot1/NewSlot2.");
+    Assert(LegacyExperienceMath.GetEquipmentDropBonus(mob, table, legacyEquipment) == 0,
+        "The legacy 16-slot drop view unexpectedly read the client extension slots.");
+    Assert(LegacyExperienceMath.GetEquipmentDropBonus(mob, table, clientEquipment) == 8,
+        "The 7.69 drop bonus did not include the grade-5 item in NewSlot1/NewSlot2.");
 }
 
 static void WorldClient18SlotEquipmentState()
@@ -3259,6 +3858,281 @@ static LegacyArmorClassReductionAffectStage CalculateW2ppArmorClassReductionFixt
     }
 
     return new LegacyArmorClassReductionAffectStage(armorClass);
+}
+
+static void LegacyLoginFrozenBladeAffectStage()
+{
+    using var fixture = typeof(TestAssemblyMarker).Assembly.GetManifestResourceStream("WydCdk.Engine.Tests.Fixtures.V769.character-login-frozen-blade.golden.json")
+        ?? throw new InvalidOperationException("The 7.69 Frozen Blade golden fixture is missing.");
+    using var document = JsonDocument.Parse(fixture);
+
+    foreach (var vector in document.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var snapshot = new byte[LegacyAccountSnapshot.AffectStride];
+        foreach (var record in vector.GetProperty("records").EnumerateArray())
+        {
+            var slot = record.GetProperty("slot").GetInt32();
+            if (slot is < 0 or >= LegacyAccountSnapshot.AffectStride / 8)
+                throw new InvalidOperationException($"Frozen Blade fixture slot {slot} is out of bounds.");
+
+            var offset = slot * 8;
+            snapshot[offset] = record.GetProperty("type").GetByte();
+            snapshot[offset + 1] = record.GetProperty("value").GetByte();
+            BinaryPrimitives.WriteUInt16LittleEndian(snapshot.AsSpan(offset + 2), record.GetProperty("level").GetUInt16());
+        }
+
+        var headItemIndex = vector.GetProperty("headItemIndex").GetInt32();
+        var actual = LegacyCurrentScoreMath.CalculateFrozenBladeAffectStage(snapshot, headItemIndex);
+        var expectedTarget = vector.GetProperty("targetExpected");
+        Assert(actual.AttackSpeedDelta == expectedTarget.GetProperty("attackSpeedDelta").GetInt32()
+            && actual.IntelligenceDelta == expectedTarget.GetProperty("intelligenceDelta").GetInt32(),
+            $"7.69 Frozen Blade differed for '{vector.GetProperty("name").GetString()}'.");
+
+        var w2pp = CalculateW2ppFrozenBladeFixture(snapshot, headItemIndex);
+        var expectedW2pp = vector.GetProperty("w2ppExpected");
+        Assert(w2pp.AttackSpeedDelta == expectedW2pp.GetProperty("attackSpeedDelta").GetInt32()
+            && w2pp.IntelligenceDelta == expectedW2pp.GetProperty("intelligenceDelta").GetInt32(),
+            $"W2PP Frozen Blade differed for '{vector.GetProperty("name").GetString()}'.");
+        Assert(actual == w2pp,
+            $"The 7.69/W2PP Frozen Blade stage differed for '{vector.GetProperty("name").GetString()}'.");
+    }
+
+    var failed = false;
+    try { LegacyCurrentScoreMath.CalculateFrozenBladeAffectStage(new byte[8], 0); }
+    catch (ArgumentException) { failed = true; }
+    Assert(failed, "The Frozen Blade stage accepted a truncated affect snapshot.");
+}
+
+static LegacyFrozenBladeAffectStage CalculateW2ppFrozenBladeFixture(
+    ReadOnlySpan<byte> affectSnapshot,
+    int headItemIndex)
+{
+    var attackSpeedDelta = 0;
+    var intelligenceDelta = 0;
+    for (var slot = 0; slot < LegacyAccountSnapshot.AffectStride / 8; slot++)
+    {
+        var offset = slot * 8;
+        if (affectSnapshot[offset] != 7)
+            continue;
+
+        var level = BinaryPrimitives.ReadUInt16LittleEndian(affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+        var tmp = level / 10 + 10;
+        attackSpeedDelta -= tmp;
+
+        if (headItemIndex > 50)
+            intelligenceDelta -= tmp + 10;
+    }
+
+    return new LegacyFrozenBladeAffectStage(attackSpeedDelta, intelligenceDelta);
+}
+
+static void LegacyLoginWeakenAffectStage()
+{
+    using var fixture = typeof(TestAssemblyMarker).Assembly.GetManifestResourceStream("WydCdk.Engine.Tests.Fixtures.V769.character-login-weaken.golden.json")
+        ?? throw new InvalidOperationException("The 7.69 Weaken golden fixture is missing.");
+    using var document = JsonDocument.Parse(fixture);
+
+    foreach (var vector in document.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var snapshot = new byte[LegacyAccountSnapshot.AffectStride];
+        foreach (var record in vector.GetProperty("records").EnumerateArray())
+        {
+            var slot = record.GetProperty("slot").GetInt32();
+            if (slot is < 0 or >= LegacyAccountSnapshot.AffectStride / 8)
+                throw new InvalidOperationException($"Weaken fixture slot {slot} is out of bounds.");
+
+            var offset = slot * 8;
+            snapshot[offset] = record.GetProperty("type").GetByte();
+            snapshot[offset + 1] = record.GetProperty("value").GetByte();
+            BinaryPrimitives.WriteUInt16LittleEndian(snapshot.AsSpan(offset + 2), record.GetProperty("level").GetUInt16());
+        }
+
+        var actual = LegacyCurrentScoreMath.CalculateWeakenAffectStage(snapshot);
+        var expectedTarget = vector.GetProperty("targetExpected");
+        Assert(actual.DamageReduction == expectedTarget.GetProperty("damageReduction").GetInt32(),
+            $"7.69 Weaken differed for '{vector.GetProperty("name").GetString()}'.");
+
+        var w2pp = CalculateW2ppWeakenFixture(snapshot);
+        var expectedW2pp = vector.GetProperty("w2ppExpected");
+        Assert(w2pp.DamageReduction == expectedW2pp.GetProperty("damageReduction").GetInt32(),
+            $"W2PP Weaken differed for '{vector.GetProperty("name").GetString()}'.");
+        Assert(actual == w2pp,
+            $"The 7.69/W2PP Weaken stage differed for '{vector.GetProperty("name").GetString()}'.");
+    }
+
+    var failed = false;
+    try { LegacyCurrentScoreMath.CalculateWeakenAffectStage(new byte[8]); }
+    catch (ArgumentException) { failed = true; }
+    Assert(failed, "The Weaken stage accepted a truncated affect snapshot.");
+}
+
+static LegacyWeakenAffectStage CalculateW2ppWeakenFixture(ReadOnlySpan<byte> affectSnapshot)
+{
+    var damageReduction = 0;
+    for (var slot = 0; slot < LegacyAccountSnapshot.AffectStride / 8; slot++)
+    {
+        var offset = slot * 8;
+        if (affectSnapshot[offset] != 10)
+            continue;
+
+        var value = affectSnapshot[offset + 1];
+        var level = BinaryPrimitives.ReadUInt16LittleEndian(affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+        var sub = level / 5 + value;
+        damageReduction += sub;
+    }
+
+    return new LegacyWeakenAffectStage(damageReduction);
+}
+
+static void LegacyLoginMeditationAffectStage()
+{
+    using var fixture = typeof(TestAssemblyMarker).Assembly.GetManifestResourceStream("WydCdk.Engine.Tests.Fixtures.V769.character-login-meditation.golden.json")
+        ?? throw new InvalidOperationException("The 7.69 Meditation golden fixture is missing.");
+    using var document = JsonDocument.Parse(fixture);
+
+    foreach (var vector in document.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var snapshot = new byte[LegacyAccountSnapshot.AffectStride];
+        foreach (var record in vector.GetProperty("records").EnumerateArray())
+        {
+            var slot = record.GetProperty("slot").GetInt32();
+            if (slot is < 0 or >= LegacyAccountSnapshot.AffectStride / 8)
+                throw new InvalidOperationException($"Meditation fixture slot {slot} is out of bounds.");
+
+            var offset = slot * 8;
+            snapshot[offset] = record.GetProperty("type").GetByte();
+            snapshot[offset + 1] = record.GetProperty("value").GetByte();
+            BinaryPrimitives.WriteUInt16LittleEndian(snapshot.AsSpan(offset + 2), record.GetProperty("level").GetUInt16());
+        }
+
+        var actual = LegacyCurrentScoreMath.CalculateMeditationAffectStage(snapshot);
+        var expectedTarget = vector.GetProperty("targetExpected");
+        Assert(actual.ArmorClassReduction == expectedTarget.GetProperty("armorClassReduction").GetInt32()
+            && actual.DamageMultiplierAdjustment == expectedTarget.GetProperty("damageMultiplierAdjustment").GetInt32(),
+            $"7.69 Meditation differed for '{vector.GetProperty("name").GetString()}'.");
+
+        var w2pp = CalculateW2ppMeditationFixture(snapshot);
+        var expectedW2pp = vector.GetProperty("w2ppExpected");
+        Assert(w2pp.ArmorClassReduction == expectedW2pp.GetProperty("armorClassReduction").GetInt32()
+            && w2pp.DamageMultiplierAdjustment == expectedW2pp.GetProperty("damageMultiplierAdjustment").GetInt32(),
+            $"W2PP Meditation differed for '{vector.GetProperty("name").GetString()}'.");
+    }
+
+    var failed = false;
+    try { LegacyCurrentScoreMath.CalculateMeditationAffectStage(new byte[8]); }
+    catch (ArgumentException) { failed = true; }
+    Assert(failed, "The Meditation stage accepted a truncated affect snapshot.");
+}
+
+static LegacyMeditationAffectStage CalculateW2ppMeditationFixture(ReadOnlySpan<byte> affectSnapshot)
+{
+    var armorClassReduction = 0;
+    var damageMultiplierAdjustment = 0;
+    for (var slot = 0; slot < LegacyAccountSnapshot.AffectStride / 8; slot++)
+    {
+        var offset = slot * 8;
+        if (affectSnapshot[offset] != 21)
+            continue;
+
+        var value = affectSnapshot[offset + 1];
+        var level = BinaryPrimitives.ReadUInt16LittleEndian(affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+
+        var add = level / 3 + 10;
+        armorClassReduction += add;
+
+        var tv = level / 10 + value;
+        damageMultiplierAdjustment += tv;
+    }
+
+    return new LegacyMeditationAffectStage(armorClassReduction, damageMultiplierAdjustment);
+}
+
+static void LegacyLoginGoldenShieldAffectStage()
+{
+    using var fixture = typeof(TestAssemblyMarker).Assembly.GetManifestResourceStream("WydCdk.Engine.Tests.Fixtures.V769.character-login-golden-shield.golden.json")
+        ?? throw new InvalidOperationException("The 7.69 Golden Shield golden fixture is missing.");
+    using var document = JsonDocument.Parse(fixture);
+
+    foreach (var vector in document.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var snapshot = new byte[LegacyAccountSnapshot.AffectStride];
+        foreach (var record in vector.GetProperty("records").EnumerateArray())
+        {
+            var slot = record.GetProperty("slot").GetInt32();
+            if (slot is < 0 or >= LegacyAccountSnapshot.AffectStride / 8)
+                throw new InvalidOperationException($"Golden Shield fixture slot {slot} is out of bounds.");
+
+            var offset = slot * 8;
+            snapshot[offset] = record.GetProperty("type").GetByte();
+            snapshot[offset + 1] = record.GetProperty("value").GetByte();
+            BinaryPrimitives.WriteUInt16LittleEndian(snapshot.AsSpan(offset + 2), record.GetProperty("level").GetUInt16());
+        }
+
+        var actual = LegacyCurrentScoreMath.CalculateGoldenShieldAffectStage(snapshot);
+        var expectedTarget = vector.GetProperty("targetExpected");
+        Assert(actual.ArmorClassAddition == expectedTarget.GetProperty("armorClassAddition").GetInt32(),
+            $"7.69 Golden Shield differed for '{vector.GetProperty("name").GetString()}'.");
+
+        var w2pp = CalculateW2ppGoldenShieldFixture(snapshot);
+        var expectedW2pp = vector.GetProperty("w2ppExpected");
+        Assert(w2pp.ArmorClassAddition == expectedW2pp.GetProperty("armorClassAddition").GetInt32(),
+            $"W2PP Golden Shield differed for '{vector.GetProperty("name").GetString()}'.");
+    }
+
+    var failed = false;
+    try { LegacyCurrentScoreMath.CalculateGoldenShieldAffectStage(new byte[8]); }
+    catch (ArgumentException) { failed = true; }
+    Assert(failed, "The Golden Shield stage accepted a truncated affect snapshot.");
+}
+
+static LegacyGoldenShieldAffectStage CalculateW2ppGoldenShieldFixture(ReadOnlySpan<byte> affectSnapshot)
+{
+    // Type=31 is not present in the W2PP buff loop; ArmorClass addition is zero.
+    return new LegacyGoldenShieldAffectStage(0);
+}
+
+static void LegacyLoginElementalProtectionArmorClassAffectStage()
+{
+    using var fixture = typeof(TestAssemblyMarker).Assembly.GetManifestResourceStream("WydCdk.Engine.Tests.Fixtures.V769.character-login-elemental-protection-ac.golden.json")
+        ?? throw new InvalidOperationException("The 7.69 Elemental Protection AC golden fixture is missing.");
+    using var document = JsonDocument.Parse(fixture);
+
+    foreach (var vector in document.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var snapshot = new byte[LegacyAccountSnapshot.AffectStride];
+        foreach (var record in vector.GetProperty("records").EnumerateArray())
+        {
+            var slot = record.GetProperty("slot").GetInt32();
+            if (slot is < 0 or >= LegacyAccountSnapshot.AffectStride / 8)
+                throw new InvalidOperationException($"Elemental Protection AC fixture slot {slot} is out of bounds.");
+
+            var offset = slot * 8;
+            snapshot[offset] = record.GetProperty("type").GetByte();
+            snapshot[offset + 1] = record.GetProperty("value").GetByte();
+            BinaryPrimitives.WriteUInt16LittleEndian(snapshot.AsSpan(offset + 2), record.GetProperty("level").GetUInt16());
+        }
+
+        var actual = LegacyCurrentScoreMath.CalculateElementalProtectionArmorClassAffectStage(snapshot);
+        var expectedTarget = vector.GetProperty("targetExpected");
+        Assert(actual.ArmorClassAddition == expectedTarget.GetProperty("armorClassAddition").GetInt32(),
+            $"7.69 Elemental Protection AC differed for '{vector.GetProperty("name").GetString()}'.");
+
+        var w2pp = CalculateW2ppElementalProtectionArmorClassFixture(snapshot);
+        var expectedW2pp = vector.GetProperty("w2ppExpected");
+        Assert(w2pp.ArmorClassAddition == expectedW2pp.GetProperty("armorClassAddition").GetInt32(),
+            $"W2PP Elemental Protection AC differed for '{vector.GetProperty("name").GetString()}'.");
+    }
+
+    var failed = false;
+    try { LegacyCurrentScoreMath.CalculateElementalProtectionArmorClassAffectStage(new byte[8]); }
+    catch (ArgumentException) { failed = true; }
+    Assert(failed, "The Elemental Protection AC stage accepted a truncated affect snapshot.");
+}
+
+static LegacyElementalProtectionArmorClassAffectStage CalculateW2ppElementalProtectionArmorClassFixture(ReadOnlySpan<byte> affectSnapshot)
+{
+    // In W2PP, Type=25 mutates only resistances (Fire, Thunder, Ice); ArmorClass is not mutated.
+    return new LegacyElementalProtectionArmorClassAffectStage(0);
 }
 
 static void LegacyLoginTransformationSpeedAffectStage()
@@ -5921,6 +6795,38 @@ static void WorldSkillManaMutation()
     Assert(lowHub.TryGetCombatState(2, out var lowState) && lowState!.CurrentMana == 10, "Insufficient-mana attempt changed current MP.");
 }
 
+static void WorldIllusionFixedManaMutation()
+{
+    static byte[] MobWithMana(int mana)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        new LegacyScore(100, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 100, 0, 0, 0, 0, 0, 100, 0, 0)
+            .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        BinaryPrimitives.WriteInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobCurrentMpOffset), mana);
+        mob[LegacyAccountSnapshot.MobSaveManaOffset] = 100;
+        return mob;
+    }
+
+    var hub = new WorldHub();
+    Assert(hub.Enter(3, "ILLUSION", (_, _) => ValueTask.CompletedTask), "Illusion participant was not registered.");
+    Assert(hub.SetCharacterState(3, 0, 0, 0, 0, 0, 0, 0, MobWithMana(100)), "Illusion participant state was not set.");
+    var result = hub.TryConsumeFixedMana(3, 45, out var after, out var snapshot, out var requestedMp);
+    Assert(result == LegacySkillManaResult.Accepted && after?.CurrentMana == 55 && snapshot is not null &&
+        BinaryPrimitives.ReadInt32LittleEndian(snapshot.AsSpan(LegacyAccountSnapshot.MobCurrentMpOffset)) == 55,
+        "Illusion did not consume the exact configured fixed mana cost.");
+    Assert(requestedMp == 100 && hub.TryGetResourceState(3, out var current, out _, out var currentRequestedMp) &&
+        current?.CurrentMana == 55 && currentRequestedMp == 100,
+        "Illusion changed ReqMp even though the 7.69 Action3 source leaves it untouched.");
+
+    var lowHub = new WorldHub();
+    Assert(lowHub.Enter(4, "LOWILLUSION", (_, _) => ValueTask.CompletedTask) &&
+        lowHub.SetCharacterState(4, 0, 0, 0, 0, 0, 0, 0, MobWithMana(44)), "Low-mana Illusion participant state was not set.");
+    Assert(lowHub.TryConsumeFixedMana(4, 45, out var unchanged, out var unchangedSnapshot, out _) == LegacySkillManaResult.InsufficientMana &&
+        unchanged is null && unchangedSnapshot is null && lowHub.TryGetResourceState(4, out var lowState, out _, out var lowRequestedMp) &&
+        lowState?.CurrentMana == 44 && lowRequestedMp == 44,
+        "Illusion accepted insufficient MP or mutated CurrentMp/ReqMp.");
+}
+
 static void WorldGuildInvite()
 {
     var hub = new WorldHub();
@@ -6493,6 +7399,28 @@ static void WorldDeleteCarryItem()
     Assert(hub.TryDeleteCarryItem(1, 60, 501) == LegacyDeleteItemResult.InvalidSlot, "The four reserved tail slots were accepted for deletion.");
     Assert(hub.TryDeleteCarryItem(1, 5, LegacyItemDataTable.MaxItemIndex) == LegacyDeleteItemResult.InvalidItemIndex, "An out-of-range item index was accepted for deletion.");
     Assert(hub.TryDeleteCarryItem(99, 0, 500) == LegacyDeleteItemResult.ParticipantNotFound, "Deletion against an unknown participant was accepted.");
+
+    Assert(hub.Enter(2, "DELETE_TRADE_PEER", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(2, 0, 0, 0, 0, 0, 1000, 1000, mob), "Delete-item trade peer was not initialized.");
+    var deleteTradeItems = new LegacyItem[TradeOfferRequest.ItemCount];
+    var deleteTradePositions = Enumerable.Repeat((sbyte)-1, TradeOfferRequest.ItemCount).ToArray();
+    deleteTradeItems[0] = new LegacyItem(501, 7, 8, 9, 10, 11, 12);
+    deleteTradePositions[0] = 5;
+    var deleteTradeOffer = new TradeOfferRequest(deleteTradeItems, deleteTradePositions, 0, 0, 2);
+    Assert(hub.TryStageTradeOffer(1, deleteTradeOffer, out _) == LegacyTradeOfferResult.Accepted,
+        "Delete-item trade precondition was not staged.");
+    Assert(hub.TryDeleteCarryItem(1, 5, 501, out var cancelledTradeOpponentId) == LegacyDeleteItemResult.TradeCancelled && cancelledTradeOpponentId == 2,
+        "DeleteItem did not cancel active trade before mutating carry.");
+    Assert(!hub.IsLiveTradeActive(1) && !hub.IsLiveTradeActive(2),
+        "DeleteItem left the bilateral trade active after cancellation.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var afterTrade, out _, out _) && afterTrade is not null &&
+        LegacyItem.Read(afterTrade.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (5 * LegacyItem.SizeInBytes))).Index == 501,
+        "DeleteItem changed carry while cancelling trade.");
+    Assert(hub.TryDeleteCarryItem(1, 5, 501, accountBlocked: true) == LegacyDeleteItemResult.AccountBlocked,
+        "DeleteItem accepted a blocked account.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var afterBlocked, out _, out _) && afterBlocked is not null &&
+        LegacyItem.Read(afterBlocked.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (5 * LegacyItem.SizeInBytes))).Index == 501,
+        "DeleteItem changed carry for a blocked account.");
 }
 
 static void SplitItemWire()
@@ -7222,6 +8150,44 @@ static void LoginSessionTransitions()
     Assert(sessions.TryGet(42, out session) && session!.State == LoginSessionState.CharacterSelection, "Character logout state was not USER_SELCHAR.");
 }
 
+static void Action2ConsecutiveStopMovementState()
+{
+    var sessions = new LoginSessionRegistry();
+    var login = new AccountLoginRequest("ACTION_STOP", "secret", new byte[52], 7670, 0, [0, 0, 0, 0]);
+    Assert(sessions.Open(43) && sessions.BeginAccountLogin(43, login) == LoginTransitionResult.Accepted &&
+        sessions.CompleteAccountLogin(43, "ACTION_STOP") == LoginTransitionResult.Accepted &&
+        sessions.BeginCharacterWait(43) == LoginTransitionResult.Accepted &&
+        sessions.CompleteCharacterLogin(43, characterSlot: 0, positionX: 2000, positionY: 2000) == LoginTransitionResult.Accepted,
+        "Action2 stop fixture did not enter USER_PLAY.");
+
+    var firstStop = new ActionRequest(2000, 2000, 0, 2, new byte[24], 2001, 2000)
+    {
+        WireType = ActionRequest.StopMessageType,
+    };
+    Assert(sessions.TryApplyMovement(43, firstStop) == MovementResult.Accepted, "The first Action2 movement was rejected.");
+
+    var repeatedStop = firstStop with { PositionX = 2001, TargetX = 2002 };
+    Assert(sessions.TryApplyMovement(43, repeatedStop) != MovementResult.Accepted, "A second consecutive Action2 movement was accepted.");
+    Assert(sessions.TryGet(43, out var session) && session!.PositionX == 2001 && session.PositionY == 2000,
+        "The rejected consecutive Action2 changed the authoritative position.");
+
+    var normalAction = repeatedStop with { WireType = ActionRequest.MessageType };
+    Assert(sessions.TryApplyMovement(43, normalAction) == MovementResult.Accepted, "A normal Action did not clear the consecutive-stop state.");
+    var stopAfterAction = normalAction with { WireType = ActionRequest.StopMessageType, PositionX = 2002, TargetX = 2003 };
+    Assert(sessions.TryApplyMovement(43, stopAfterAction) == MovementResult.Accepted, "Action2 was rejected after a different movement opcode.");
+
+    Assert(sessions.CompleteCharacterLogout(43) == LoginTransitionResult.Accepted &&
+        sessions.BeginCharacterWait(43) == LoginTransitionResult.Accepted &&
+        sessions.CompleteCharacterLogin(43, characterSlot: 0, positionX: 2100, positionY: 2100) == LoginTransitionResult.Accepted,
+        "Action2 stop fixture could not relog the character.");
+    var firstStopAfterLogin = new ActionRequest(2100, 2100, 0, 2, new byte[24], 2101, 2100)
+    {
+        WireType = ActionRequest.StopMessageType,
+    };
+    Assert(sessions.TryApplyMovement(43, firstStopAfterLogin) == MovementResult.Accepted,
+        "Character login did not reset the previous Action2 movement type.");
+}
+
 static void LegacyAccountStoreIsReadOnly()
 {
     var root = Path.Combine(Path.GetTempPath(), $"wyd-cdk-account-test-{Guid.NewGuid():N}");
@@ -7256,12 +8222,12 @@ static void AccountLoginCoordinatorFlow()
     var request = new AccountLoginRequest("SANDBOX", "secret", new byte[52], 7640, 0, [1, 2, 3, 4]);
     var successfulSessions = new LoginSessionRegistry();
     successfulSessions.Open(1);
-    var successful = new AccountLoginCoordinator(successfulSessions, new FixedAccountStore(new(AccountAuthenticationStatus.Success, "SANDBOX"))).HandleAsync(1, request).GetAwaiter().GetResult();
+    var successful = new AccountLoginCoordinator(successfulSessions, new FixedAccountStore(new(AccountAuthenticationStatus.Success, "SANDBOX")), AccountReviewLoginTests.CreateUnmarkedStore()).HandleAsync(1, request).GetAwaiter().GetResult();
     Assert(successful.IsSuccess && successfulSessions.TryGet(1, out var successSession) && successSession!.State == LoginSessionState.CharacterSelection, "Successful account login did not enter character selection.");
 
     var failedSessions = new LoginSessionRegistry();
     failedSessions.Open(2);
-    var failed = new AccountLoginCoordinator(failedSessions, new FixedAccountStore(new(AccountAuthenticationStatus.WrongPassword, null))).HandleAsync(2, request).GetAwaiter().GetResult();
+    var failed = new AccountLoginCoordinator(failedSessions, new FixedAccountStore(new(AccountAuthenticationStatus.WrongPassword, null)), AccountReviewLoginTests.CreateUnmarkedStore()).HandleAsync(2, request).GetAwaiter().GetResult();
     Assert(failed.Authentication == AccountAuthenticationStatus.WrongPassword && !failedSessions.TryGet(2, out _), "Failed account login did not close the session.");
 }
 

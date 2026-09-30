@@ -1,0 +1,58 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=7",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=7",
+  "cases": [
+    {
+      "name": "no-frozen-blade-affect",
+      "headItemIndex": 0,
+      "records": [],
+      "targetExpected": { "attackSpeedDelta": 0, "intelligenceDelta": 0 },
+      "w2ppExpected": { "attackSpeedDelta": 0, "intelligenceDelta": 0 }
+    },
+    {
+      "name": "player-face-under-fifty-only-attack-slow",
+      "headItemIndex": 20,
+      "records": [{ "slot": 0, "type": 7, "value": 0, "level": 100 }],
+      "targetExpected": { "attackSpeedDelta": -20, "intelligenceDelta": 0 },
+      "w2ppExpected": { "attackSpeedDelta": -20, "intelligenceDelta": 0 }
+    },
+    {
+      "name": "monster-head-above-fifty-applies-both",
+      "headItemIndex": 51,
+      "records": [{ "slot": 0, "type": 7, "value": 0, "level": 100 }],
+      "targetExpected": { "attackSpeedDelta": -20, "intelligenceDelta": -30 },
+      "w2ppExpected": { "attackSpeedDelta": -20, "intelligenceDelta": -30 }
+    },
+    {
+      "name": "level-nine-integer-division",
+      "headItemIndex": 100,
+      "records": [{ "slot": 0, "type": 7, "value": 0, "level": 9 }],
+      "targetExpected": { "attackSpeedDelta": -10, "intelligenceDelta": -20 },
+      "w2ppExpected": { "attackSpeedDelta": -10, "intelligenceDelta": -20 }
+    },
+    {
+      "name": "multiple-affects-accumulate",
+      "headItemIndex": 60,
+      "records": [
+        { "slot": 0, "type": 7, "value": 0, "level": 25 },
+        { "slot": 1, "type": 7, "value": 0, "level": 40 }
+      ],
+      "targetExpected": { "attackSpeedDelta": -26, "intelligenceDelta": -46 },
+      "w2ppExpected": { "attackSpeedDelta": -26, "intelligenceDelta": -46 }
+    },
+    {
+      "name": "head-index-exact-fifty-does-not-trigger-int",
+      "headItemIndex": 50,
+      "records": [{ "slot": 0, "type": 7, "value": 0, "level": 50 }],
+      "targetExpected": { "attackSpeedDelta": -15, "intelligenceDelta": 0 },
+      "w2ppExpected": { "attackSpeedDelta": -15, "intelligenceDelta": 0 }
+    },
+    {
+      "name": "other-affects-ignored",
+      "headItemIndex": 60,
+      "records": [{ "slot": 0, "type": 1, "value": 10, "level": 50 }],
+      "targetExpected": { "attackSpeedDelta": 0, "intelligenceDelta": 0 },
+      "w2ppExpected": { "attackSpeedDelta": 0, "intelligenceDelta": 0 }
+    }
+  ]
+}

@@ -53,7 +53,9 @@ public static class LegacyAutoTradeRehydrator
                 }
 
                 var snapshot = pendingSnapshot with { ConnectionId = shopConnectionId };
-                if (!book.TryRestore(shopConnectionId, snapshot))
+                await using var lease = await book.AcquireAsync([shopConnectionId], cancellationToken);
+                if (!book.TryRestore(lease, shopConnectionId,
+                    new(listing.AccountName, listing.CharacterSlot), snapshot, out _))
                 {
                     world.TryRemoveNpc(shopConnectionId, out _);
                     issues.Add(new(listing.AccountName, listing.CharacterSlot, "InvalidListing"));

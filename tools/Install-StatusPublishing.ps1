@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $statusFile = Join-Path $SiteRoot 'servtest.htm'
+$accountReviewRoot = Join-Path (Split-Path -Parent $ServerRoot) 'account-review'
 $watchdogSource = Join-Path $StagingRoot 'Publish-StatusExpiry.ps1'
 $watchdogTarget = Join-Path $ServerRoot 'tools\Publish-StatusExpiry.ps1'
 
@@ -40,8 +41,8 @@ foreach ($name in @(
 Copy-Item -Path (Join-Path $StagingRoot '*') -Destination $ServerRoot -Force
 Copy-Item -LiteralPath $watchdogSource -Destination $watchdogTarget -Force
 
-$upAction = New-ScheduledTaskAction -Execute (Join-Path $ServerRoot 'WydCdk.Server.Core.exe') -Argument "--bind 0.0.0.0 --port 8281 --world UP --mariadb-account-config $ServerRoot\secrets\site-db.json --status-file $statusFile --status-slot 1" -WorkingDirectory $ServerRoot
-$pvpAction = New-ScheduledTaskAction -Execute (Join-Path $ServerRoot 'WydCdk.Server.Core.exe') -Argument "--bind 0.0.0.0 --port 8282 --world PVP --mariadb-account-config $ServerRoot\secrets\site-db.json --status-file $statusFile --status-slot 2" -WorkingDirectory $ServerRoot
+$upAction = New-ScheduledTaskAction -Execute (Join-Path $ServerRoot 'WydCdk.Server.Core.exe') -Argument "--bind 0.0.0.0 --port 8281 --world UP --mariadb-account-config $ServerRoot\secrets\site-db.json --account-review-root `"$accountReviewRoot`" --status-file $statusFile --status-slot 1" -WorkingDirectory $ServerRoot
+$pvpAction = New-ScheduledTaskAction -Execute (Join-Path $ServerRoot 'WydCdk.Server.Core.exe') -Argument "--bind 0.0.0.0 --port 8282 --world PVP --mariadb-account-config $ServerRoot\secrets\site-db.json --account-review-root `"$accountReviewRoot`" --status-file $statusFile --status-slot 2" -WorkingDirectory $ServerRoot
 Set-ScheduledTask -TaskName 'WYDCDK-Server-UP' -Action $upAction | Out-Null
 Set-ScheduledTask -TaskName 'WYDCDK-Server-PVP' -Action $pvpAction | Out-Null
 

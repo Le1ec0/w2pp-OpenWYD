@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 
 namespace WydCdk.Protocol;
 
-/// <summary>Authoritative HP/MP synchronization sent when an attack cannot pay its mana cost.</summary>
+/// <summary>Authoritative HP/MP synchronization for resource changes and rejected actions.</summary>
 public sealed class SetHpMpConfirmation
 {
     public const ushort MessageType = 0x0181; // 129 | FLAG_GAME2CLIENT

@@ -30,6 +30,8 @@ public sealed partial class WorldHub
                 return LegacyTradeOfferResult.ParticipantNotFound;
 
             var opponentId = request.OpponentId;
+            if (tradeCloseReservations.ContainsKey(connectionId) || tradeCloseReservations.ContainsKey(opponentId))
+                return LegacyTradeOfferResult.TradeClosePending;
             if (opponentId <= 0)
                 return LegacyTradeOfferResult.InvalidOpponent;
             if (opponentId == connectionId)
@@ -68,8 +70,12 @@ public sealed partial class WorldHub
                 return validationResult;
             }
 
-            if (ownState?.HasOffer == true && ownState.MyCheck == 1 && request.MyCheck == 1 &&
-                !SameTradeOffer(ownState.ToRequest(), request))
+            // A confirmation cannot create an offer or reopen a completed trade.
+            // Compare staged data before SetOffer, including the first check.
+            if (request.MyCheck == 1 && (ownState?.HasOffer != true || opponentState?.HasOffer != true))
+                return LegacyTradeOfferResult.CheckWithoutOffer;
+
+            if (request.MyCheck == 1 && !SameTradeOffer(ownState!.ToRequest(), request))
             {
                 ClearTradePairLocked(connectionId);
                 return LegacyTradeOfferResult.OfferChangedAfterCheck;
@@ -115,13 +121,52 @@ public sealed partial class WorldHub
             outcome = null;
             if (!participants.ContainsKey(connectionId))
                 return LegacyTradeCloseResult.ParticipantNotFound;
+            if (tradeCloseReservations.ContainsKey(connectionId)) return LegacyTradeCloseResult.TradeClosePending;
+            var participant = participants[connectionId];
+            if (!HasLiveCombatState(participant))
+                return LegacyTradeCloseResult.CombatStateUnavailable;
+            if (ReadCurrentHp(participant) <= 0)
+                return LegacyTradeCloseResult.NotAlive;
+            var hasTrade = tradeStates.TryGetValue(connectionId, out var state);
+            var opponentId = hasTrade ? state!.OpponentId : 0;
+            if (hasTrade)
+                ClearTradePairLocked(connectionId);
+            outcome = BuildTradeCloseOutcomeLocked(participant, opponentId);
+            // Native QuitTrade still signals self and refreshes PK without a pair.
+            // Autotrade reset/visual behavior is a separate, unported workflow.
+            return hasTrade ? LegacyTradeCloseResult.Accepted : LegacyTradeCloseResult.NoActiveTrade;
+        }
+    }
+
+    /// <summary>
+    /// Applies the legacy Action trade-cancel branch. Unlike QuitTrade, this
+    /// branch rejects exactly HP zero (the caller handles that earlier) while
+    /// negative HP still cancels an active bilateral trade.
+    /// </summary>
+    public LegacyActionTradeCancellationResult TryCancelTradeForAction(
+        int connectionId,
+        out LegacyActionTradeCancellationOutcome? outcome)
+    {
+        lock (gate)
+        {
+            outcome = null;
+            if (!participants.TryGetValue(connectionId, out var participant))
+                return LegacyActionTradeCancellationResult.ParticipantNotFound;
+            if (!HasLiveCombatState(participant))
+                return LegacyActionTradeCancellationResult.CombatStateUnavailable;
+            if (ReadCurrentHp(participant) == 0)
+                return LegacyActionTradeCancellationResult.CharacterDead;
             if (!tradeStates.TryGetValue(connectionId, out var state))
-                return LegacyTradeCloseResult.NoActiveTrade;
+                return LegacyActionTradeCancellationResult.NoActiveTrade;
 
             var opponentId = state.OpponentId;
+            if (tradeCloseReservations.ContainsKey(connectionId) ||
+                opponentId > 0 && tradeCloseReservations.ContainsKey(opponentId))
+                return LegacyActionTradeCancellationResult.TradeClosePending;
+
             ClearTradePairLocked(connectionId);
-            outcome = new LegacyTradeCloseOutcome(connectionId, opponentId);
-            return LegacyTradeCloseResult.Accepted;
+            outcome = new LegacyActionTradeCancellationOutcome(connectionId, opponentId);
+            return LegacyActionTradeCancellationResult.Cancelled;
         }
     }
 
@@ -137,6 +182,7 @@ public sealed partial class WorldHub
             outcome = null;
             if (!participants.TryGetValue(connectionId, out var participant))
                 return LegacyTradeCompletionResult.ParticipantNotFound;
+            if (tradeCloseReservations.ContainsKey(connectionId)) return LegacyTradeCompletionResult.TradeClosePending;
             if (!tradeStates.TryGetValue(connectionId, out var ownState))
                 return LegacyTradeCompletionResult.NoActiveTrade;
             if (!participants.TryGetValue(ownState.OpponentId, out var opponent))
@@ -451,7 +497,6 @@ public sealed partial class WorldHub
 
     private static bool SameTradeOffer(TradeOfferRequest left, TradeOfferRequest right) =>
         left.TradeMoney == right.TradeMoney &&
-        left.MyCheck == right.MyCheck &&
         left.OpponentId == right.OpponentId &&
         left.Items.SequenceEqual(right.Items) &&
         left.InventoryPositions.SequenceEqual(right.InventoryPositions);
@@ -514,6 +559,8 @@ public enum LegacyTradeOfferResult
     NotTradeable,
     GuildItemRestricted,
     OfferChangedAfterCheck,
+    CheckWithoutOffer,
+    TradeClosePending,
 }
 
 public sealed record LegacyTradeParticipantState(
@@ -536,10 +583,29 @@ public enum LegacyTradeCloseResult
 {
     Accepted,
     ParticipantNotFound,
+    CombatStateUnavailable,
+    NotAlive,
     NoActiveTrade,
+    TradeClosePending,
 }
 
-public sealed record LegacyTradeCloseOutcome(int ConnectionId, int OpponentId);
+public sealed record LegacyTradeCloseOutcome(int ConnectionId, int OpponentId)
+{
+    public int PkState { get; init; }
+    public IReadOnlyList<int> PkRecipients { get; init; } = [];
+}
+
+public enum LegacyActionTradeCancellationResult
+{
+    Cancelled,
+    NoActiveTrade,
+    CharacterDead,
+    ParticipantNotFound,
+    CombatStateUnavailable,
+    TradeClosePending,
+}
+
+public sealed record LegacyActionTradeCancellationOutcome(int ConnectionId, int OpponentId);
 
 public enum LegacyTradeCompletionResult
 {
@@ -560,6 +626,7 @@ public enum LegacyTradeCompletionResult
     InvalidOffer,
     NoSpace,
     GoldOverflow,
+    TradeClosePending,
 }
 
 public sealed record LegacyTradeCompletionOutcome(

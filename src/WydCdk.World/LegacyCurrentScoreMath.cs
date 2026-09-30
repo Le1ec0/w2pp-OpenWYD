@@ -92,6 +92,23 @@ public readonly record struct LegacyDexterityAffectStage(short Dexterity);
 /// <summary>Sequential ArmorClass value after Type=12 percentage reductions.</summary>
 public readonly record struct LegacyArmorClassReductionAffectStage(int ArmorClass);
 
+/// <summary>Attack speed and intelligence deltas contributed by Type=7 Frozen Blade affects.</summary>
+public readonly record struct LegacyFrozenBladeAffectStage(int AttackSpeedDelta, int IntelligenceDelta);
+
+/// <summary>Damage reduction contributed by active Type=10 Weaken affects.</summary>
+public readonly record struct LegacyWeakenAffectStage(int DamageReduction);
+
+/// <summary>Sequential ArmorClass reduction and damage multiplier adjustment from Type=21 Meditation affects.</summary>
+public readonly record struct LegacyMeditationAffectStage(
+    int ArmorClassReduction,
+    int DamageMultiplierAdjustment);
+
+/// <summary>ArmorClass addition contributed by active Type=31 Golden Shield affects.</summary>
+public readonly record struct LegacyGoldenShieldAffectStage(int ArmorClassAddition);
+
+/// <summary>ArmorClass addition contributed by active Type=25 Elemental Protection affects.</summary>
+public readonly record struct LegacyElementalProtectionArmorClassAffectStage(int ArmorClassAddition);
+
 /// <summary>Attack/run bonuses selected by the last valid transformation affect.</summary>
 public readonly record struct LegacyTransformationSpeedAffectStage(
     bool HasActiveTransformation,
@@ -156,8 +173,16 @@ public readonly record struct LegacyCurrentScoreCoordinatorStage(
     LegacyMobCombatState AfterMagicWeapon,
     LegacyAthenaTouchAffectStage AthenaTouch,
     LegacyMobCombatState AfterAthenaTouch,
+    LegacyHolyTouchAffectStage HolyTouch,
+    LegacyMobCombatState AfterHolyTouch,
     LegacyFanaticismAffectStage Fanaticism,
     LegacyMobCombatState AfterFanaticism,
+    LegacyPossessedAffectStage Possessed,
+    LegacyMobCombatState AfterPossessed,
+    LegacyAssaultAffectStage Assault,
+    LegacyMobCombatState AfterAssault,
+    LegacySamaritanArmorClassAffectStage Samaritan,
+    LegacyMobCombatState AfterSamaritan,
     LegacyDexterityAffectStage Dexterity,
     LegacyMobCombatState AfterDexterity,
     LegacyArmorClassReductionAffectStage ArmorClassReduction,
@@ -184,6 +209,10 @@ public static class LegacyCurrentScoreMath
     private const byte ElementalProtectionAffectType = 25;
     private const byte TransformationAffectType = 16;
     private const byte HasteAffectType = 2;
+    private const byte FrozenBladeAffectType = 7;
+    private const byte WeakenAffectType = 10;
+    private const byte MeditationAffectType = 21;
+    private const byte GoldenShieldAffectType = 31;
     private const int BeastMasterClass = 2;
     private const int MagicWeaponClass = 1;
 
@@ -566,6 +595,161 @@ public static class LegacyCurrentScoreMath
         }
 
         return new LegacyArmorClassReductionAffectStage(armorClass);
+    }
+
+    /// <summary>
+    /// Calculates the attack speed and intelligence deltas from active Type=7
+    /// Frozen Blade affects in the 7.69 CurrentScore loop. The attack slow applies
+    /// unconditionally, while the intelligence reduction applies only when the head
+    /// item index exceeds 50 (monster face / head index).
+    /// </summary>
+    public static LegacyFrozenBladeAffectStage CalculateFrozenBladeAffectStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int headItemIndex)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var attackSpeedDelta = 0;
+        var intelligenceDelta = 0;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != FrozenBladeAffectType)
+                continue;
+
+            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+            var tmp = level / 10 + 10;
+            attackSpeedDelta = unchecked(attackSpeedDelta - tmp);
+
+            if (headItemIndex > 50)
+                intelligenceDelta = unchecked(intelligenceDelta - (tmp + 10));
+        }
+
+        return new LegacyFrozenBladeAffectStage(attackSpeedDelta, intelligenceDelta);
+    }
+
+    /// <summary>
+    /// Calculates the damage reduction contributed by active Type=10 Weaken affects
+    /// in the 7.69 CurrentScore loop. Formula matches W2PP: sub = Level / 5 + Value.
+    /// </summary>
+    public static LegacyWeakenAffectStage CalculateWeakenAffectStage(
+        ReadOnlySpan<byte> affectSnapshot)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var damageReduction = 0;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != WeakenAffectType)
+                continue;
+
+            var value = affectSnapshot[offset + 1];
+            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+            var sub = level / 5 + value;
+            damageReduction = unchecked(damageReduction + sub);
+        }
+
+        return new LegacyWeakenAffectStage(damageReduction);
+    }
+
+    /// <summary>
+    /// Calculates the sequential armor class reduction and damage multiplier adjustment
+    /// contributed by active Type=21 Meditation affects in the 7.69 CurrentScore loop.
+    /// ArmorClass reduction matches W2PP (Level / 3 + 10), while the multiplier addition
+    /// diverges: target 7.69 uses Level / 25 + Value whereas W2PP uses Level / 10 + Value.
+    /// </summary>
+    public static LegacyMeditationAffectStage CalculateMeditationAffectStage(
+        ReadOnlySpan<byte> affectSnapshot)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var armorClassReduction = 0;
+        var damageMultiplierAdjustment = 0;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != MeditationAffectType)
+                continue;
+
+            var value = affectSnapshot[offset + 1];
+            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+
+            var add = level / 3 + 10;
+            armorClassReduction = unchecked(armorClassReduction + add);
+
+            var tv = level / 25 + value;
+            damageMultiplierAdjustment = unchecked(damageMultiplierAdjustment + tv);
+        }
+
+        return new LegacyMeditationAffectStage(armorClassReduction, damageMultiplierAdjustment);
+    }
+
+    /// <summary>
+    /// Calculates the armor class addition contributed by active Type=31 Golden Shield
+    /// affects in the 7.69 CurrentScore loop. Target 7.69 adds Level / 2 + Value.
+    /// This affect is not present in the W2PP buff loop.
+    /// </summary>
+    public static LegacyGoldenShieldAffectStage CalculateGoldenShieldAffectStage(
+        ReadOnlySpan<byte> affectSnapshot)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var armorClassAddition = 0;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != GoldenShieldAffectType)
+                continue;
+
+            var value = affectSnapshot[offset + 1];
+            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+
+            var add = level / 2 + value;
+            armorClassAddition = unchecked(armorClassAddition + add);
+        }
+
+        return new LegacyGoldenShieldAffectStage(armorClassAddition);
+    }
+
+    /// <summary>
+    /// Calculates the armor class addition contributed by active Type=25 Elemental Protection
+    /// affects in the 7.69 CurrentScore loop: Level / 2 + Value (+30 if Level >= 255).
+    /// In W2PP, Type=25 mutates only resistances (Fire, Thunder, Ice), leaving ArmorClass untouched.
+    /// </summary>
+    public static LegacyElementalProtectionArmorClassAffectStage CalculateElementalProtectionArmorClassAffectStage(
+        ReadOnlySpan<byte> affectSnapshot)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var armorClassAddition = 0;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != ElementalProtectionAffectType)
+                continue;
+
+            var value = affectSnapshot[offset + 1];
+            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+
+            var def = level / 2 + value;
+            if (level >= 255)
+                def += 30;
+
+            armorClassAddition = unchecked(armorClassAddition + def);
+        }
+
+        return new LegacyElementalProtectionArmorClassAffectStage(armorClassAddition);
     }
 
     /// <summary>
@@ -1028,22 +1212,59 @@ public static class LegacyCurrentScoreMath
                 Special4 = checked((short)athenaTouch.Special4),
             },
         };
-        var fanaticism = CalculateFanaticismAffectStage(
-            affectSnapshot,
-            afterAthenaTouch.CurrentScore.Dexterity);
-        var afterFanaticism = afterAthenaTouch with
+        var holyTouch = CalculateHolyTouchAffectStage(affectSnapshot, equipment[0].Index);
+        var afterHolyTouch = afterAthenaTouch with
         {
             CurrentScore = afterAthenaTouch.CurrentScore with
+            {
+                Intelligence = unchecked((short)(afterAthenaTouch.CurrentScore.Intelligence + holyTouch.IntelligenceDelta)),
+            },
+        };
+        var fanaticism = CalculateFanaticismAffectStage(
+            affectSnapshot,
+            afterHolyTouch.CurrentScore.Dexterity);
+        var afterFanaticism = afterHolyTouch with
+        {
+            CurrentScore = afterHolyTouch.CurrentScore with
             {
                 Dexterity = fanaticism.Dexterity,
             },
         };
-        var dexterity = CalculateDexterityAffectStage(
+        var possessed = CalculatePossessedAffectStage(
             affectSnapshot,
-            afterFanaticism.CurrentScore.Dexterity);
-        var afterDexterity = afterFanaticism with
+            classMaster,
+            afterFanaticism.CurrentScore.MaxHp,
+            afterFanaticism.CurrentScore.Constitution);
+        var afterPossessed = afterFanaticism with
         {
             CurrentScore = afterFanaticism.CurrentScore with
+            {
+                MaxHp = possessed.MaxHp,
+                Constitution = possessed.Constitution,
+            },
+        };
+        var assault = CalculateAssaultAffectStage(
+            affectSnapshot,
+            afterPossessed.CurrentScore.Damage,
+            afterPossessed.CurrentScore.MaxHp);
+        // Assault only accumulates DamageMultiplierAdjustment; target 7.69 does not mutate Damage/MaxHp here.
+        var afterAssault = afterPossessed;
+        var samaritan = CalculateSamaritanArmorClassAffectStage(
+            affectSnapshot,
+            afterAssault.CurrentScore.Ac);
+        var afterSamaritan = afterAssault with
+        {
+            CurrentScore = afterAssault.CurrentScore with
+            {
+                Ac = samaritan.ArmorClass,
+            },
+        };
+        var dexterity = CalculateDexterityAffectStage(
+            affectSnapshot,
+            afterSamaritan.CurrentScore.Dexterity);
+        var afterDexterity = afterSamaritan with
+        {
+            CurrentScore = afterSamaritan.CurrentScore with
             {
                 Dexterity = dexterity.Dexterity,
             },
@@ -1078,8 +1299,16 @@ public static class LegacyCurrentScoreMath
             afterMagicWeapon,
             athenaTouch,
             afterAthenaTouch,
+            holyTouch,
+            afterHolyTouch,
             fanaticism,
             afterFanaticism,
+            possessed,
+            afterPossessed,
+            assault,
+            afterAssault,
+            samaritan,
+            afterSamaritan,
             dexterity,
             afterDexterity,
             armorClassReduction,

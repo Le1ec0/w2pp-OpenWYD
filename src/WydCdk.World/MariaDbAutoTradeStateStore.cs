@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Data;
 using System.Text.Json;
 
 namespace WydCdk.World;
@@ -7,7 +8,7 @@ namespace WydCdk.World;
 /// MariaDB adapter for the canonical autotrade listing. The legacy account
 /// blob remains character storage; this table owns only the offer state.
 /// </summary>
-public sealed class MariaDbAutoTradeStateStore : ILegacyAutoTradeStateStore
+public sealed class MariaDbAutoTradeStateStore : ILegacyAutoTradeStateStore, ILegacyAutoTradeCloseStore
 {
     private const int CharacterCount = 4;
     private readonly Func<DbConnection> connectionFactory;
@@ -26,6 +27,83 @@ public sealed class MariaDbAutoTradeStateStore : ILegacyAutoTradeStateStore
     }
 
     public string WorldKey { get; }
+
+    public async ValueTask<LegacyAutoTradeCloseStoreResult> RemoveExpectedAsync(
+        LegacyAutoTradeCloseRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null) return LegacyAutoTradeCloseStoreResult.InvalidRequest;
+        var committing = false;
+        try
+        {
+            await using var connection = CreateConnection();
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            var current = await ReadExpectedLockedAsync(connection, transaction, request, cancellationToken);
+            foreach (var expected in request.ExpectedListings)
+            {
+                var actual = current.SingleOrDefault(value => LegacyAutoTradeCloseRequest.SameOwner(value, expected));
+                if (actual is not null && !LegacyAutoTradePurchaseCommitRules.SameListing(actual, expected))
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return LegacyAutoTradeCloseStoreResult.Conflict;
+                }
+            }
+            foreach (var listing in current)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = "DELETE FROM wyd_autotrade_state WHERE world_key = @world_key AND account_name = @account_name AND character_slot = @character_slot";
+                AddOwnerParameters(command, listing.AccountName, listing.CharacterSlot);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            committing = true;
+            await transaction.CommitAsync(cancellationToken);
+            return current.Count == 0 ? LegacyAutoTradeCloseStoreResult.AlreadyAbsent : LegacyAutoTradeCloseStoreResult.Removed;
+        }
+        catch (Exception error) when (error is DbException or IOException or InvalidDataException or JsonException or OperationCanceledException)
+        {
+            return committing ? LegacyAutoTradeCloseStoreResult.Ambiguous : LegacyAutoTradeCloseStoreResult.Unavailable;
+        }
+    }
+
+    public async ValueTask<LegacyAutoTradeCloseReadState> ReadCloseStateAsync(
+        LegacyAutoTradeCloseRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null) return LegacyAutoTradeCloseReadState.Unknown;
+        try
+        {
+            await using var connection = CreateConnection();
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            var current = await ReadExpectedLockedAsync(connection, transaction, request, cancellationToken);
+            var state = request.Classify(current);
+            await transaction.RollbackAsync(CancellationToken.None);
+            return state;
+        }
+        catch (Exception error) when (error is DbException or IOException or InvalidDataException or JsonException or OperationCanceledException)
+        {
+            return LegacyAutoTradeCloseReadState.Unknown;
+        }
+    }
+
+    private async ValueTask<IReadOnlyList<LegacyAutoTradePersistedListing>> ReadExpectedLockedAsync(
+        DbConnection connection, DbTransaction transaction, LegacyAutoTradeCloseRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<LegacyAutoTradePersistedListing>();
+        // Request copies are sorted by owner so concurrent purchases/closures share lock order.
+        foreach (var expected in request.ExpectedListings)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "SELECT listing_json FROM wyd_autotrade_state WHERE world_key = @world_key AND account_name = @account_name AND character_slot = @character_slot FOR UPDATE";
+            AddOwnerParameters(command, expected.AccountName, expected.CharacterSlot);
+            var value = await command.ExecuteScalarAsync(cancellationToken);
+            if (value is not null and not DBNull) result.Add(DeserializeListing(value, expected.AccountName, expected.CharacterSlot));
+        }
+        return result;
+    }
 
     public async ValueTask<LegacyAutoTradeStateResult> SaveAsync(
         string accountName,
@@ -120,6 +198,7 @@ public sealed class MariaDbAutoTradeStateStore : ILegacyAutoTradeStateStore
         var listing = JsonSerializer.Deserialize<LegacyAutoTradePersistedListing>(json, jsonOptions)
             ?? throw new InvalidDataException("MariaDB autotrade listing_json is empty.");
         if (!string.Equals(listing.AccountName, accountName, StringComparison.Ordinal) || listing.CharacterSlot != characterSlot ||
+            listing.Items is null || listing.CarryPositions is null || listing.Prices is null ||
             listing.Items.Count != Protocol.AutoTradeListConfirmation.SlotCount ||
             listing.CarryPositions.Count != Protocol.AutoTradeListConfirmation.SlotCount ||
             listing.Prices.Count != Protocol.AutoTradeListConfirmation.SlotCount)

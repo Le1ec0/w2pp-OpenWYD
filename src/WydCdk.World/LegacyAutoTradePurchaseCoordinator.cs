@@ -16,6 +16,7 @@ public enum LegacyAutoTradePurchaseHostResult
     SellerIdentityUnavailable,
     SellerStateUnavailable,
     ExecutionRejected,
+    PendingRecovery,
 }
 
 public sealed record LegacyAutoTradePurchaseHostOutcome(
@@ -48,9 +49,18 @@ public static class LegacyAutoTradePurchaseCoordinator
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(autoTradeBook);
 
+        if (buyerConnectionId is <= 0 or > ushort.MaxValue || purchaseRequest.TargetId == 0)
+            return new(LegacyAutoTradePurchaseHostResult.TargetNotInAutoTrade, null, null, false, false);
+        await using var lease = await autoTradeBook.AcquireAsync(
+            [buyerConnectionId, purchaseRequest.TargetId], cancellationToken);
+
         if (!sessions.TryGet(buyerConnectionId, out var purchaseSession) ||
             purchaseSession is null || purchaseSession.State != LoginSessionState.Playing)
             return new(LegacyAutoTradePurchaseHostResult.SessionNotPlaying, null, null, false, false);
+
+        if (autoTradeBook.TryGetPendingClose(lease, buyerConnectionId, out _) ||
+            autoTradeBook.IsOwnerPending(new(purchaseSession.AccountName ?? string.Empty, purchaseSession.CharacterSlot)))
+            return new(LegacyAutoTradePurchaseHostResult.PendingRecovery, null, null, false, false);
 
         if (accountSnapshots is null || characterLoginData is null || commitStore is null)
             return new(LegacyAutoTradePurchaseHostResult.AtomicPersistenceUnavailable, null, null, false, false);
@@ -77,8 +87,9 @@ public static class LegacyAutoTradePurchaseCoordinator
         if (!world.TryGetCombatState(buyerConnectionId, out var buyerCombatState) || buyerCombatState is null)
             return new(LegacyAutoTradePurchaseHostResult.BuyerCombatStateUnavailable, null, null, false, false);
 
-        if (!autoTradeBook.TryGet(purchaseRequest.TargetId, out var purchaseListing) || purchaseListing is null)
+        if (!autoTradeBook.TryGet(lease, purchaseRequest.TargetId, out var handle) || handle is null)
             return new(LegacyAutoTradePurchaseHostResult.TargetNotInAutoTrade, null, null, false, false);
+        var purchaseListing = handle.Snapshot;
 
         var targetOnline = world.TryGetCharacterSnapshot(purchaseRequest.TargetId, out _, out var targetX, out var targetY);
         var targetOffline = world.TryGetNpcSnapshot(purchaseRequest.TargetId, out var purchaseNpc) &&
@@ -162,10 +173,12 @@ public static class LegacyAutoTradePurchaseCoordinator
             sellerAccountName,
             sellerCharacterSlot,
             expectedListing,
-            targetOffline);
-        var execution = await LegacyAutoTradePurchaseExecutor.ExecuteAsync(
+            targetOffline,
+            handle.Generation);
+        var execution = await LegacyAutoTradePurchaseExecutor.ExecuteUnderLeaseAsync(
             world,
             autoTradeBook,
+            lease,
             commitStore,
             executionRequest,
             cancellationToken);

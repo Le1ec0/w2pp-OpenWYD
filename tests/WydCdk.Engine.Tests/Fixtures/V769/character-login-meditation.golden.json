@@ -1,0 +1,51 @@
+{
+  "source": "TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp::BASE_GetCurrentScore Affect.Type=21",
+  "comparison": "Server/W2PP/Source/Code/Basedef.cpp::BASE_GetCurrentScore Buff Loop Type=21",
+  "cases": [
+    {
+      "name": "no-meditation-affect",
+      "records": [],
+      "targetExpected": { "armorClassReduction": 0, "damageMultiplierAdjustment": 0 },
+      "w2ppExpected": { "armorClassReduction": 0, "damageMultiplierAdjustment": 0 }
+    },
+    {
+      "name": "standard-level-and-value-diverges",
+      "records": [{ "slot": 0, "type": 21, "value": 10, "level": 100 }],
+      "targetExpected": { "armorClassReduction": 43, "damageMultiplierAdjustment": 14 },
+      "w2ppExpected": { "armorClassReduction": 43, "damageMultiplierAdjustment": 20 }
+    },
+    {
+      "name": "level-zero-matches",
+      "records": [{ "slot": 0, "type": 21, "value": 15, "level": 0 }],
+      "targetExpected": { "armorClassReduction": 10, "damageMultiplierAdjustment": 15 },
+      "w2ppExpected": { "armorClassReduction": 10, "damageMultiplierAdjustment": 15 }
+    },
+    {
+      "name": "level-truncation-check",
+      "records": [{ "slot": 0, "type": 21, "value": 5, "level": 24 }],
+      "targetExpected": { "armorClassReduction": 18, "damageMultiplierAdjustment": 5 },
+      "w2ppExpected": { "armorClassReduction": 18, "damageMultiplierAdjustment": 7 }
+    },
+    {
+      "name": "multiple-affects-accumulate",
+      "records": [
+        { "slot": 0, "type": 21, "value": 5, "level": 30 },
+        { "slot": 1, "type": 21, "value": 10, "level": 50 }
+      ],
+      "targetExpected": { "armorClassReduction": 46, "damageMultiplierAdjustment": 18 },
+      "w2ppExpected": { "armorClassReduction": 46, "damageMultiplierAdjustment": 23 }
+    },
+    {
+      "name": "high-level-scaling",
+      "records": [{ "slot": 0, "type": 21, "value": 0, "level": 250 }],
+      "targetExpected": { "armorClassReduction": 93, "damageMultiplierAdjustment": 10 },
+      "w2ppExpected": { "armorClassReduction": 93, "damageMultiplierAdjustment": 25 }
+    },
+    {
+      "name": "other-affects-ignored",
+      "records": [{ "slot": 0, "type": 13, "value": 10, "level": 100 }],
+      "targetExpected": { "armorClassReduction": 0, "damageMultiplierAdjustment": 0 },
+      "w2ppExpected": { "armorClassReduction": 0, "damageMultiplierAdjustment": 0 }
+    }
+  ]
+}

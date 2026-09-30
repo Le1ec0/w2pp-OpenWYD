@@ -19,6 +19,20 @@ public sealed class SendItemConfirmation
     public short Slot { get; }
     public LegacyItem Item { get; }
 
+    public static bool TryParse(DecodedFrame frame, out SendItemConfirmation? confirmation)
+    {
+        confirmation = null;
+        if (!frame.IsChecksumValid || frame.Header.Type != MessageType || frame.Header.Size != PacketSize || frame.Payload.Length != PacketSize - PacketHeader.SizeInBytes)
+            return false;
+
+        var payload = frame.Payload.Span;
+        confirmation = new SendItemConfirmation(
+            BinaryPrimitives.ReadInt16LittleEndian(payload),
+            BinaryPrimitives.ReadInt16LittleEndian(payload[2..]),
+            LegacyItem.Read(payload[4..]));
+        return true;
+    }
+
     public byte[] ToPayload()
     {
         var payload = new byte[PacketSize - PacketHeader.SizeInBytes];
