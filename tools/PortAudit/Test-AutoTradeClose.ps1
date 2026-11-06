@@ -1,6 +1,7 @@
 param(
     [string]$Runtime = '',
     [switch]$SkipBuild,
+    [int]$DoubleModeMultiplier = 1,
     [switch]$DeadQuit,
     [switch]$Motion,
     [switch]$MotionNegativeHp,
@@ -14,21 +15,59 @@ param(
     [switch]$AttackDeadGate,
     [switch]$AttackRvrGate,
     [switch]$AttackTimingGate,
+    [switch]$AttackSkillGate,
+    [switch]$AttackPartySkillGate,
+    [switch]$AttackGoldenShieldCoin,
+    [switch]$AttackDoubleCritical,
+    [switch]$AttackManaControl,
+    [switch]$AttackManaGain,
+    [switch]$AttackSkillHeal,
+    [switch]$AttackSummonNotice,
+    [switch]$AttackDivineBlessing,
+    [switch]$AutoDoubleMagicTrumpet,
+    [switch]$AttackMultiTarget,
+    [switch]$AttackMixedSlots,
+    [switch]$AttackType6Protection,
     [switch]$ActionRecall,
     [switch]$MapRecall,
     [switch]$ActionAnalysis
 )
 $ErrorActionPreference = 'Stop'
+if ($AttackSummonNotice -and ($DeadQuit -or $Motion -or $MotionNegativeHp -or $TradeList -or $TradeListNegativeHp -or
+    $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or
+    $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackPartySkillGate -or
+    $AttackGoldenShieldCoin -or $AttackDoubleCritical -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or
+    $AttackDivineBlessing -or $AutoDoubleMagicTrumpet -or $AttackMultiTarget -or $AttackMixedSlots -or $AttackType6Protection -or
+    $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'InstanceType 9 summon notice is a separate Attack smoke mode.' }
+if ($AttackDivineBlessing -and ($DeadQuit -or $Motion -or $MotionNegativeHp -or $TradeList -or $TradeListNegativeHp -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackPartySkillGate -or $AttackGoldenShieldCoin -or $AttackDoubleCritical -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackMultiTarget -or $AttackMixedSlots -or $AttackType6Protection -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Divine Blessing is a separate Attack smoke mode.' }
+if ($AttackMixedSlots -and ($DeadQuit -or $Motion -or $MotionNegativeHp -or $TradeList -or $TradeListNegativeHp -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackPartySkillGate -or $AttackGoldenShieldCoin -or $AttackDoubleCritical -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackMultiTarget -or $AttackType6Protection -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Mixed-slot Attack is a separate smoke mode.' }
 if ($MotionNegativeHp) { $Motion = $true }
 if ($TradeListNegativeHp) { $TradeList = $true }
 if ($ActionNegativeHp) { $Action = $true }
 if ($ActionRange) { $Action = $true }
 if ($ActionIllusionEligibility) { $Action = $true }
 if ($ActionIllusionMana) { $Action = $true }
+if ($AttackType6Protection -and ($DeadQuit -or $Motion -or $TradeList -or $Action -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackDoubleCritical -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackMultiTarget -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'MSG_Attack Type 6 protection is a separate smoke mode.' }
+if ($AttackSkillHeal -and ($AttackManaGain -or $AttackSkillGate -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack gates are separate smoke modes.' }
+if ($AttackDoubleCritical -and ($AttackSkillHeal -or $AttackManaGain -or $AttackSkillGate -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack DoubleCritical is a separate smoke mode.' }
+if ($AttackManaControl -and ($AttackDoubleCritical -or $AttackManaGain -or $AttackSkillHeal -or $AttackSkillGate -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack ManaControl is a separate smoke mode.' }
+if ($AttackManaGain -and ($AttackSkillGate -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack gates are separate smoke modes.' }
+if ($AttackSkillGate -and ($AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack gates are separate smoke modes.' }
+if ($AttackPartySkillGate -and ($DeadQuit -or $Motion -or $TradeList -or $Action -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackGoldenShieldCoin -or $AttackDoubleCritical -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackMultiTarget -or $AttackType6Protection -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack party-skill gate is a separate smoke mode.' }
+if ($AttackGoldenShieldCoin -and ($DeadQuit -or $Motion -or $TradeList -or $Action -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackDoubleCritical -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackMultiTarget -or $AttackType6Protection -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Golden Shield coin is a separate Attack smoke mode.' }
+if ($AttackMultiTarget -and ($AttackSkillHeal -or $AttackManaGain -or $AttackManaControl -or $AttackDoubleCritical -or $AttackSkillGate -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack multi-target is a separate smoke mode.' }
 if (($AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate) -and (($AttackDeadGate -and $AttackRvrGate) -or ($AttackDeadGate -and $AttackTimingGate) -or ($AttackRvrGate -and $AttackTimingGate) -or $DeadQuit -or $Motion -or $TradeList -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $ActionRecall -or $MapRecall -or $ActionAnalysis)) { throw 'Attack gates are separate smoke modes.' }
 if (($ActionRecall -or $MapRecall) -and ($ActionRecall -and $MapRecall -or $Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionAnalysis -or $TradeList -or $Motion -or $DeadQuit)) { throw 'Recall modes are separate smoke modes.' }
 if ($ActionAnalysis -and ($Action -or $ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $TradeList -or $Motion -or $DeadQuit)) { throw 'Action account Analysis is a separate smoke mode.' }
 if ($ActionAnalysis) { $Action = $true }
+if ($AutoDoubleMagicTrumpet) {
+    $otherSmokeModes = @('DeadQuit','Motion','MotionNegativeHp','TradeList','TradeListNegativeHp','Action','ActionNegativeHp','ActionRange',
+        'ActionIllusionEligibility','ActionIllusionMana','AttackDeadGate','AttackRvrGate','AttackTimingGate','AttackSkillGate','AttackPartySkillGate',
+        'AttackGoldenShieldCoin','AttackDoubleCritical','AttackManaControl','AttackManaGain','AttackSkillHeal','AttackSummonNotice','AttackDivineBlessing',
+        'AttackMultiTarget','AttackMixedSlots','AttackType6Protection','ActionRecall','MapRecall','ActionAnalysis')
+    $selectedOtherModes = @($otherSmokeModes | Where-Object { [bool]$PSBoundParameters[$_] })
+    if ($selectedOtherModes.Count -gt 0) { throw 'AutoDouble MagicTrumpet is a separate loopback smoke mode.' }
+}
 if ($ActionRange -and $ActionNegativeHp) { throw 'Action range and HP modes are separate.' }
 if ($ActionIllusionEligibility -and ($ActionNegativeHp -or $ActionRange -or $ActionAnalysis)) { throw 'Action3 eligibility is a separate smoke mode.' }
 if ($ActionIllusionMana -and ($ActionNegativeHp -or $ActionRange -or $ActionIllusionEligibility -or $ActionAnalysis)) { throw 'Action3 mana is a separate smoke mode.' }
@@ -80,6 +119,10 @@ if (!$Runtime) { $Runtime = Join-Path $serverRoot 'src/WydCdk.Server/bin/Debug/n
 $Runtime = (Resolve-Path -LiteralPath $Runtime).Path
 $runFamily = if ($DeadQuit) { 'Backup/Build/E2E7670/' } else { 'Backup/Build/AutoTradeCloseSmoke/' }
 $runRoot = Join-Path $projectRoot ($runFamily + [Guid]::NewGuid().ToString('N'))
+$partyNpcGenerationPath = Join-Path $runRoot 'party-skill-npc-generation.txt'
+$partyNpcRoot = Join-Path $runRoot 'party-skill-npc-templates'
+$partyNpcTemplatePath = Join-Path $partyNpcRoot 'ATTACK_PARTY_NPC'
+$partySummonRoot = Join-Path $projectRoot 'Backup/Tools/ReferenceSources/TMProject2GlobalClient/Servidor/Server/TMSrv/run/BaseSummon'
 $accountRoot = Join-Path $runRoot 'account'
 $accountReviewRoot = Join-Path $runRoot 'account-review'
 $accountFolder = Join-Path $accountRoot 'T'
@@ -106,6 +149,98 @@ foreach ($path in @($actor, $peer, $failureActor, $distantObserver)) {
     $bytes[7944] = 0
     [IO.File]::WriteAllBytes($path, $bytes)
 }
+if ($AttackDoubleCritical -or $AttackMultiTarget -or $AttackType6Protection) {
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 16] = 1 # Keep the actor clanned in the isolated combat fixture.
+    $bytes[216 + 20] = 3 # STRUCT_MOB.Class: class-3 passive DoubleCritical.
+    [Array]::Copy([BitConverter]::GetBytes([int]0x200000), 0, $bytes, 216 + 780, 4)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $bytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $bytes, 216 + 42, 2)
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]1), 0, $bytes, $score, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]0), 0, $bytes, $score + 4, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]1000), 0, $bytes, $score + 8, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 24, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 28, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int16]1000), 0, $bytes, $score + 32, 2)
+        [Array]::Copy([BitConverter]::GetBytes([int16]1000), 0, $bytes, $score + 46, 2)
+    }
+    [IO.File]::WriteAllBytes($actor, $bytes)
+
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    $peerBytes[216 + 16] = 1
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 42, 2)
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]1), 0, $peerBytes, $score, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]10), 0, $peerBytes, $score + 4, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]0), 0, $peerBytes, $score + 8, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100000), 0, $peerBytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $peerBytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100000), 0, $peerBytes, $score + 24, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $peerBytes, $score + 28, 4)
+    }
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+    if ($AttackMultiTarget -or $AttackType6Protection) {
+        # Keep this relay regression independent of the randomized 7.69 miss roll:
+        # attacker Dex 1001 vs target Dex 1000 yields the literal 0% branch.
+        $actorBytes = [IO.File]::ReadAllBytes($actor)
+        [Array]::Clear($actorBytes, 216 + 22, 2) # STRUCT_MOB.Rsv precision bonuses.
+        [Array]::Copy([BitConverter]::GetBytes([int16]1001), 0, $actorBytes, 216 + 92 + 36, 2)
+        [IO.File]::WriteAllBytes($actor, $actorBytes)
+
+        $peerBytes = [IO.File]::ReadAllBytes($peer)
+        [Array]::Copy([BitConverter]::GetBytes([int16]1000), 0, $peerBytes, 216 + 92 + 36, 2)
+        [IO.File]::WriteAllBytes($peer, $peerBytes)
+    }
+}
+if ($AttackType6Protection) {
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    $peerBytes[216 + 20] = 0 # Class 0 receives Divine Protection in MSG_Attack.
+    [Array]::Clear($peerBytes, 4572, 256)
+    $peerBytes[4572 + 31 * 8] = 6 # Place Type 6 in the last of 32 affect records.
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+}
+if ($AttackManaControl) {
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 16] = 1 # Keep the actor clanned in the isolated combat fixture.
+    $bytes[216 + 20] = 3 # Class-3 passive bit 4.
+    [Array]::Copy([BitConverter]::GetBytes([int]0xA00000), 0, $bytes, 216 + 780, 4) # Passive DoubleCritical plus ManaControl divisor bit 23.
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $bytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $bytes, 216 + 42, 2)
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]1), 0, $bytes, $score, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]0), 0, $bytes, $score + 4, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]1000), 0, $bytes, $score + 8, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 24, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 28, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int16]1000), 0, $bytes, $score + 32, 2)
+        [Array]::Copy([BitConverter]::GetBytes([int16]1000), 0, $bytes, $score + 46, 2)
+    }
+    [Array]::Clear($bytes, 4572, 256) # Clear the isolated actor's effects.
+    [IO.File]::WriteAllBytes($actor, $bytes)
+
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    $peerBytes[216 + 16] = 2
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 42, 2)
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]1), 0, $peerBytes, $score, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]10), 0, $peerBytes, $score + 4, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]0), 0, $peerBytes, $score + 8, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100000), 0, $peerBytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100000), 0, $peerBytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100000), 0, $peerBytes, $score + 24, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100000), 0, $peerBytes, $score + 28, 4)
+    }
+    [Array]::Clear($peerBytes, 4572, 256)
+    $peerBytes[4572] = 18 # Target STRUCT_AFFECT.Type 18 activates physical ManaControl.
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+}
 $bytes = [IO.File]::ReadAllBytes($actor)
 [Array]::Copy([BitConverter]::GetBytes([int16]900), 0, $bytes, 3480 + 4 * 8, 2)
 [IO.File]::WriteAllBytes($actor, $bytes)
@@ -131,6 +266,211 @@ if ($AttackRvrGate) {
     $peerBytes = [IO.File]::ReadAllBytes($peer)
     $peerBytes[216 + 16] = 1 # The clanned observer is moved to the same position by the TCP smoke.
     [IO.File]::WriteAllBytes($peer, $peerBytes)
+}
+if ($AttackSkillGate) {
+    # Class 0 (skill books 0..23), no learned skills, and enough MP for skills 10/96; slot 0 only.
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 20] = 0
+    [Array]::Clear($bytes, 216 + 780, 4)
+    $bytes[216 + 795] = 0x80 # Signed SaveMana -128 (7.69 char): skills cost 228%; unsigned 128 would make the cost negative.
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 28, 4)
+        # Special[1]=200 (stage 1) and Special[2]=40 (stage 2): skill 10 must read Special[2].
+        [Array]::Copy([BitConverter]::GetBytes([int16]200), 0, $bytes, $score + 42, 2)
+        [Array]::Copy([BitConverter]::GetBytes([int16]40), 0, $bytes, $score + 44, 2)
+    }
+    [IO.File]::WriteAllBytes($actor, $bytes)
+}
+if ($AttackGoldenShieldCoin) {
+    # Class 3, learned skill 85, Special[2]=3, Gold 600 and MP 121; each cast costs 300 Gold/121 MP.
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 16] = 1 # Avoid the clanless RvR gate regardless of fixture spawn.
+    $bytes[216 + 20] = 3
+    [Array]::Copy([BitConverter]::GetBytes([int]600), 0, $bytes, 216 + 28, 4)
+    [Array]::Copy([BitConverter]::GetBytes([int](1 -shl 13)), 0, $bytes, 216 + 780, 4)
+    $bytes[216 + 795] = 0 # SaveMana 0 keeps the CSV ManaSpent 120 at 121 with Special[2]=3.
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 24, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]121), 0, $bytes, $score + 28, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int16]3), 0, $bytes, $score + 44, 2) # STRUCT_SCORE.Special3 == Special[2].
+    }
+    [IO.File]::WriteAllBytes($actor, $bytes)
+}
+if ($AttackManaGain) {
+    # Class 0 with skill 10 learned, SaveMana 120 (negative cost), MP 100 under MaxMp 107; slot 0 only.
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 20] = 0
+    [Array]::Copy([BitConverter]::GetBytes([int](1 -shl 10)), 0, $bytes, 216 + 780, 4)
+    $bytes[216 + 795] = 120
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]107), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]100), 0, $bytes, $score + 28, 4)
+    }
+    [IO.File]::WriteAllBytes($actor, $bytes)
+}
+if ($AttackSkillHeal -or $AttackMixedSlots) {
+    # Mortal Foema with Cura (skill 27, learned bit 3) and Special[0..1]=300: 300*2+100 = 700, capped at 638.
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 20] = 1
+    [Array]::Copy([BitConverter]::GetBytes([int](1 -shl 3)), 0, $bytes, 216 + 780, 4)
+    $bytes[216 + 795] = 0
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 28, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int16]300), 0, $bytes, $score + 40, 2)
+        [Array]::Copy([BitConverter]::GetBytes([int16]300), 0, $bytes, $score + 42, 2)
+    }
+    [Array]::Copy([BitConverter]::GetBytes([int16]2), 0, $bytes, 5600, 2) # ClassMaster MORTAL
+    [IO.File]::WriteAllBytes($actor, $bytes)
+    # Observer: HP 1000/5000, clan 0, no Equip[13] mount divisor.
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    $peerBytes[216 + 16] = 0
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $peerBytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]1000), 0, $peerBytes, $score + 24, 4)
+    }
+    [Array]::Clear($peerBytes, 216 + 140 + 13 * 8, 8)
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+}
+if ($AttackSkillHeal) {
+    # Stable non-city positions make the network smoke exercise authoritative FakeExp rather than only the town exclusion.
+    $actorBytes = [IO.File]::ReadAllBytes($actor)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $actorBytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $actorBytes, 216 + 42, 2)
+    [IO.File]::WriteAllBytes($actor, $actorBytes)
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $peerBytes, 216 + 42, 2)
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+}
+if ($AttackSummonNotice) {
+    # Foema skill 42 (Velocidade), whose 7.69 row is InstanceType 9 and bParty=1; bit 18 is skillId % 24.
+    # A shared synthetic Guild lets the target pass the common bParty gate before the Type 9 zone branch.
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 20] = 1
+    [Array]::Copy([BitConverter]::GetBytes([uint16]77), 0, $bytes, 216 + 18, 2)
+    $learnedSkills = [BitConverter]::ToUInt32($bytes, 216 + 780) -bor [uint32](1 -shl 18)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]$learnedSkills), 0, $bytes, 216 + 780, 4)
+    [IO.File]::WriteAllBytes($actor, $bytes)
+
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    [Array]::Copy([BitConverter]::GetBytes([uint16]77), 0, $peerBytes, 216 + 18, 2)
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+}
+if ($AttackDivineBlessing) {
+    foreach ($path in @($actor, $failureActor)) {
+        $bytes = [IO.File]::ReadAllBytes($path)
+        $bytes[216 + 16] = 1 # Keep all combat participants in the same clan for this non-damaging support action.
+        $bytes[216 + 20] = 3 # Divine Blessing's secondary bit is independent of the primary learned-skill tree.
+        $bytes[216 + 795] = 0 # Deterministic SaveMana for the synthetic skill-29 debit.
+        [Array]::Copy([BitConverter]::GetBytes([int16]2100), 0, $bytes, 216 + 40, 2)
+        [Array]::Copy([BitConverter]::GetBytes([int16]2100), 0, $bytes, 216 + 42, 2)
+        $mp = if ($path -eq $actor) { 500 } else { 10 }
+        foreach ($score in @((216 + 44), (216 + 92))) {
+            [Array]::Copy([BitConverter]::GetBytes([int]1000), 0, $bytes, $score + 16, 4) # MaxHp
+            [Array]::Copy([BitConverter]::GetBytes([int]1000), 0, $bytes, $score + 20, 4) # MaxMp
+            [Array]::Copy([BitConverter]::GetBytes([int]900), 0, $bytes, $score + 24, 4) # Current HP
+            [Array]::Copy([BitConverter]::GetBytes([int]$mp), 0, $bytes, $score + 28, 4) # Current MP
+        }
+        $extraOffset = 5600 + 4 # Measured MOBEXTRA.SecLearnedSkill ABI offset.
+        $secondarySkills = [BitConverter]::ToUInt32($bytes, $extraOffset) -bor [uint32]2
+        [Array]::Copy([BitConverter]::GetBytes([uint32]$secondarySkills), 0, $bytes, $extraOffset, 4)
+        [IO.File]::WriteAllBytes($path, $bytes)
+    }
+    foreach ($path in @($peer, $distantObserver)) {
+        $bytes = [IO.File]::ReadAllBytes($path)
+        $bytes[216 + 16] = 1
+        [Array]::Copy([BitConverter]::GetBytes([int16]2101), 0, $bytes, 216 + 40, 2)
+        [Array]::Copy([BitConverter]::GetBytes([int16]2100), 0, $bytes, 216 + 42, 2)
+        $extraOffset = 5600 + 4
+        $secondarySkills = [BitConverter]::ToUInt32($bytes, $extraOffset) -band ([uint32]::MaxValue -bxor [uint32]2)
+        [Array]::Copy([BitConverter]::GetBytes([uint32]$secondarySkills), 0, $bytes, $extraOffset, 4)
+        if ($path -eq $distantObserver) {
+            # Mortal newcomers are intentionally placed within five tiles of Armia regardless of SPX/SPY.
+            # Give the distant observer an ARCH fixture and Azran city selector so login resolves it outside the actor view.
+            [Array]::Copy([BitConverter]::GetBytes([int16]1), 0, $bytes, 5600, 2) # MOBEXTRA.ClassMaster = ARCH
+            $bytes[216 + 92 + 12] = ($bytes[216 + 92 + 12] -band 0x3F) -bor 0x40 # STRUCT_SCORE.Merchant selects Azran.
+        }
+        [IO.File]::WriteAllBytes($path, $bytes)
+    }
+    foreach ($identity in @(
+        @{ Path = $failureActor; Name = 'TESTE3'; Password = 'SmokeA3!' },
+        @{ Path = $distantObserver; Name = 'TESTE4'; Password = 'SmokeA4!' }
+    )) {
+        $identityBytes = [IO.File]::ReadAllBytes($identity.Path)
+        [Array]::Clear($identityBytes, 0, 28)
+        $nameBytes = [Text.Encoding]::ASCII.GetBytes($identity.Name)
+        $passwordBytes = [Text.Encoding]::ASCII.GetBytes($identity.Password)
+        [Array]::Copy($nameBytes, 0, $identityBytes, 0, $nameBytes.Length)
+        [Array]::Copy($passwordBytes, 0, $identityBytes, 16, $passwordBytes.Length)
+        [IO.File]::WriteAllBytes($identity.Path, $identityBytes)
+    }
+}
+if ($AttackMixedSlots) {
+    # Stable physical hit and close coordinates for the combined -2/-1 action.
+    $actorBytes = [IO.File]::ReadAllBytes($actor)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $actorBytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2000), 0, $actorBytes, 216 + 42, 2)
+    [Array]::Clear($actorBytes, 216 + 22, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]1001), 0, $actorBytes, 216 + 92 + 36, 2)
+    [IO.File]::WriteAllBytes($actor, $actorBytes)
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 40, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]2005), 0, $peerBytes, 216 + 42, 2)
+    [Array]::Copy([BitConverter]::GetBytes([int16]1000), 0, $peerBytes, 216 + 92 + 36, 2)
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+
+    # A third authenticated character lives outside the actor's physical range for the ordered abort case.
+    $farBytes = [IO.File]::ReadAllBytes($failureActor)
+    [Array]::Clear($farBytes, 0, 16)
+    [Array]::Copy([Text.Encoding]::ASCII.GetBytes('TESTE3'), 0, $farBytes, 0, 6)
+    [IO.File]::WriteAllBytes($failureActor, $farBytes)
+}
+if ($AttackPartySkillGate) {
+    # Learned Foema skill 29 (Recuperar), bParty=1 in 7.69. Same nonzero Guild lets this smoke
+    # exercise guildoff/guildon separately from the party fallback.
+    $bytes = [IO.File]::ReadAllBytes($actor)
+    $bytes[216 + 20] = 1
+    [Array]::Copy([BitConverter]::GetBytes([int](1 -shl 5)), 0, $bytes, 216 + 780, 4)
+    [Array]::Copy([BitConverter]::GetBytes([uint16]77), 0, $bytes, 216 + 18, 2)
+    $bytes[216 + 795] = 0
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $bytes, $score + 28, 4)
+    }
+    [IO.File]::WriteAllBytes($actor, $bytes)
+
+    $peerBytes = [IO.File]::ReadAllBytes($peer)
+    $peerBytes[216 + 16] = 0 # Clanless; the two isolated copies share only the synthetic GuildId below.
+    $peerBytes[216 + 20] = 2 # Skill 56 Evocar Condor belongs to class 2.
+    [Array]::Clear($peerBytes, 216 + 780, 4)
+    [Array]::Copy([BitConverter]::GetBytes([int](1 -shl 8)), 0, $peerBytes, 216 + 780, 4)
+    [Array]::Copy([BitConverter]::GetBytes([uint16]77), 0, $peerBytes, 216 + 18, 2)
+    foreach ($score in @((216 + 44), (216 + 92))) {
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $peerBytes, $score + 16, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]1000), 0, $peerBytes, $score + 24, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $peerBytes, $score + 20, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $peerBytes, $score + 28, 4)
+        [Array]::Copy([BitConverter]::GetBytes([int16]40), 0, $peerBytes, $score + 44, 2) # Special3 requests one summon.
+    }
+    [Array]::Clear($peerBytes, 216 + 140 + 13 * 8, 8) # No mount divisor on the target.
+    [IO.File]::WriteAllBytes($peer, $peerBytes)
+
+    # Generate one deterministic static NPC at the actor's fixture position so
+    # the TCP smoke can target an authoritative NPC without loading live data.
+    New-Item -ItemType Directory -Path $partyNpcRoot | Out-Null
+    $actorSnapshot = [IO.File]::ReadAllBytes($actor)
+    $partyNpcX = [BitConverter]::ToInt16($actorSnapshot, 216 + 40)
+    $partyNpcY = [BitConverter]::ToInt16($actorSnapshot, 216 + 42)
+    $partyNpcMob = New-Object byte[] 816 # sizeof(STRUCT_MOB)
+    [Array]::Copy([Text.Encoding]::ASCII.GetBytes('ATTACK_PARTY_NPC'), 0, $partyNpcMob, 0, 16)
+    [Array]::Copy([BitConverter]::GetBytes([int]5000), 0, $partyNpcMob, 44 + 16, 4) # CurrentScore.MaxHp
+    [IO.File]::WriteAllBytes($partyNpcTemplatePath, $partyNpcMob)
+    $npcDefinition = "# [3427]`nMinuteGenerate: 0`nMaxNumMob: 1`nMinGroup: 1`nMaxGroup: 1`nLeader: ATTACK_PARTY_NPC`nStartX: $partyNpcX`nStartY: $partyNpcY`nStartRange: 0`n"
+    [IO.File]::WriteAllText($partyNpcGenerationPath, $npcDefinition, [Text.UTF8Encoding]::new($false))
 }
 if ($TradeList) {
     $listHp = if ($TradeListNegativeHp) { -1 } else { 0 }
@@ -247,6 +587,28 @@ if ($ActionAnalysis) {
     [IO.File]::WriteAllBytes($peer, $peerBytes)
 }
 $state = Join-Path $runRoot 'autotrade.json'
+$autoDoubleConfigPath = Join-Path $runRoot 'eventAuto-smoke.json'
+if ($AutoDoubleMagicTrumpet) {
+    $scheduleNow = Get-Date
+    $scheduleStart = $scheduleNow.AddMinutes(1)
+    $scheduleEnd = $scheduleStart.AddMinutes(1)
+    $autoDoubleConfig = [ordered]@{
+        EVENT = [ordered]@{
+            DOUBLE = [ordered]@{
+                DayStart = [int]$scheduleStart.DayOfWeek
+                HourStart = $scheduleStart.Hour
+                MinStart = $scheduleStart.Minute
+                MSGStart = 'Double EXP started'
+                DayEnd = [int]$scheduleEnd.DayOfWeek
+                HourEnd = $scheduleEnd.Hour
+                MinEnd = $scheduleEnd.Minute
+                MultEXP = 3
+                MSGEnd = 'Double EXP ended'
+            }
+        }
+    }
+    [IO.File]::WriteAllText($autoDoubleConfigPath, ($autoDoubleConfig | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+}
 $heightMapPath = Join-Path $runRoot 'recall-heightmap.dat'
 $attributeMapPath = Join-Path $runRoot 'recall-attributemap.dat'
 if ($MapRecall) {
@@ -269,8 +631,35 @@ $runtimeRoot = Split-Path -Parent $Runtime
 $artifactPaths = @($Runtime, (Join-Path $runtimeRoot 'WydCdk.World.dll'), (Join-Path $runtimeRoot 'WydCdk.Protocol.dll'),
     $clientDll, (Join-Path (Split-Path -Parent $clientDll) 'WydCdk.Protocol.dll'), $PSCommandPath,
     (Join-Path $PSScriptRoot 'Complete-AutoTradeCloseEvidence.ps1'))
-if ($ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate) {
+if ($ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackPartySkillGate -or $AttackGoldenShieldCoin -or $AttackDoubleCritical -or $AttackMultiTarget -or $AttackMixedSlots -or $AttackType6Protection -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackSummonNotice -or $AttackDivineBlessing) {
     $artifactPaths += Join-Path $projectRoot 'Backup/Tools/ReferenceSources/TMProject2GlobalClient/Servidor/Server/Common/skilldata.csv'
+}
+if ($AttackDoubleCritical) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackDoubleCriticalNetwork.cs' }
+if ($AttackMultiTarget) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackMultiTargetNetwork.cs'; $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs' }
+if ($AttackMixedSlots) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackMixedSlotsNetwork.cs'; $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs' }
+if ($AttackType6Protection) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackType6ProtectionNetwork.cs'; $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs' }
+if ($AttackManaControl) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackManaControlNetwork.cs' }
+if ($AttackSkillHeal) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackSkillHealNetwork.cs' }
+if ($AttackSummonNotice) {
+    $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackSkillSummonNoticeNetwork.cs'
+    $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs'
+}
+if ($AttackDivineBlessing) {
+    $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackDivineBlessingNetwork.cs'
+    $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs'
+}
+if ($AttackPartySkillGate) {
+    $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackPartySkillGateNetwork.cs'
+    $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs'
+    $artifactPaths += @($partyNpcGenerationPath, $partyNpcTemplatePath)
+}
+if ($AttackGoldenShieldCoin) { $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AttackGoldenShieldCoinNetwork.cs'; $artifactPaths += Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs' }
+if ($AutoDoubleMagicTrumpet) {
+    $artifactPaths += @($autoDoubleConfigPath,
+        (Join-Path $projectRoot 'Server/src/WydCdk.Server/Program.cs'),
+        (Join-Path $projectRoot 'Server/src/WydCdk.Protocol/MagicTrumpetConfirmation.cs'),
+        (Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/AutoDoubleMagicTrumpetNetwork.cs'),
+        (Join-Path $projectRoot 'Server/tests/WydCdk.Client.E2E/Program.cs'))
 }
 $artifacts = @($artifactPaths | ForEach-Object { [pscustomobject]@{ Path=$_; Hash=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash } })
 $e2eExit = -1
@@ -332,8 +721,15 @@ function Save-LoggedChildOutput($ChildRecord) {
 function Start-OwnedSmokeHost([string]$Phase, [switch]$IncludeReviewRoot) {
     $arguments = @('--bind','127.0.0.1','--port','18283','--accounts-root',$accountRoot,
         '--autotrade-state',$state,'--item-data',(Join-Path $projectRoot 'Client/7670/ItemList.bin'))
-    if ($ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate) {
+    if ($DoubleModeMultiplier -ne 1) { $arguments += @('--double-mode',[string]$DoubleModeMultiplier) }
+    if ($AutoDoubleMagicTrumpet) { $arguments += @('--auto-double-config',$autoDoubleConfigPath) }
+    if ($ActionRange -or $ActionIllusionEligibility -or $ActionIllusionMana -or $AttackDeadGate -or $AttackRvrGate -or $AttackTimingGate -or $AttackSkillGate -or $AttackPartySkillGate -or $AttackGoldenShieldCoin -or $AttackDoubleCritical -or $AttackMultiTarget -or $AttackMixedSlots -or $AttackType6Protection -or $AttackManaControl -or $AttackManaGain -or $AttackSkillHeal -or $AttackSummonNotice -or $AttackDivineBlessing) {
         $arguments += @('--skill-data',(Join-Path $projectRoot 'Backup/Tools/ReferenceSources/TMProject2GlobalClient/Servidor/Server/Common/skilldata.csv'))
+    }
+    if ($AttackPartySkillGate) {
+        $arguments += @('--npc-generation',$partyNpcGenerationPath,'--npc-root',$partyNpcRoot,'--city-npcs')
+        if (!(Test-Path -LiteralPath $partySummonRoot -PathType Container)) { throw 'The 7.69 BaseSummon reference directory is missing.' }
+        $arguments += @('--base-summon',$partySummonRoot)
     }
     if ($MapRecall) { $arguments += @('--heightmap',$heightMapPath,'--attribute-map',$attributeMapPath) }
     if ($IncludeReviewRoot) { $arguments += @('--account-review-root',$accountReviewRoot) }
@@ -392,7 +788,29 @@ function Invoke-AccountAnalysisE2e([string]$AccountFile, [string]$LogPath, [swit
 }
 
 try {
-    if ($ActionAnalysis) {
+    if ($AutoDoubleMagicTrumpet) {
+        $phase = 'auto-double-magictrumpet'
+        Start-OwnedSmokeHost $phase -IncludeReviewRoot
+        $clientArgs = @('--auto-double-magic-trumpet-smoke','--host','127.0.0.1','--port','18283',
+            '--account-file',$actor,'--autotrade-close-peer-account-file',$peer,'--autotrade-state-file',$state,'--timeout-seconds','150')
+        try {
+            $ErrorActionPreference = 'Continue'
+            & dotnet $clientDll @clientArgs 2>&1 | Tee-Object -FilePath (Join-Path $runRoot 'client.log')
+            $e2eExit = $LASTEXITCODE
+        } finally { $ErrorActionPreference = 'Stop' }
+        $hostStdout = Join-Path $runRoot ($phase + '.stdout.log')
+        Stop-OwnedSmokeHost
+        $clientLog = Join-Path $runRoot 'client.log'
+        if ($e2eExit -ne 0) { throw 'AutoDouble MagicTrumpet loopback delivery assertions failed; evidence retained.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS auto-double-start-end-messagepanel-and-magictrumpet-reached-two-playing-clients$' }).Count -ne 1) {
+            throw 'AutoDouble two-player start/end notification marker is missing.'
+        }
+        if (@(Get-Content -LiteralPath $hostStdout | Where-Object { $_ -match 'AutoDouble transition: active=True, multiplier=3,' }).Count -ne 1) {
+            throw 'AutoDouble start transition was not observed by the Host.'
+        }
+        'AUTO_DOUBLE_MAGIC_TRUMPET_NETWORK_PASS'
+        $assertionsPassed = $true
+    } elseif ($ActionAnalysis) {
         $missingRootOut = Join-Path $runRoot 'missing-review-root.stdout.log'
         $missingRootErr = Join-Path $runRoot 'missing-review-root.stderr.log'
         $missingArgs = @('--bind','127.0.0.1','--port','18283','--accounts-root',$accountRoot,
@@ -468,6 +886,20 @@ try {
     if ($AttackDeadGate) { $clientArgs += '--attack-dead-gate-smoke' }
     if ($AttackRvrGate) { $clientArgs += '--attack-rvr-gate-smoke' }
     if ($AttackTimingGate) { $clientArgs += '--attack-timing-gate-smoke' }
+    if ($AttackSkillGate) { $clientArgs += '--attack-skill-gate-smoke' }
+    if ($AttackPartySkillGate) { $clientArgs += '--attack-party-skill-gate-smoke' }
+    if ($AttackGoldenShieldCoin) { $clientArgs += '--attack-golden-shield-coin-smoke' }
+    if ($AttackDoubleCritical) { $clientArgs += '--attack-double-critical-smoke' }
+    if ($AttackMultiTarget) { $clientArgs += '--attack-multi-target-smoke' }
+    if ($AttackMixedSlots) { $clientArgs += @('--attack-mixed-slots-smoke','--attack-mixed-out-of-range-account-file',$failureActor) }
+    if ($AttackType6Protection) { $clientArgs += '--attack-type6-protection-smoke' }
+    if ($AttackManaControl) { $clientArgs += '--attack-mana-control-smoke' }
+    if ($AttackManaGain) { $clientArgs += '--attack-mana-gain-smoke' }
+    if ($AttackSkillHeal) { $clientArgs += @('--attack-skill-heal-smoke','--expected-double-mode',[string]$DoubleModeMultiplier) }
+    if ($AttackSummonNotice) { $clientArgs += '--attack-summon-notice-smoke' }
+    if ($AttackDivineBlessing) {
+        $clientArgs += @('--attack-divine-blessing-smoke', '--attack-divine-blessing-distant-observer-account-file', $distantObserver)
+    }
     if ($Motion) { $clientArgs += '--motion-gate-smoke' }
     if ($MotionNegativeHp) { $clientArgs += '--motion-negative-hp' }
     if ($TradeList) { $clientArgs += '--trade-list-gate-smoke' }
@@ -491,8 +923,20 @@ try {
         & dotnet $clientDll @clientArgs 2>&1 | Tee-Object -FilePath (Join-Path $runRoot 'client.log')
         $e2eExit = $LASTEXITCODE
     } finally { $ErrorActionPreference = 'Stop' }
+    if ($AttackDivineBlessing -and $e2eExit -eq 0) {
+        $lowManaArgs = @($clientArgs)
+        $lowManaArgs[5] = $failureActor
+        $lowManaFlag = [Array]::IndexOf($lowManaArgs, '--attack-divine-blessing-smoke')
+        if ($lowManaFlag -lt 0) { throw 'Divine Blessing success flag is missing from its isolated client invocation.' }
+        $lowManaArgs[$lowManaFlag] = '--attack-divine-blessing-insufficient-mana-smoke'
+        try {
+            $ErrorActionPreference = 'Continue'
+            & dotnet $clientDll @lowManaArgs 2>&1 | Tee-Object -FilePath (Join-Path $runRoot 'client-divine-insufficient-mana.log')
+            $e2eExit = $LASTEXITCODE
+        } finally { $ErrorActionPreference = 'Stop' }
+    }
     Stop-OwnedSmokeHost
-    if ($e2eExit -ne 0) { throw 'Autotrade network assertions failed; evidence retained.' }
+    if ($e2eExit -ne 0) { throw 'Loopback network assertions failed; evidence retained.' }
     $crackLines = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Crack error: connection=\d+, points=10, type=17, total=' })
     if ($ActionRecall -or $MapRecall) {
         if ($MapRecall) {
@@ -624,9 +1068,9 @@ try {
         $allCrackLines = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Crack error:' })
         $timingLines = @($allCrackLines | Where-Object { $_ -match 'Crack error: connection=\d+, points=1, type=107, total=' })
         $backstepLines = @($allCrackLines | Where-Object { $_ -match 'Crack error: connection=\d+, points=4, type=7, total=6\.$' })
-        $rejectedTooSoon = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Rejected attack: account=.*?, skill=-1, reason=TooSoon\.$' })
-        $rejectedOutside = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Rejected attack: account=.*?, skill=-1, reason=OutsideServerWindow\.$' })
-        $rejectedInvalidSkill = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Rejected attack: account=.*?, skill=-1, reason=InvalidSkillId\.$' })
+        $rejectedTooSoon = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Rejected attack: account=.*?, skill=-2, reason=TooSoon\.$' })
+        $rejectedOutside = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Rejected attack: account=.*?, skill=-2, reason=OutsideServerWindow\.$' })
+        $rejectedInvalidSkill = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Rejected attack: account=.*?, skill=-2, reason=InvalidSkillId\.$' })
         $actorMarkers = @(Get-Content -LiteralPath (Join-Path $runRoot 'client.log') | Where-Object { $_ -match '^ATTACK_TIMING_ACTOR_ID=\d+$' })
         $peerMarkers = @(Get-Content -LiteralPath (Join-Path $runRoot 'client.log') | Where-Object { $_ -match '^ATTACK_TIMING_PEER_ID=\d+$' })
         if ($timingLines.Count -ne 3 -or $backstepLines.Count -ne 1 -or $allCrackLines.Count -ne 4 -or
@@ -648,6 +1092,172 @@ try {
             throw 'Attack timing wire smoke completion marker is missing.'
         }
         'ATTACK_TIMING_GATE_NETWORK_PASS'
+    } elseif ($AttackSkillGate) {
+        $allCrackLines = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Crack error:' })
+        $clientLog = Join-Path $runRoot 'client.log'
+        $actorMarkers = @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_SKILL_ACTOR_ID=\d+$' })
+        if ($actorMarkers.Count -ne 1) { throw 'Attack skill gate actor identity missing.' }
+        $actorId = [int]($actorMarkers[0] -replace '^ATTACK_SKILL_ACTOR_ID=', '')
+        if ($allCrackLines.Count -ne 2 -or
+            $allCrackLines[0] -notmatch ('^Crack error: connection=' + $actorId + ', points=8, type=10, total=8\.$') -or
+            $allCrackLines[1] -notmatch ('^Crack error: connection=' + $actorId + ', points=208, type=1, total=216\.$')) {
+            throw 'Unlearned skills must add exactly 8/type10 then 208/type1 to the actor without other crack points.'
+        }
+        foreach ($expected in @('skill=30, reason=WrongClass', 'skill=9, reason=PassiveSkill', 'skill=97, reason=MortarNotPorted', 'skill=-2, reason=InvalidSkillId')) {
+            if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match ('^Rejected attack: account=.*?, ' + [regex]::Escape($expected) + '\.$') }).Count -ne 1) {
+                throw "Attack skill gate rejection '$expected' is absent or duplicated."
+            }
+        }
+        foreach ($skill in @(-1, 10, 96, 103)) {
+            if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match ('^Attack mana accepted: account=.*?, skill=' + $skill + ', ') }).Count -ne 1) {
+                throw "Accepted attack skill=$skill did not reach the relay exactly once."
+            }
+        }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 4) { throw 'Unexpected additional attack rejection.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_SKILL_MP=5000,4946,4810,4810$' }).Count -ne 1) { throw 'Stage-2 Special[2]=40 with signed SaveMana -128 did not give 5000,4946,4810,4810.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-skill-gate physical-silent-rejects-nonterminal-learned-crack$' }).Count -ne 1) {
+            throw 'Attack skill gate E2E pass marker is missing.'
+        }
+        'ATTACK_SKILL_GATE_NETWORK_PASS'
+    } elseif ($AttackPartySkillGate) {
+        $allCrackLines = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Crack error:' })
+        $clientLog = Join-Path $runRoot 'client.log'
+        $actorMarkers = @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_PARTY_ACTOR_ID=\d+$' })
+        $peerMarkers = @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_PARTY_PEER_ID=\d+$' })
+        $npcMarkers = @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_PARTY_NPC_ID=20000$' })
+        $summonMarkers = @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_PARTY_SUMMON_ID=\d+$' })
+        $blockedTargets = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Ignored party-ineligible skill target: account=.*?, skill=29, slot=0\.$' })
+        $acceptedSummonTargets = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Skill attack produced no damage: account=.*?, skill=29, targetIndex=0, target=\d+, reason=UnsupportedSkillType\.$' })
+        $summonGeneration = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Skill attack resolved: account=.*?, skill=56, targetIndex=0, target=\d+, .*summons=1, summonResult=Created\.$' })
+        $acceptedInvites = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Party invite sent: leader=\d+, target=\d+\.$' })
+        $acceptedParties = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Party accepted: leader=\d+, member=\d+, size=2\.$' })
+        if ($actorMarkers.Count -ne 1 -or $peerMarkers.Count -ne 1 -or $npcMarkers.Count -ne 1 -or $summonMarkers.Count -ne 1 -or
+            $summonGeneration.Count -ne 1 -or $allCrackLines.Count -ne 4 -or
+            $allCrackLines[0] -notmatch '^Crack error: connection=\d+, points=10, type=27, total=10\.$' -or
+            $allCrackLines[1] -notmatch '^Crack error: connection=\d+, points=10, type=27, total=20\.$' -or
+            $allCrackLines[2] -notmatch '^Crack error: connection=\d+, points=10, type=27, total=30\.$' -or
+            $allCrackLines[3] -notmatch '^Crack error: connection=\d+, points=10, type=27, total=40\.$' -or
+            $blockedTargets.Count -ne 4 -or $acceptedSummonTargets.Count -ne 1 -or $acceptedInvites.Count -ne 1 -or $acceptedParties.Count -ne 1) {
+            throw 'Party skill smoke expected NPC/player/summon outsider 10/type27 rejections, one unchanged eligible summon target, and one party formation.'
+        }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-party-skill guilddisable-player-npc-summon-party-eligibility-without-summon-effect$' }).Count -ne 1) {
+            throw 'Party skill wire smoke pass marker is missing.'
+        }
+        'ATTACK_PARTY_SKILL_GATE_NETWORK_PASS'
+    } elseif ($AttackGoldenShieldCoin) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Crack error:' }).Count -ne 0) { throw 'Golden Shield fee smoke added crack points.' }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Attack mana accepted: account=.*?, skill=85, ' }).Count -ne 1) { throw 'The first Golden Shield attack did not reach the accepted relay.' }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack: account=.*?, skill=85, reason=InsufficientMana\.$' }).Count -ne 1) { throw 'The second Golden Shield cast did not stop once at the mana gate.' }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 1) { throw 'Golden Shield smoke had an unexpected attack rejection.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-golden-shield coin-update-before-mana private-relay-insufficient-coin-silent$' }).Count -ne 1) {
+            throw 'Golden Shield coin/mana ordering network pass marker is missing.'
+        }
+        'ATTACK_GOLDEN_SHIELD_COIN_NETWORK_PASS'
+    } elseif ($AttackDoubleCritical) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 0) { throw 'DoubleCritical smoke had rejected physical attacks.' }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Physical attack resolved:' }).Count -ne 25) { throw 'DoubleCritical smoke did not resolve all 25 physical attack packets.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_DOUBLE_CRITICAL_PROCS=[1-9]\d*/25$' }).Count -ne 1 -or
+            @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-double-critical authoritative-two-target-slot-and-secondary-damage$' }).Count -ne 1) {
+            throw 'DoubleCritical wire smoke did not prove a server-generated second-slot proc.'
+        }
+        'ATTACK_DOUBLE_CRITICAL_NETWORK_PASS'
+    } elseif ($AttackType6Protection) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 0 -or
+            @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Physical attack resolved:' }).Count -ne 2 -or
+            @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-type6-class0-two-physical-slots-zero-damage-hp-unchanged$' }).Count -ne 1) {
+            throw 'Type 6 protection smoke did not prove zero damage in both physical slots without a target HP mutation.'
+        }
+        'ATTACK_TYPE6_PROTECTION_NETWORK_PASS'
+    } elseif ($AttackMixedSlots) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-mixed-physical-skill-one-batch-one-relay-order-and-invalid-skill-marker$' }).Count -ne 1) {
+            throw 'Mixed-slot Attack E2E pass marker is missing.'
+        }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_MIXED_SLOT_REVERSED=\d+,-638;\d+,\d+;skillSlot=0;physicalSlot=1;progress=321$' }).Count -ne 1) {
+            throw 'Skill-first wire slot alignment or shared Progress marker is missing.'
+        }
+        $slotOutcomeLines = @(Get-Content -LiteralPath $stdout | Where-Object {
+            $_ -match '^Physical attack resolved: .*slot=\d+,' -or $_ -match '^Skill attack resolved: .*targetIndex=\d+,'
+        })
+        $expectedSlotOrder = @(
+            '^Physical attack resolved: .*slot=0,',
+            '^Skill attack resolved: .*targetIndex=1,',
+            '^Skill attack resolved: .*targetIndex=0,',
+            '^Physical attack resolved: .*slot=1,',
+            '^Physical attack resolved: .*slot=0,',
+            '^Skill attack resolved: .*targetIndex=0,'
+        )
+        if ($slotOutcomeLines.Count -ne $expectedSlotOrder.Count) { throw 'Mixed-slot Host did not emit exactly six ordered physical/skill outcomes.' }
+        for ($index = 0; $index -lt $expectedSlotOrder.Count; $index++) {
+            if ($slotOutcomeLines[$index] -notmatch $expectedSlotOrder[$index]) {
+                throw "Mixed-slot Host outcome order diverged at wire result $index."
+            }
+        }
+        'ATTACK_MIXED_SLOTS_NETWORK_PASS'
+    } elseif ($AttackMultiTarget) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-multi-target-13-slot-indexed-authoritative-relay$' }).Count -ne 1) {
+            throw 'Multi-target Attack E2E pass marker is missing.'
+        }
+        'ATTACK_MULTI_TARGET_NETWORK_PASS'
+    } elseif ($AttackManaControl) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 0) { throw 'ManaControl smoke had rejected physical attacks.' }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Physical attack resolved:' }).Count -ne 25) { throw 'ManaControl smoke did not resolve all 25 physical attack packets.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_MANA_CONTROL_STATE=mp:\d+->\d+,hp:\d+->\d+,doublecritical:[1-9]\d*/25$' }).Count -ne 1 -or
+            @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-mana-control-affect18-mp-drain-55-divisor-doublecritical-slot-override$' }).Count -ne 1) {
+            throw 'ManaControl wire smoke did not prove MP drain, 55-divisor damage and the DoubleCritical slot override.'
+        }
+        'ATTACK_MANA_CONTROL_NETWORK_PASS'
+    } elseif ($AttackManaGain) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'Crack error:' }).Count -ne 0) { throw 'Learned negative-cost skill gained crack points.' }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 0) { throw 'Negative-cost skill attack was rejected.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_MANA_MP=104,107$' }).Count -ne 1 -or
+            @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-mana-signed-savemana-gain-capped-at-maxmp$' }).Count -ne 1) {
+            throw 'Negative ManaSpent gain/MaxMp cap markers are missing.'
+        }
+        'ATTACK_MANA_GAIN_NETWORK_PASS'
+    } elseif ($AttackDivineBlessing) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        $lowManaLog = Join-Path $runRoot 'client-divine-insufficient-mana.log'
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-divine-blessing-child-before-parent-captured-view-authoritative-hp-mp-exp$' }).Count -ne 1 -or
+            @(Get-Content -LiteralPath $lowManaLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-divine-blessing-insufficient-mana-private-correction-before-parent-no-child-no-heal$' }).Count -ne 1) {
+            throw 'Divine Blessing child/view/parent or insufficient-mana ordering assertion is missing.'
+        }
+        'ATTACK_DIVINE_BLESSING_NETWORK_PASS'
+    } elseif ($AttackSkillHeal) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        $expectedHealFakeExp = [Math]::Min(200, 79 * $DoubleModeMultiplier)
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_HEAL_TARGET_POS=2105,2170$' }).Count -ne 1 -or
+            @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match ('^ATTACK_HEAL_FAKE_EXP=' + $expectedHealFakeExp + '$') }).Count -ne 1) {
+            throw "Non-city heal smoke did not relay FakeExp=$expectedHealFakeExp at the stable target position."
+        }
+        $targetLimitLines = @(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Crack error: .*points=10, type=28, total=(10|20)\.$' })
+        if ($targetLimitLines.Count -ne 2 -or $targetLimitLines[0] -notmatch 'total=10\.$' -or $targetLimitLines[1] -notmatch 'total=20\.$') {
+            throw 'Excess skill slots did not add exactly two ordered 10/type28 increments.'
+        }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Crack error:' -and $_ -notmatch 'points=10, type=28, total=(10|20)\.$' }).Count -ne 0) {
+            throw 'The learned heal smoke added an unrelated crack error.'
+        }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match '^Rejected attack:' }).Count -ne 0) { throw 'Heal attack was rejected.' }
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^ATTACK_HEAL_PEER_HP=1638$' }).Count -ne 1 -or
+            @(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-skill-heal type28-excess-slots-preserved-mortal-cap-638-relay-and-hp-sync$' }).Count -ne 1) {
+            throw 'Mortal heal cap 638 markers are missing.'
+        }
+        'ATTACK_SKILL_HEAL_NETWORK_PASS'
+    } elseif ($AttackSummonNotice) {
+        $clientLog = Join-Path $runRoot 'client.log'
+        if (@(Get-Content -LiteralPath $clientLog | Where-Object { $_ -match '^CLIENT_E2E_PASS attack-summon-private-zone-notice-terminal-return-no-relay$' }).Count -ne 1) {
+            throw 'InstanceType 9 private-notice smoke completion marker is missing.'
+        }
+        if (@(Get-Content -LiteralPath $stdout | Where-Object { $_ -match 'reason=SummonZoneBlocked' }).Count -ne 1) {
+            throw 'Host did not record the blocked InstanceType 9 zone result.'
+        }
+        'ATTACK_SUMMON_NOTICE_NETWORK_PASS'
     } elseif ($DeadQuit) {
         if ($crackLines.Count -ne 1 -or $crackLines[0] -notmatch 'total=10\.$') { throw 'Dead QuitTrade crack increment missing or duplicated.' }
     } else {
@@ -659,8 +1269,10 @@ try {
     }
 }
 finally {
-    $manifest = [pscustomobject]@{ Version=1; Mode=$(if ($MapRecall) { 'movement-map-recall' } elseif ($ActionRecall) { 'action-origin-recall' } elseif ($ActionAnalysis) { 'action-account-analysis' } elseif ($ActionIllusionMana) { 'action-illusion-mana' } elseif ($ActionIllusionEligibility) { 'action-illusion-eligibility' } elseif ($ActionRange) { 'action-range' } elseif ($ActionNegativeHp) { 'action-negative-hp' } elseif ($Action) { 'action' } elseif ($TradeListNegativeHp) { 'trade-list-negative-hp' } elseif ($TradeList) { 'trade-list' } elseif ($MotionNegativeHp) { 'motion-negative-hp' } elseif ($Motion) { 'motion' } elseif ($AttackTimingGate) { 'attack-timing-gate' } elseif ($AttackRvrGate) { 'attack-rvr-gate' } elseif ($AttackDeadGate) { 'attack-dead-gate' } elseif ($DeadQuit) { 'dead-quit' } else { 'autotrade-close' }); ExitCode=$e2eExit; AssertionsPassed=$assertionsPassed; Artifacts=$artifacts; OriginalFixtureHashes=$hashes; ServerLogs=@($serverLogs) }
+$mode = if ($AutoDoubleMagicTrumpet) { 'auto-double-magictrumpet' } elseif ($AttackDivineBlessing) { 'attack-divine-blessing' } elseif ($AttackSummonNotice) { 'attack-summon-notice' } elseif ($AttackMixedSlots) { 'attack-mixed-slots' } elseif ($MapRecall) { 'movement-map-recall' } elseif ($ActionRecall) { 'action-origin-recall' } elseif ($ActionAnalysis) { 'action-account-analysis' } elseif ($ActionIllusionMana) { 'action-illusion-mana' } elseif ($ActionIllusionEligibility) { 'action-illusion-eligibility' } elseif ($ActionRange) { 'action-range' } elseif ($ActionNegativeHp) { 'action-negative-hp' } elseif ($Action) { 'action' } elseif ($TradeListNegativeHp) { 'trade-list-negative-hp' } elseif ($TradeList) { 'trade-list' } elseif ($MotionNegativeHp) { 'motion-negative-hp' } elseif ($Motion) { 'motion' } elseif ($AttackPartySkillGate) { 'attack-party-skill-gate' } elseif ($AttackGoldenShieldCoin) { 'attack-golden-shield-coin' } elseif ($AttackType6Protection) { 'attack-type6-protection' } elseif ($AttackManaControl) { 'attack-mana-control' } elseif ($AttackDoubleCritical) { 'attack-double-critical' } elseif ($AttackTimingGate) { 'attack-timing-gate' } elseif ($AttackSkillGate) { 'attack-skill-gate' } elseif ($AttackManaGain) { 'attack-mana-gain' } elseif ($AttackSkillHeal) { 'attack-skill-heal' } elseif ($AttackRvrGate) { 'attack-rvr-gate' } elseif ($AttackDeadGate) { 'attack-dead-gate' } elseif ($DeadQuit) { 'dead-quit' } else { 'autotrade-close' }
+$manifest = [pscustomobject]@{ Version=1; Mode=$mode; ExitCode=$e2eExit; AssertionsPassed=$assertionsPassed; Artifacts=$artifacts; OriginalFixtureHashes=$hashes; ServerLogs=@($serverLogs) }
     if ($AttackDeadGate) { $manifest.Mode = 'attack-dead-gate' }
+    if ($AttackMultiTarget) { $manifest.Mode = 'attack-multi-target' }
     try {
         Complete-AutoTradeCloseEvidence -ManifestPath (Join-Path $runRoot 'evidence.json') -Manifest $manifest -Cleanup {
             if ($script:ownedHost) { Stop-OwnedSmokeHost }

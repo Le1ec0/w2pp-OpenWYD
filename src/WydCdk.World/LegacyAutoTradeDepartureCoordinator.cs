@@ -12,6 +12,29 @@ public static class LegacyAutoTradeDepartureCoordinator
         Func<CancellationToken, ValueTask> saveCharacter,
         Func<LegacyAutoTradeSnapshot?, CancellationToken, ValueTask> removeState,
         LegacyFrameCodec codec, uint clientTick, byte keywordIndex, CancellationToken cancellationToken = default)
+        => await DepartCoreAsync(connectionId, world, book, (_, ct) => saveCharacter(ct), removeState,
+            codec, clientTick, keywordIndex, accountOperationGate: null, cancellationToken);
+
+    public static async ValueTask<LegacyAutoTradeDeparturePlan> DepartAsync(int connectionId, WorldHub world, LegacyAutoTradeBook book,
+        Func<LegacyAccountOperationLease?, CancellationToken, ValueTask> saveCharacter,
+        Func<LegacyAutoTradeSnapshot?, CancellationToken, ValueTask> removeState,
+        LegacyFrameCodec codec, uint clientTick, byte keywordIndex,
+        LegacyAccountOperationGate accountOperationGate,
+        CancellationToken cancellationToken = default)
+        => await DepartCoreAsync(connectionId, world, book, saveCharacter, removeState,
+            codec, clientTick, keywordIndex, accountOperationGate, cancellationToken);
+
+    private static async ValueTask<LegacyAutoTradeDeparturePlan> DepartCoreAsync(
+        int connectionId,
+        WorldHub world,
+        LegacyAutoTradeBook book,
+        Func<LegacyAccountOperationLease?, CancellationToken, ValueTask> saveCharacter,
+        Func<LegacyAutoTradeSnapshot?, CancellationToken, ValueTask> removeState,
+        LegacyFrameCodec codec,
+        uint clientTick,
+        byte keywordIndex,
+        LegacyAccountOperationGate? accountOperationGate,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(world); ArgumentNullException.ThrowIfNull(book);
         ArgumentNullException.ThrowIfNull(saveCharacter); ArgumentNullException.ThrowIfNull(removeState);
@@ -20,7 +43,22 @@ public static class LegacyAutoTradeDepartureCoordinator
         bool IsCurrent() => identity is null ? world.CaptureTradeCloseIdentity(connectionId) is null : world.IsTradeCloseIdentityCurrent(connectionId, identity);
         await using var lease = await book.AcquireAsync([connectionId], cancellationToken);
         if (!IsCurrent()) return new([], [], null);
-        await saveCharacter(cancellationToken);
+        LegacyAccountOperationLease? accountLease = null;
+        var saveAllowed = true;
+        if (accountOperationGate is not null)
+        {
+            try
+            {
+                accountLease = await AcquireStablePartyLeaseAsync(accountOperationGate, world, connectionId, cancellationToken);
+            }
+            catch (LegacyAccountRecoveryRequiredException)
+            {
+                saveAllowed = false;
+            }
+        }
+        await using var accountLeaseScope = accountLease;
+        if (saveAllowed)
+            await saveCharacter(accountLease, cancellationToken);
         if (!IsCurrent()) return new([], [], null);
         var shop = book.TryGet(lease, connectionId, out var handle) && handle is not null && book.TryStop(lease, handle)
             ? handle.Snapshot : null;
@@ -37,6 +75,25 @@ public static class LegacyAutoTradeDepartureCoordinator
         }
         world.Leave(connectionId, out var summons, out var trade);
         return new(frames, summons, trade);
+    }
+
+    private static async ValueTask<LegacyAccountOperationLease?> AcquireStablePartyLeaseAsync(
+        LegacyAccountOperationGate gate,
+        WorldHub world,
+        int connectionId,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var accounts = world.GetPartyMemberAccountNames(connectionId);
+            if (accounts.Count == 0)
+                return null;
+            var lease = await gate.AcquireAsync(accounts, cancellationToken);
+            var currentAccounts = world.GetPartyMemberAccountNames(connectionId);
+            if (currentAccounts.All(account => lease.Covers(gate, account)))
+                return lease;
+            await lease.DisposeAsync();
+        }
     }
 }
 

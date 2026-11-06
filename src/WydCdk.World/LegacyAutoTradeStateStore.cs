@@ -80,7 +80,7 @@ public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILega
     private readonly string path;
     private readonly string journalPath;
     private readonly string? accountRoot;
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim gate;
     private readonly JsonSerializerOptions jsonOptions = new()
     {
         WriteIndented = true,
@@ -97,6 +97,9 @@ public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILega
         this.path = Path.GetFullPath(path);
         journalPath = this.path + ".journal";
         this.accountRoot = string.IsNullOrWhiteSpace(accountRoot) ? null : Path.GetFullPath(accountRoot);
+        gate = this.accountRoot is null
+            ? new SemaphoreSlim(1, 1)
+            : LegacyAccountFileStateGate.ForRoot(this.accountRoot);
         WorldKey = new LegacyServerModePolicy(mode).WorldKey;
     }
 
@@ -324,9 +327,6 @@ public sealed class LegacyAutoTradeFileStore : ILegacyAutoTradeStateStore, ILega
             request.BuyerMobExtra.AsMemory().CopyTo(updatedBuyerBlob.AsMemory(
                 LegacyAccountSnapshot.MobExtraOffset + (request.BuyerCharacterSlot * LegacyAccountSnapshot.MobExtraStride),
                 LegacyAccountSnapshot.MobExtraStride));
-            BinaryPrimitives.WriteInt32LittleEndian(
-                updatedBuyerBlob.AsSpan(LegacyAccountSnapshot.AccountCoinOffset),
-                request.Plan.BuyerCoin);
 
             var updatedSellerBlob = sellerBlob.ToArray();
             updatedSellerBlob.AsSpan(

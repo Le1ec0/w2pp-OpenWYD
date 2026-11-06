@@ -49,6 +49,31 @@ public readonly record struct LegacyCurrentResistanceModifierStage(
 /// <summary>Run addition and MOB.Rsv bits contributed by active Haste affects.</summary>
 public readonly record struct LegacyHasteAffectStage(int RunAddition, ushort RsvFlagsToAdd);
 
+/// <summary>RSV_FROST contributed by an active Type=27 affect and a Type=101 weapon.</summary>
+public readonly record struct LegacyIceEnchantAffectStage(ushort RsvFlagsToAdd);
+
+/// <summary>RSV_DRAIN contributed by an active Type=36 affect and a Type=41 weapon.</summary>
+public readonly record struct LegacyDrainAffectStage(ushort RsvFlagsToAdd);
+
+/// <summary>ForceDamage added by active Type=37 affects during score composition.</summary>
+public readonly record struct LegacySpectralLinkForceDamageStage(int ForceDamageAddition);
+
+/// <summary>Damage addition from learned Hunter Proficiency with the source equipment gates.</summary>
+public readonly record struct LegacyHunterProficiencyStage(bool IsActive, int DamageAddition);
+
+/// <summary>ArmorClass multiplier and Critical addition from learned Transknight Armadura Critica.</summary>
+public readonly record struct LegacyArmorCriticalStage(bool IsActive, int ArmorClass, int CriticalAddition);
+
+/// <summary>Damage addition from learned Transknight Noção de Combate.</summary>
+public readonly record struct LegacyCombatAwarenessStage(bool IsActive, int DamageAddition);
+
+/// <summary>Score contributions from the selected 7.69 Hunter class passives.</summary>
+public readonly record struct LegacyHunterClassPassivesStage(
+    int AggressivenessDamageAddition,
+    int LightningStormDamageAddition,
+    int ShadowProtectionArmorClassAddition,
+    int HunterVisionCriticalAddition);
+
 /// <summary>Attack/run/intelligence deltas contributed by Type=1 Holy Touch affects.</summary>
 public readonly record struct LegacyHolyTouchAffectStage(int RunDelta, int AttackDelta, int IntelligenceDelta);
 
@@ -92,13 +117,16 @@ public readonly record struct LegacyDexterityAffectStage(short Dexterity);
 /// <summary>Sequential ArmorClass value after Type=12 percentage reductions.</summary>
 public readonly record struct LegacyArmorClassReductionAffectStage(int ArmorClass);
 
+/// <summary>Final ArmorClass after the selected ordered 7.69 affect passes.</summary>
+public readonly record struct LegacyCurrentScoreArmorClassAffectCompositionStage(int ArmorClass);
+
 /// <summary>Attack speed and intelligence deltas contributed by Type=7 Frozen Blade affects.</summary>
 public readonly record struct LegacyFrozenBladeAffectStage(int AttackSpeedDelta, int IntelligenceDelta);
 
 /// <summary>Damage reduction contributed by active Type=10 Weaken affects.</summary>
 public readonly record struct LegacyWeakenAffectStage(int DamageReduction);
 
-/// <summary>Sequential ArmorClass reduction and damage multiplier adjustment from Type=21 Meditation affects.</summary>
+/// <summary>ArmorClass reduction and damage multiplier adjustment from Type=21 Meditation affects.</summary>
 public readonly record struct LegacyMeditationAffectStage(
     int ArmorClassReduction,
     int DamageMultiplierAdjustment);
@@ -108,6 +136,43 @@ public readonly record struct LegacyGoldenShieldAffectStage(int ArmorClassAdditi
 
 /// <summary>ArmorClass addition contributed by active Type=25 Elemental Protection affects.</summary>
 public readonly record struct LegacyElementalProtectionArmorClassAffectStage(int ArmorClassAddition);
+
+/// <summary>Sequential MaxHp and MaxMp values after Type=35 Vigor affects.</summary>
+public readonly record struct LegacyVigorAffectStage(int MaxHp, int MaxMp);
+
+/// <summary>
+/// Score values after the active 7.69 Type=8 PvP-jewel bits in the CurrentScore loop.
+/// Resistance and attack-only jewel effects remain in their separate stages.
+/// </summary>
+public readonly record struct LegacyPvpJewelAffectStage(
+    int MaxHp,
+    int MaxMp,
+    int ArmorClass,
+    int Damage,
+    int Magic,
+    int LearnedSkills,
+    ushort RsvFlagsToAdd);
+
+/// <summary>
+/// Combined score projection for the selected Type=4, Type=34, Type=35, and
+/// Type=8 branches, evaluated in affect-slot order. Other Type=8 branches
+/// remain in their attack or resistance stages.
+/// </summary>
+public readonly record struct LegacyCurrentScoreAffectCompositionStage(
+    int MaxHp,
+    int MaxMp,
+    int ArmorClass,
+    int Damage,
+    int Magic,
+    int LearnedSkills,
+    ushort RsvFlagsToAdd);
+
+/// <summary>
+/// Sequential score values after active Type=34 Divina affects in the 7.69 score loop.
+/// Magic is the local accumulator; each affect derives its increment from the unchanged
+/// source MOB.Magic value, and the later final Magic clamp is not part of this stage.
+/// </summary>
+public readonly record struct LegacyDivinaAffectStage(int MaxHp, int MaxMp, int Damage, int Magic);
 
 /// <summary>Attack/run bonuses selected by the last valid transformation affect.</summary>
 public readonly record struct LegacyTransformationSpeedAffectStage(
@@ -157,14 +222,16 @@ public readonly record struct LegacyTransformationAffectCompositionStage(
     LegacyCurrentResistanceModifierStage Resistance);
 
 /// <summary>
-/// Ordered snapshot of the score blocks that already have isolated ports.
-/// Unsupported score blocks remain visible as gaps instead of being silently
-/// approximated; the snapshots are immutable and no MOB is mutated here.
+/// Snapshot of the score blocks that already have isolated ports. Earlier AC
+/// fields are stage-local diagnostics; AfterScoreAffects carries the canonical
+/// selected two-pass AC. Unsupported blocks remain visible as gaps, and no MOB
+/// is mutated here.
 /// </summary>
 public readonly record struct LegacyCurrentScoreCoordinatorStage(
     LegacyMobCombatState BaseAndEquipment,
     LegacyCurrentScoreAbilityStage Abilities,
     LegacyMobCombatState AfterSpecial,
+    LegacyMeditationAffectStage Meditation,
     LegacyTransformationAffectCompositionStage Transformation,
     LegacyMagicShieldAffectStage MagicShield,
     LegacyMobCombatState AfterTransformation,
@@ -187,6 +254,16 @@ public readonly record struct LegacyCurrentScoreCoordinatorStage(
     LegacyMobCombatState AfterDexterity,
     LegacyArmorClassReductionAffectStage ArmorClassReduction,
     LegacyMobCombatState AfterArmorClassReduction,
+    LegacyCurrentScoreAffectCompositionStage ScoreAffects,
+    LegacyMobCombatState AfterScoreAffects,
+    LegacyHunterClassPassivesStage HunterClassPassives,
+    LegacyMobCombatState AfterHunterClassPassives,
+    LegacyHunterProficiencyStage HunterProficiency,
+    LegacyMobCombatState AfterHunterProficiency,
+    LegacyArmorCriticalStage ArmorCritical,
+    LegacyMobCombatState AfterArmorCritical,
+    LegacyCombatAwarenessStage CombatAwareness,
+    LegacyMobCombatState AfterCombatAwareness,
     LegacyMobCombatState AfterSoul,
     LegacyMobCombatState AfterKibita,
     LegacyHasteAffectStage Haste,
@@ -198,23 +275,67 @@ public static class LegacyCurrentScoreMath
 {
     public const int TargetMaximumMagic = 190_000_000;
     public const int TargetMaximumLevel = 399;
+    public const int TargetMaximumHp = 100_000;
+    public const int TargetMaximumMp = 100_000;
+    public const int TargetMaximumDamage = 1_000_000;
     public const ushort HasteRsvFlag = 0x0020;
+    public const ushort FrostRsvFlag = 0x0001;
+    public const ushort DrainRsvFlag = 0x0002;
+    public const ushort ParryRsvFlag = 0x0008;
+    public const ushort HideRsvFlag = 0x0010;
+    public const ushort BlockRsvFlag = 0x0080;
 
+    private const int TargetMaximumType4Hp = 400_000;
     private const int AffectTypeOffset = 0;
     private const int AffectSizeInBytes = 8;
     private const int AffectCount = 32;
     private const byte SoulAffectType = 29;
+    private const byte Type4ScoreAffectType = 4;
+    private const byte DivinaAffectType = 34;
+    private const byte VigorAffectType = 35;
+    private const byte ManaToHealthAffectType = 38;
+    private const byte SoulSwapAffectType = 42;
     private const byte PursuitAffectType = 3;
-    private const byte PvpResistanceAffectType = 8;
+    private const byte PvpJewelAffectType = 8;
+    private const ushort PvpJewelVisionRsvFlag = 0x0004;
+    private const int PvpJewelPrecisionLearnedSkillFlag = 1 << 28;
     private const byte ElementalProtectionAffectType = 25;
     private const byte TransformationAffectType = 16;
+    private const byte SamaritanAffectType = 24;
+    private const byte MagicShieldAffectType = 11;
+    private const byte ArmorClassReductionAffectType = 12;
     private const byte HasteAffectType = 2;
+    private const byte IceEnchantAffectType = 27;
+    private const byte DrainAffectType = 36;
+    private const byte SpectralLinkAffectType = 37;
+    private const byte BlockAffectType = 19;
+    private const byte EvasionAffectType = 26;
+    private const byte InvisibilityAffectType = 28;
     private const byte FrozenBladeAffectType = 7;
     private const byte WeakenAffectType = 10;
     private const byte MeditationAffectType = 21;
     private const byte GoldenShieldAffectType = 31;
     private const int BeastMasterClass = 2;
     private const int MagicWeaponClass = 1;
+    private const int HunterClass = 3;
+    private const int HunterAggressivenessSkillId = 2;
+    private const int HunterLightningStormSkillId = 7;
+    private const int HunterVisionSkillId = 18;
+    private const int HunterShadowProtectionSkillId = 22;
+    private const int HunterProficiencySkillId = 82;
+    private const int ClassSkillBookSize = 24;
+    private const uint HunterAggressivenessLearnedFlag = 1u << HunterAggressivenessSkillId;
+    private const uint HunterLightningStormLearnedFlag = 1u << HunterLightningStormSkillId;
+    private const uint HunterVisionLearnedFlag = 1u << HunterVisionSkillId;
+    private const uint HunterShadowProtectionLearnedFlag = 1u << HunterShadowProtectionSkillId;
+    private const uint HunterProficiencyLearnedFlag = 1u << (HunterProficiencySkillId % ClassSkillBookSize);
+    private const int HunterClawWeaponUnique = 43;
+    private const int HunterBowWeaponUnique = 42;
+    private const int TransknightClass = 0;
+    private const int ArmorCriticalSkillId = 15;
+    private const uint ArmorCriticalLearnedFlag = 1u << ArmorCriticalSkillId;
+    private const int CombatAwarenessSkillId = 14;
+    private const uint CombatAwarenessLearnedFlag = 1u << CombatAwarenessSkillId;
 
     /// <summary>
     /// Applies the target 7.69 terminal clamps after all score modifiers have
@@ -288,6 +409,99 @@ public static class LegacyCurrentScoreMath
         }
 
         return new LegacyHasteAffectStage(runAddition, rsvFlags);
+    }
+
+    /// <summary>
+    /// Applies the target 7.69 Type=27 RSV_FROST rule. The source requires the
+    /// character's weapon in equipment slot 6 to have EF_WTYPE 101.
+    /// </summary>
+    public static LegacyIceEnchantAffectStage CalculateIceEnchantAffectStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        ReadOnlySpan<LegacyItem> equipment,
+        LegacyItemDataTable itemData)
+    {
+        ArgumentNullException.ThrowIfNull(itemData);
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var hasIceEnchant = false;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            if (affectSnapshot[index * AffectSizeInBytes + AffectTypeOffset] == IceEnchantAffectType)
+            {
+                hasIceEnchant = true;
+                break;
+            }
+        }
+
+        if (!hasIceEnchant)
+            return new LegacyIceEnchantAffectStage(0);
+        if (equipment.Length <= 6)
+            throw new ArgumentException("Type 27 score projection requires equipment slot 6.", nameof(equipment));
+
+        var rsvFlags = hasIceEnchant &&
+            itemData.GetItemAbility(equipment[6], LegacyItemEffect.WeaponType) == 101
+                ? FrostRsvFlag
+                : (ushort)0;
+        return new LegacyIceEnchantAffectStage(rsvFlags);
+    }
+
+    /// <summary>
+    /// Applies the target 7.69 Type=36 RSV_DRAIN rule. The source requires the
+    /// character's weapon in equipment slot 6 to have EF_WTYPE 41; W2PP omits
+    /// this gate.
+    /// </summary>
+    public static LegacyDrainAffectStage CalculateDrainAffectStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        ReadOnlySpan<LegacyItem> equipment,
+        LegacyItemDataTable itemData)
+    {
+        ArgumentNullException.ThrowIfNull(itemData);
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var hasDrain = false;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            if (affectSnapshot[index * AffectSizeInBytes + AffectTypeOffset] == DrainAffectType)
+            {
+                hasDrain = true;
+                break;
+            }
+        }
+
+        if (!hasDrain)
+            return new LegacyDrainAffectStage(0);
+        if (equipment.Length <= 6)
+            throw new ArgumentException("Type 36 score projection requires equipment slot 6.", nameof(equipment));
+
+        var rsvFlags = itemData.GetItemAbility(equipment[6], LegacyItemEffect.WeaponType) == 41
+            ? DrainRsvFlag
+            : (ushort)0;
+        return new LegacyDrainAffectStage(rsvFlags);
+    }
+
+    /// <summary>
+    /// Adds the source 7.69 Type=37 contribution to the separate ForceDamage
+    /// accumulator. Its local <c>special2</c> is CurrentScore.Special3; the
+    /// legacy loop adds it once per active Type=37 record after attack damage
+    /// is calculated.
+    /// </summary>
+    public static LegacySpectralLinkForceDamageStage CalculateSpectralLinkForceDamageStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int currentSpecial3)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var forceDamageAddition = 0;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            if (affectSnapshot[index * AffectSizeInBytes + AffectTypeOffset] == SpectralLinkAffectType)
+                forceDamageAddition = unchecked(forceDamageAddition + currentSpecial3);
+        }
+
+        return new LegacySpectralLinkForceDamageStage(forceDamageAddition);
     }
 
     /// <summary>
@@ -598,6 +812,84 @@ public static class LegacyCurrentScoreMath
     }
 
     /// <summary>
+    /// Applies the selected 7.69 ArmorClass branches in their source pass order.
+    /// The first slot pass handles Type=24, 31, 25, 16, 11, and 21; the later pass
+    /// interleaves Type=12 and Type=8 bit 4 by affect slot. Other unported AC
+    /// branches remain outside this selected projection.
+    /// </summary>
+    public static LegacyCurrentScoreArmorClassAffectCompositionStage CalculateCurrentScoreArmorClassAffectCompositionStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int startingArmorClass,
+        int characterClass,
+        int learnedSkills)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var armorClass = startingArmorClass;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            var type = affectSnapshot[offset + AffectTypeOffset];
+            var value = affectSnapshot[offset + 1];
+            switch (type)
+            {
+                case SamaritanAffectType:
+                    var samaritanAddition = unchecked(armorClass / 4 + value);
+                    armorClass = unchecked(armorClass + samaritanAddition);
+                    break;
+                case GoldenShieldAffectType:
+                    var goldenShieldLevel = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                        affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+                    armorClass = unchecked(armorClass + goldenShieldLevel / 2 + value);
+                    break;
+                case ElementalProtectionAffectType:
+                    ApplyElementalProtectionArmorClassAffect(affectSnapshot, offset, ref armorClass);
+                    break;
+                case TransformationAffectType:
+                    _ = ApplyTransformationArmorClassAffect(
+                        affectSnapshot,
+                        offset,
+                        characterClass,
+                        learnedSkills,
+                        ref armorClass);
+                    break;
+                case MagicShieldAffectType:
+                    var magicShieldLevel = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                        affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+                    armorClass = unchecked(armorClass + magicShieldLevel / 5 + value);
+                    break;
+                case MeditationAffectType:
+                    armorClass = unchecked(armorClass - CalculateMeditationArmorClassReductionAffect(affectSnapshot, offset));
+                    break;
+            }
+        }
+
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            var type = affectSnapshot[offset + AffectTypeOffset];
+            if (type == ArmorClassReductionAffectType)
+            {
+                var factor = (100 - affectSnapshot[offset + 1]) / 100.0f;
+                armorClass = (int)(armorClass * factor);
+            }
+            else if (type == PvpJewelAffectType)
+            {
+                var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                    affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+                if ((level & (1 << 4)) == 0)
+                    continue;
+
+                var addition = unchecked(armorClass * 10 / 100);
+                armorClass = unchecked(armorClass + addition);
+            }
+        }
+
+        return new LegacyCurrentScoreArmorClassAffectCompositionStage(armorClass);
+    }
+
+    /// <summary>
     /// Calculates the attack speed and intelligence deltas from active Type=7
     /// Frozen Blade affects in the 7.69 CurrentScore loop. The attack slow applies
     /// unconditionally, while the intelligence reduction applies only when the head
@@ -660,8 +952,9 @@ public static class LegacyCurrentScoreMath
     /// <summary>
     /// Calculates the sequential armor class reduction and damage multiplier adjustment
     /// contributed by active Type=21 Meditation affects in the 7.69 CurrentScore loop.
-    /// ArmorClass reduction matches W2PP (Level / 3 + 10), while the multiplier addition
-    /// diverges: target 7.69 uses Level / 25 + Value whereas W2PP uses Level / 10 + Value.
+    /// ArmorClass reduction matches W2PP (Level / 3 + 10) and is shared with the ordered
+    /// coordinator AC pass. The multiplier addition is consumed by the login projection using
+    /// target 7.69's Level / 25 + Value formula; W2PP diverges with Level / 10 + Value.
     /// </summary>
     public static LegacyMeditationAffectStage CalculateMeditationAffectStage(
         ReadOnlySpan<byte> affectSnapshot)
@@ -681,7 +974,7 @@ public static class LegacyCurrentScoreMath
             var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
                 affectSnapshot.Slice(offset + 2, sizeof(ushort)));
 
-            var add = level / 3 + 10;
+            var add = CalculateMeditationArmorClassReductionAffect(affectSnapshot, offset);
             armorClassReduction = unchecked(armorClassReduction + add);
 
             var tv = level / 25 + value;
@@ -694,7 +987,8 @@ public static class LegacyCurrentScoreMath
     /// <summary>
     /// Calculates the armor class addition contributed by active Type=31 Golden Shield
     /// affects in the 7.69 CurrentScore loop. Target 7.69 adds Level / 2 + Value.
-    /// This affect is not present in the W2PP buff loop.
+    /// W2PP uses the same formula in its single slot-order buff loop; 7.69 applies
+    /// this stage in a separate pass.
     /// </summary>
     public static LegacyGoldenShieldAffectStage CalculateGoldenShieldAffectStage(
         ReadOnlySpan<byte> affectSnapshot)
@@ -738,18 +1032,264 @@ public static class LegacyCurrentScoreMath
             if (affectSnapshot[offset + AffectTypeOffset] != ElementalProtectionAffectType)
                 continue;
 
-            var value = affectSnapshot[offset + 1];
-            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
-                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
-
-            var def = level / 2 + value;
-            if (level >= 255)
-                def += 30;
-
-            armorClassAddition = unchecked(armorClassAddition + def);
+            ApplyElementalProtectionArmorClassAffect(affectSnapshot, offset, ref armorClassAddition);
         }
 
         return new LegacyElementalProtectionArmorClassAffectStage(armorClassAddition);
+    }
+
+    private static void ApplyElementalProtectionArmorClassAffect(
+        ReadOnlySpan<byte> affectSnapshot,
+        int offset,
+        ref int armorClass)
+    {
+        var value = affectSnapshot[offset + 1];
+        var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+            affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+        var addition = level / 2 + value;
+        if (level >= 255)
+            addition += 30;
+
+        armorClass = unchecked(armorClass + addition);
+    }
+
+    private static int CalculateMeditationArmorClassReductionAffect(
+        ReadOnlySpan<byte> affectSnapshot,
+        int offset)
+    {
+        var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+            affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+        return unchecked(level / 3 + 10);
+    }
+
+    /// <summary>
+    /// Applies active Type=35 Vigor affects in slot order using the common 7.69 score-loop formula.
+    /// MaxHp gains 15 percent and MaxMp gains 7 percent, with integer truncation after multiplying;
+    /// each affect observes the prior result. The 7.69 branch compares the increment to 100,000
+    /// and assigns that value only when the increment reaches the threshold, so the result can exceed it.
+    /// </summary>
+    public static LegacyVigorAffectStage CalculateVigorAffectStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int startingMaxHp,
+        int startingMaxMp)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var maxHp = startingMaxHp;
+        var maxMp = startingMaxMp;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != VigorAffectType)
+                continue;
+
+            ApplyVigorAffect(ref maxHp, ref maxMp);
+        }
+
+        return new LegacyVigorAffectStage(maxHp, maxMp);
+    }
+
+    /// <summary>
+    /// Applies active Type=34 Divina affects in slot order using the 7.69 score-loop formula.
+    /// HP, MP and Damage are updated sequentially; each Magic increment uses sourceMobMagic,
+    /// while startingMagic is the local accumulator. This stage intentionally leaves the
+    /// later final scalar clamp to its own score block.
+    /// </summary>
+    public static LegacyDivinaAffectStage CalculateDivinaAffectStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int startingMaxHp,
+        int startingMaxMp,
+        int startingDamage,
+        int sourceMobMagic,
+        int startingMagic)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var maxHp = startingMaxHp;
+        var maxMp = startingMaxMp;
+        var damage = startingDamage;
+        var magic = startingMagic;
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != DivinaAffectType)
+                continue;
+
+            ApplyDivinaAffect(ref maxHp, ref maxMp, ref damage, sourceMobMagic, ref magic);
+        }
+
+        return new LegacyDivinaAffectStage(maxHp, maxMp, damage, magic);
+    }
+
+    /// <summary>
+    /// Applies the remaining score-loop bits from active Type=8 PvP-jewel affects in 7.69
+    /// slot order. Bit 1 resistance is handled by ApplyResistanceAffectStage; bits 0 and 3
+    /// belong to attack processing. Magic increments use the unchanged source MOB.Magic.
+    /// </summary>
+    public static LegacyPvpJewelAffectStage CalculatePvpJewelAffectStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int startingMaxHp,
+        int startingMaxMp,
+        int startingArmorClass,
+        int startingDamage,
+        int sourceMobMagic,
+        int startingMagic,
+        int startingLearnedSkills)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var maxHp = startingMaxHp;
+        var maxMp = startingMaxMp;
+        var armorClass = startingArmorClass;
+        var damage = startingDamage;
+        var magic = startingMagic;
+        var learnedSkills = startingLearnedSkills;
+        ushort rsvFlagsToAdd = 0;
+
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            if (affectSnapshot[offset + AffectTypeOffset] != PvpJewelAffectType)
+                continue;
+
+            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+            ApplyPvpJewelAffect(
+                level,
+                sourceMobMagic,
+                ref maxHp,
+                ref maxMp,
+                ref armorClass,
+                ref damage,
+                ref magic,
+                ref learnedSkills,
+                ref rsvFlagsToAdd,
+                includeArmorClass: true);
+        }
+
+        return new LegacyPvpJewelAffectStage(
+            maxHp,
+            maxMp,
+            armorClass,
+            damage,
+            magic,
+            learnedSkills,
+            rsvFlagsToAdd);
+    }
+
+    /// <summary>
+    /// Evaluates the selected score-changing branches while scanning the 32
+    /// affect records once. Unsupported Type=8 bits stay in their dedicated
+    /// attack/resistance paths, and unrelated affect types are skipped.
+    /// </summary>
+    public static LegacyCurrentScoreAffectCompositionStage CalculateCurrentScoreAffectCompositionStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int startingMaxHp,
+        int startingMaxMp,
+        int startingArmorClass,
+        int startingDamage,
+        int sourceMobMagic,
+        int startingMagic,
+        int startingLearnedSkills,
+        int currentLevel = 0,
+        int classMaster = LegacyAccountSnapshot.ClassMasterMortal)
+        => CalculateCurrentScoreAffectCompositionStage(
+            affectSnapshot,
+            startingMaxHp,
+            startingMaxMp,
+            startingArmorClass,
+            startingDamage,
+            sourceMobMagic,
+            startingMagic,
+            startingLearnedSkills,
+            includePvpJewelArmorClass: true,
+            currentLevel,
+            classMaster);
+
+    private static LegacyCurrentScoreAffectCompositionStage CalculateCurrentScoreAffectCompositionStage(
+        ReadOnlySpan<byte> affectSnapshot,
+        int startingMaxHp,
+        int startingMaxMp,
+        int startingArmorClass,
+        int startingDamage,
+        int sourceMobMagic,
+        int startingMagic,
+        int startingLearnedSkills,
+        bool includePvpJewelArmorClass,
+        int currentLevel,
+        int classMaster)
+    {
+        if (affectSnapshot.Length < AffectCount * AffectSizeInBytes)
+            throw new ArgumentException("A legacy affect snapshot must contain 32 eight-byte records.", nameof(affectSnapshot));
+
+        var maxHp = startingMaxHp;
+        var maxMp = startingMaxMp;
+        var armorClass = startingArmorClass;
+        var damage = startingDamage;
+        var magic = startingMagic;
+        var learnedSkills = startingLearnedSkills;
+        ushort rsvFlagsToAdd = 0;
+
+        for (var index = 0; index < AffectCount; index++)
+        {
+            var offset = index * AffectSizeInBytes;
+            switch (affectSnapshot[offset + AffectTypeOffset])
+            {
+                case Type4ScoreAffectType:
+                    ApplyType4Affect(ref maxHp, ref maxMp, ref damage, sourceMobMagic, ref magic);
+                    break;
+                case DivinaAffectType:
+                    ApplyDivinaAffect(ref maxHp, ref maxMp, ref damage, sourceMobMagic, ref magic);
+                    break;
+                case VigorAffectType:
+                    ApplyVigorAffect(ref maxHp, ref maxMp);
+                    break;
+                case ManaToHealthAffectType:
+                    ApplyManaToHealthAffect(ref maxHp, ref maxMp);
+                    break;
+                case SoulSwapAffectType:
+                    var affectLevel = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                        affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+                    ApplySoulSwapAffect(ref maxHp, ref maxMp, currentLevel, classMaster, affectLevel);
+                    break;
+                case PvpJewelAffectType:
+                    var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                        affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+                    ApplyPvpJewelAffect(
+                        level,
+                        sourceMobMagic,
+                        ref maxHp,
+                        ref maxMp,
+                        ref armorClass,
+                        ref damage,
+                        ref magic,
+                        ref learnedSkills,
+                        ref rsvFlagsToAdd,
+                        includeArmorClass: includePvpJewelArmorClass);
+                    break;
+                case BlockAffectType:
+                    rsvFlagsToAdd |= BlockRsvFlag;
+                    break;
+                case EvasionAffectType:
+                    rsvFlagsToAdd |= ParryRsvFlag;
+                    break;
+                case InvisibilityAffectType:
+                    rsvFlagsToAdd |= HideRsvFlag;
+                    break;
+            }
+        }
+
+        return new LegacyCurrentScoreAffectCompositionStage(
+            maxHp,
+            maxMp,
+            armorClass,
+            damage,
+            magic,
+            learnedSkills,
+            rsvFlagsToAdd);
     }
 
     /// <summary>
@@ -883,42 +1423,57 @@ public static class LegacyCurrentScoreMath
             if (affectSnapshot[offset + AffectTypeOffset] != TransformationAffectType)
                 continue;
 
-            var transformation = affectSnapshot[offset + 1] - 1;
-            if (transformation < 0 || transformation >= 5 || characterClass != BeastMasterClass)
-                continue;
-
-            var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
-                affectSnapshot.Slice(offset + 2, sizeof(ushort)));
-            var armorClassAddition = transformation switch
-            {
-                0 => 0,
-                1 => 0,
-                2 when (learnedSkills & 0x200000) != 0 => 5,
-                2 => 0,
-                3 => 20,
-                4 => 10,
-                _ => throw new InvalidOperationException("Transformation index passed its source gate."),
-            };
-            var (baseMinimum, baseMaximum) = transformation switch
-            {
-                0 => (95, 105),
-                1 => (100, 110),
-                2 => (105, 115),
-                3 => (110, 125),
-                4 => (110, 120),
-                _ => throw new InvalidOperationException("Transformation index passed its source gate."),
-            };
-
-            var minimum = armorClassAddition + baseMinimum;
-            var delta = baseMaximum - baseMinimum;
-            var multiplier = delta * level / 200 + minimum;
-            armorClass = unchecked(armorClass * multiplier) / 100;
-            if (transformation == 0)
-                armorClass = unchecked(armorClass + 5);
-            hasActiveTransformation = true;
+            hasActiveTransformation |= ApplyTransformationArmorClassAffect(
+                affectSnapshot,
+                offset,
+                characterClass,
+                learnedSkills,
+                ref armorClass);
         }
 
         return new LegacyTransformationArmorClassAffectStage(hasActiveTransformation, armorClass);
+    }
+
+    private static bool ApplyTransformationArmorClassAffect(
+        ReadOnlySpan<byte> affectSnapshot,
+        int offset,
+        int characterClass,
+        int learnedSkills,
+        ref int armorClass)
+    {
+        var transformation = affectSnapshot[offset + 1] - 1;
+        if (transformation < 0 || transformation >= 5 || characterClass != BeastMasterClass)
+            return false;
+
+        var level = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+            affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+        var armorClassAddition = transformation switch
+        {
+            0 => 0,
+            1 => 0,
+            2 when (learnedSkills & 0x200000) != 0 => 5,
+            2 => 0,
+            3 => 20,
+            4 => 10,
+            _ => throw new InvalidOperationException("Transformation index passed its source gate."),
+        };
+        var (baseMinimum, baseMaximum) = transformation switch
+        {
+            0 => (95, 105),
+            1 => (100, 110),
+            2 => (105, 115),
+            3 => (110, 125),
+            4 => (110, 120),
+            _ => throw new InvalidOperationException("Transformation index passed its source gate."),
+        };
+
+        var minimum = armorClassAddition + baseMinimum;
+        var delta = baseMaximum - baseMinimum;
+        var multiplier = delta * level / 200 + minimum;
+        armorClass = unchecked(armorClass * multiplier) / 100;
+        if (transformation == 0)
+            armorClass = unchecked(armorClass + 5);
+        return true;
     }
 
     /// <summary>
@@ -1123,13 +1678,13 @@ public static class LegacyCurrentScoreMath
     }
 
     /// <summary>
-    /// Coordinates the currently audited score blocks in the order observed in
-    /// the 7.69 score routine: base/equipment, Special, Type=16, Type=11,
-    /// Type=9, Type=15, Type=5, Type=6, Type=12, Haste, Soul,
-    /// and the late Kibita override. The transformation AC/MaxHp/Damage outputs
-    /// are projected into an intermediate score so Soul observes their result;
-    /// Critical, Attack/Run, equipment and multiplier deltas remain explicit in
-    /// their stage snapshots because the final commit blocks are not ported.
+    /// Coordinates the currently audited score blocks. Final AC is recomposed
+    /// in two 7.69 passes (Type=24/31/25/16/11/21, then Type=12/Type=8 bit 4) and is
+    /// carried by AfterScoreAffects; earlier AC fields remain stage-local
+    /// diagnostics. Other selected Type=4/34/35/8 score branches are projected
+    /// before Soul. Critical, Attack/Run, equipment and multiplier deltas remain
+    /// explicit in their stage snapshots because their final commit blocks are
+    /// not ported.
     /// </summary>
     public static LegacyCurrentScoreCoordinatorStage CalculateCurrentScoreCoordinatorStage(
         LegacyMobCombatState mob,
@@ -1152,6 +1707,12 @@ public static class LegacyCurrentScoreMath
         var baseAndEquipment = RebuildBaseAndEquipmentScore(mob, equipment, itemData);
         var abilities = CalculateAbilityStage(baseAndEquipment, equipment, itemData);
         var afterSpecial = ApplySpecialAbilityStage(baseAndEquipment, equipment, itemData);
+        var meditation = CalculateMeditationAffectStage(affectSnapshot);
+        var armorClassAffects = CalculateCurrentScoreArmorClassAffectCompositionStage(
+            affectSnapshot,
+            afterSpecial.CurrentScore.Ac,
+            afterSpecial.CharacterClass,
+            unchecked((int)afterSpecial.LearnedSkill));
         var transformation = CalculateTransformationAffectCompositionStage(
             affectSnapshot,
             equipment[0],
@@ -1178,6 +1739,8 @@ public static class LegacyCurrentScoreMath
             },
         };
         var haste = CalculateHasteAffectStage(affectSnapshot);
+        var iceEnchant = CalculateIceEnchantAffectStage(affectSnapshot, equipment, itemData);
+        var drain = CalculateDrainAffectStage(affectSnapshot, equipment, itemData);
         var afterMagicShield = afterTransformation with
         {
             CurrentScore = afterTransformation.CurrentScore with
@@ -1279,7 +1842,69 @@ public static class LegacyCurrentScoreMath
                 Ac = armorClassReduction.ArmorClass,
             },
         };
-        var afterSoul = ApplySoulHealthManaStage(afterArmorClassReduction, affectSnapshot, classMaster, soul, isSummon);
+        var scoreAffects = CalculateCurrentScoreAffectCompositionStage(
+            affectSnapshot,
+            afterArmorClassReduction.CurrentScore.MaxHp,
+            afterArmorClassReduction.CurrentScore.MaxMp,
+            armorClassAffects.ArmorClass,
+            afterArmorClassReduction.CurrentScore.Damage,
+            mob.Magic,
+            abilities.Magic,
+            unchecked((int)afterArmorClassReduction.LearnedSkill),
+            includePvpJewelArmorClass: false,
+            currentLevel: afterArmorClassReduction.CurrentScore.Level,
+            classMaster: classMaster);
+        var afterScoreAffects = afterArmorClassReduction with
+        {
+            Magic = scoreAffects.Magic,
+            LearnedSkill = unchecked((uint)scoreAffects.LearnedSkills),
+            Rsv = (ushort)(afterArmorClassReduction.Rsv | scoreAffects.RsvFlagsToAdd | iceEnchant.RsvFlagsToAdd | drain.RsvFlagsToAdd),
+            CurrentScore = afterArmorClassReduction.CurrentScore with
+            {
+                MaxHp = scoreAffects.MaxHp,
+                MaxMp = scoreAffects.MaxMp,
+                Ac = scoreAffects.ArmorClass,
+                Damage = scoreAffects.Damage,
+            },
+        };
+        var hunterClassPassives = CalculateHunterClassPassivesStage(afterScoreAffects, equipment, itemData);
+        var afterHunterClassPassives = afterScoreAffects with
+        {
+            CurrentScore = afterScoreAffects.CurrentScore with
+            {
+                Damage = unchecked(afterScoreAffects.CurrentScore.Damage +
+                    hunterClassPassives.AggressivenessDamageAddition +
+                    hunterClassPassives.LightningStormDamageAddition),
+                Ac = unchecked(afterScoreAffects.CurrentScore.Ac + hunterClassPassives.ShadowProtectionArmorClassAddition),
+            },
+        };
+        var hunterProficiency = CalculateHunterProficiencyStage(afterSpecial, equipment);
+        var afterHunterProficiency = afterHunterClassPassives with
+        {
+            CurrentScore = afterHunterClassPassives.CurrentScore with
+            {
+                Damage = unchecked(afterHunterClassPassives.CurrentScore.Damage + hunterProficiency.DamageAddition),
+            },
+        };
+        var armorCritical = CalculateArmorCriticalStage(
+            afterSpecial,
+            afterHunterProficiency.CurrentScore.Ac);
+        var afterArmorCritical = afterHunterProficiency with
+        {
+            CurrentScore = afterHunterProficiency.CurrentScore with
+            {
+                Ac = armorCritical.ArmorClass,
+            },
+        };
+        var combatAwareness = CalculateCombatAwarenessStage(afterArmorCritical);
+        var afterCombatAwareness = afterArmorCritical with
+        {
+            CurrentScore = afterArmorCritical.CurrentScore with
+            {
+                Damage = unchecked(afterArmorCritical.CurrentScore.Damage + combatAwareness.DamageAddition),
+            },
+        };
+        var afterSoul = ApplySoulHealthManaStage(afterCombatAwareness, affectSnapshot, classMaster, soul, isSummon);
         var afterKibita = ApplyKibitaSoulStage(afterSoul, affectSnapshot, classMaster, isSummon);
         var resistance = ApplyResistanceClamps(
             transformation.Resistance.Holy,
@@ -1291,6 +1916,7 @@ public static class LegacyCurrentScoreMath
             baseAndEquipment,
             abilities,
             afterSpecial,
+            meditation,
             transformation,
             magicShield,
             afterTransformation,
@@ -1313,11 +1939,108 @@ public static class LegacyCurrentScoreMath
             afterDexterity,
             armorClassReduction,
             afterArmorClassReduction,
+            scoreAffects,
+            afterScoreAffects,
+            hunterClassPassives,
+            afterHunterClassPassives,
+            hunterProficiency,
+            afterHunterProficiency,
+            armorCritical,
+            afterArmorCritical,
+            combatAwareness,
+            afterCombatAwareness,
             afterSoul,
             afterKibita,
             haste,
             resistance,
-            (ushort)(afterKibita.Rsv | haste.RsvFlagsToAdd));
+            (ushort)(afterKibita.Rsv | scoreAffects.RsvFlagsToAdd | haste.RsvFlagsToAdd | iceEnchant.RsvFlagsToAdd | drain.RsvFlagsToAdd));
+    }
+
+    /// <summary>
+    /// Ports the 7.69 Hunter Proficiency class pass. The source writes 1 &lt;&lt; 82
+    /// against a 32-bit LearnedSkill field, which is undefined C++; the class-skill
+    /// gate uses skillIndex % 24, so the clean port uses that same deterministic bit.
+    /// </summary>
+    public static LegacyHunterProficiencyStage CalculateHunterProficiencyStage(
+        LegacyMobCombatState mob,
+        ReadOnlySpan<LegacyItem> equipment)
+    {
+        ArgumentNullException.ThrowIfNull(mob);
+        if (equipment.Length <= 7)
+            throw new ArgumentException("Hunter Proficiency requires equipment slots 6 and 7.", nameof(equipment));
+
+        var isActive = mob.CharacterClass == HunterClass &&
+            (mob.LearnedSkill & HunterProficiencyLearnedFlag) != 0 &&
+            equipment[6].Index != 0 && equipment[7].Index == 0;
+        return new LegacyHunterProficiencyStage(
+            isActive,
+            isActive ? mob.CurrentScore.Special2 + 12 : 0);
+    }
+
+    /// <summary>
+    /// Ports the 7.69 Hunter class passives using the already-composed score
+    /// specials and ItemList weapon unique values.
+    /// </summary>
+    public static LegacyHunterClassPassivesStage CalculateHunterClassPassivesStage(
+        LegacyMobCombatState mob,
+        ReadOnlySpan<LegacyItem> equipment,
+        LegacyItemDataTable itemData)
+    {
+        ArgumentNullException.ThrowIfNull(mob);
+        ArgumentNullException.ThrowIfNull(itemData);
+        if (equipment.Length <= 7)
+            throw new ArgumentException("Hunter class passives require equipment slots 6 and 7.", nameof(equipment));
+
+        if (mob.CharacterClass != HunterClass)
+            return default;
+
+        var weaponIndex = equipment[6].Index;
+        var weaponUnique = weaponIndex != 0 ? itemData[weaponIndex]?.Unique ?? 0 : 0;
+        var aggressivenessActive =
+            (mob.LearnedSkill & HunterAggressivenessLearnedFlag) != 0 &&
+            weaponUnique is HunterClawWeaponUnique or HunterBowWeaponUnique;
+        var lightningStormActive = (mob.LearnedSkill & HunterLightningStormLearnedFlag) != 0;
+        var shadowProtectionActive =
+            (mob.LearnedSkill & HunterShadowProtectionLearnedFlag) != 0 &&
+            weaponUnique == HunterClawWeaponUnique;
+        var hunterVisionActive = (mob.LearnedSkill & HunterVisionLearnedFlag) != 0;
+
+        return new LegacyHunterClassPassivesStage(
+            aggressivenessActive ? mob.CurrentScore.Special2 + 10 : 0,
+            lightningStormActive ? unchecked(mob.CurrentScore.Special2 * 2) : 0,
+            shadowProtectionActive ? (mob.CurrentScore.Special4 / 3) + 10 : 0,
+            hunterVisionActive ? mob.CurrentScore.Dexterity / 50 : 0);
+    }
+
+    /// <summary>
+    /// Ports the 7.69 Transknight passive: learned skill 15 multiplies the
+    /// current ArmorClass by 1.1f and adds 25 to Critical.
+    /// </summary>
+    public static LegacyArmorCriticalStage CalculateArmorCriticalStage(
+        LegacyMobCombatState mob,
+        int armorClass)
+    {
+        ArgumentNullException.ThrowIfNull(mob);
+        var isActive = mob.CharacterClass == TransknightClass &&
+            (mob.LearnedSkill & ArmorCriticalLearnedFlag) != 0;
+        return new LegacyArmorCriticalStage(
+            isActive,
+            isActive ? (int)(armorClass * 1.1f) : armorClass,
+            isActive ? 25 : 0);
+    }
+
+    /// <summary>
+    /// Ports the 7.69 Transknight passive: learned skill 14 adds half of the
+    /// composed CurrentScore.Special3 to damage using integer division.
+    /// </summary>
+    public static LegacyCombatAwarenessStage CalculateCombatAwarenessStage(LegacyMobCombatState mob)
+    {
+        ArgumentNullException.ThrowIfNull(mob);
+        var isActive = mob.CharacterClass == TransknightClass &&
+            (mob.LearnedSkill & CombatAwarenessLearnedFlag) != 0;
+        return new LegacyCombatAwarenessStage(
+            isActive,
+            isActive ? mob.CurrentScore.Special3 / 2 : 0);
     }
 
     /// <summary>
@@ -1390,7 +2113,7 @@ public static class LegacyCurrentScoreMath
                 fire += addition;
                 ice += addition;
             }
-            else if (type == PvpResistanceAffectType && (level & (1 << 1)) != 0)
+            else if (type == PvpJewelAffectType && (level & (1 << 1)) != 0)
             {
                 holy += 25;
                 thunder += 25;
@@ -1650,6 +2373,155 @@ public static class LegacyCurrentScoreMath
         var maxMp = unchecked(score.MaxMp + itemInt * 2);
 
         return mob with { CurrentScore = score with { MaxMp = maxMp } };
+    }
+
+    private static void ApplyVigorAffect(ref int maxHp, ref int maxMp)
+    {
+        var hpAddition = unchecked(maxHp * 15 / 100);
+        maxHp = hpAddition >= TargetMaximumHp
+            ? TargetMaximumHp
+            : unchecked(maxHp + hpAddition);
+
+        var mpAddition = unchecked(maxMp * 7 / 100);
+        maxMp = mpAddition >= TargetMaximumMp
+            ? TargetMaximumMp
+            : unchecked(maxMp + mpAddition);
+    }
+
+    private static void ApplyManaToHealthAffect(ref int maxHp, ref int maxMp)
+    {
+        var mana = maxMp / 2;
+        maxHp = unchecked(maxHp + mana);
+        maxMp = unchecked(maxMp - mana);
+    }
+
+    private static void ApplySoulSwapAffect(
+        ref int maxHp,
+        ref int maxMp,
+        int currentLevel,
+        int classMaster,
+        int affectLevel)
+    {
+        var effectiveLevel = classMaster is LegacyAccountSnapshot.ClassMasterArch or LegacyAccountSnapshot.ClassMasterMortal
+            ? currentLevel
+            : unchecked(currentLevel + TargetMaximumLevel);
+        var mana = unchecked(maxMp / 5 + (effectiveLevel + affectLevel) / 2);
+        maxHp = unchecked(maxHp + mana);
+        maxMp = unchecked(maxMp - mana);
+    }
+
+    private static void ApplyType4Affect(
+        ref int maxHp,
+        ref int maxMp,
+        ref int damage,
+        int sourceMobMagic,
+        ref int magic)
+    {
+        var hpAddition = unchecked(maxHp * 15 / 100);
+        maxHp = hpAddition >= TargetMaximumType4Hp
+            ? TargetMaximumType4Hp
+            : unchecked(maxHp + hpAddition);
+
+        var mpAddition = unchecked(maxMp * 10 / 100);
+        maxMp = mpAddition >= TargetMaximumMp
+            ? TargetMaximumMp
+            : unchecked(maxMp + mpAddition);
+
+        var damageAddition = unchecked(damage * 30 / 100);
+        damage = damageAddition >= TargetMaximumDamage
+            ? TargetMaximumDamage
+            : unchecked(damage + damageAddition);
+
+        var magicAddition = unchecked(sourceMobMagic * 20 / 100);
+        magic = magicAddition >= TargetMaximumMagic
+            ? TargetMaximumMagic
+            : unchecked(magic + magicAddition);
+    }
+
+    private static void ApplyDivinaAffect(
+        ref int maxHp,
+        ref int maxMp,
+        ref int damage,
+        int sourceMobMagic,
+        ref int magic)
+    {
+        var totalHp = unchecked(maxHp * 20 / 100);
+        maxHp = totalHp >= TargetMaximumHp
+            ? TargetMaximumHp
+            : unchecked(maxHp + totalHp);
+
+        var totalMp = unchecked(maxMp * 20 / 100);
+        maxMp = totalMp >= TargetMaximumMp
+            ? TargetMaximumMp
+            : unchecked(maxMp + totalMp);
+
+        var totalDamage = unchecked(damage * 10 / 100);
+        damage = totalDamage >= TargetMaximumDamage
+            ? TargetMaximumDamage
+            : unchecked(damage + totalDamage);
+
+        var totalMagic = unchecked(sourceMobMagic * 10 / 100);
+        magic = totalMagic >= TargetMaximumMagic
+            ? TargetMaximumMagic
+            : unchecked(magic + totalMagic);
+    }
+
+    private static void ApplyPvpJewelAffect(
+        ushort level,
+        int sourceMobMagic,
+        ref int maxHp,
+        ref int maxMp,
+        ref int armorClass,
+        ref int damage,
+        ref int magic,
+        ref int learnedSkills,
+        ref ushort rsvFlagsToAdd,
+        bool includeArmorClass)
+    {
+        if ((level & (1 << 2)) != 0)
+            rsvFlagsToAdd |= PvpJewelVisionRsvFlag;
+
+        if ((level & (1 << 4)) != 0)
+        {
+            var hpAddition = unchecked(maxHp * 10 / 100);
+            var armorClassAddition = unchecked(armorClass * 10 / 100);
+            if (maxHp >= TargetMaximumHp)
+                hpAddition = 0;
+
+            maxHp = unchecked(maxHp + hpAddition);
+            if (includeArmorClass)
+                armorClass = unchecked(armorClass + armorClassAddition);
+        }
+
+        if ((level & (1 << 5)) != 0)
+        {
+            var hpAddition = unchecked(maxHp * 10 / 100);
+            var damageAddition = unchecked(damage * 20 / 100);
+            var magicAddition = unchecked(sourceMobMagic * 5 / 100);
+            if (maxHp >= TargetMaximumHp)
+                hpAddition = 0;
+
+            maxHp = unchecked(maxHp + hpAddition);
+            damage = damageAddition >= TargetMaximumDamage
+                ? TargetMaximumDamage
+                : unchecked(damage + damageAddition);
+            magic = magicAddition >= TargetMaximumMagic
+                ? TargetMaximumMagic
+                : unchecked(magic + magicAddition);
+        }
+
+        if ((level & (1 << 6)) != 0)
+            learnedSkills |= PvpJewelPrecisionLearnedSkillFlag;
+
+        if ((level & (1 << 7)) != 0)
+        {
+            var mana = maxMp / 2;
+            var totalHp = unchecked(maxHp + mana);
+            maxHp = totalHp >= TargetMaximumHp
+                ? TargetMaximumHp
+                : unchecked(maxHp + mana);
+            maxMp = mana >= TargetMaximumMp ? TargetMaximumMp : mana;
+        }
     }
 
     private static void ApplyMortalSoul(byte soul, ref int intelligence, ref int constitution, ref int maxHp, ref int maxMp)

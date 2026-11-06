@@ -97,6 +97,42 @@
         "resistance": [0, 100, 0, 100],
         "rsvWithAffects": 0
       }
+    },
+    {
+      "name": "interleaved-type-4-8-34-35-38-composition-before-soul",
+      "characterClass": 2,
+      "learnedSkill": 256,
+      "sourceMagic": 1001,
+      "classMaster": 2,
+      "soul": 0,
+      "isSummon": false,
+      "resist": [10, 20, 30, 40],
+      "headItem": { "index": 7, "effect1": 0, "value1": 0, "effect2": 0, "value2": 0, "effect3": 0, "value3": 0 },
+      "baseScore": { "level": 100, "ac": 101, "damage": 101, "attackRun": 0, "maxHp": 102, "maxMp": 101, "hp": 90, "mp": 80, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "currentScore": { "level": 100, "ac": 101, "damage": 101, "attackRun": 0, "maxHp": 102, "maxMp": 101, "hp": 85, "mp": 75, "strength": 10, "intelligence": 20, "dexterity": 30, "constitution": 40, "special1": 0, "special2": 0, "special3": 0, "special4": 0 },
+      "records": [
+        { "slot": 0, "type": 8, "value": 0, "level": 16 },
+        { "slot": 1, "type": 35, "value": 0, "level": 0 },
+        { "slot": 2, "type": 34, "value": 0, "level": 0 },
+        { "slot": 3, "type": 8, "value": 0, "level": 239 },
+        { "slot": 4, "type": 4, "value": 255, "level": 65535 },
+        { "slot": 5, "type": 2, "value": 2, "level": 0 },
+        { "slot": 6, "type": 38, "value": 255, "level": 65535 },
+        { "slot": 7, "type": 31, "value": 5, "level": 20 },
+        { "slot": 8, "type": 25, "value": 0, "level": 255 },
+        { "slot": 9, "type": 21, "value": 10, "level": 50 }
+      ],
+      "expected": {
+        "meditation": { "armorClassReduction": 26, "damageMultiplierAdjustment": 12 },
+        "transformation": { "attackSpeedBonus": 0, "runSpeedBonus": 0, "damageAddition": 0, "damageMultiplierAdjustment": 0, "armorClass": 101, "maxHp": 102, "criticalAddition": 0, "headItemIndex": 7, "resistance": [61, 71, 81, 91] },
+        "afterTransformation": { "level": 100, "ac": 101, "damage": 101, "maxHp": 102, "maxMp": 101, "hp": 85, "mp": 75 },
+        "afterScoreAffects": { "maxHp": 301, "maxMp": 35, "ac": 271, "damage": 172, "magic": 350, "learnedSkill": 268435712, "rsv": 4, "rsvFlagsToAdd": 4 },
+        "afterSoul": { "maxHp": 301, "maxMp": 35, "strength": 10, "intelligence": 20, "constitution": 40 },
+        "afterKibita": { "maxHp": 301, "maxMp": 35, "strength": 10, "intelligence": 20 },
+        "haste": { "runAddition": 2, "rsvFlagsToAdd": 32 },
+        "resistance": [61, 71, 81, 91],
+        "rsvWithAffects": 36
+      }
     }
   ]
 }

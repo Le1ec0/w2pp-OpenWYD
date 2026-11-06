@@ -25,22 +25,29 @@ public static class LegacyAutoTradeCloseCoordinator
         ILegacyAutoTradeStateStore? stateStore, LegacyFrameCodec codec, uint clientTick, byte keywordIndex,
         CancellationToken cancellationToken = default)
         => await CloseAndCaptureCoreAsync(connectionId, sessions, world, book, stateStore, codec, clientTick,
-            keywordIndex, actionTriggered: false, cancellationToken);
+            keywordIndex, actionTriggered: false, allowDeadCleanup: false, cancellationToken);
+
+    public static async ValueTask<LegacyAutoTradeCloseDispatchPlan> CloseForTinyCombineInvalidPositionAndCaptureAsync(int connectionId,
+        LoginSessionRegistry sessions, WorldHub world, LegacyAutoTradeBook book,
+        ILegacyAutoTradeStateStore? stateStore, LegacyFrameCodec codec, uint clientTick, byte keywordIndex,
+        CancellationToken cancellationToken = default)
+        => await CloseAndCaptureCoreAsync(connectionId, sessions, world, book, stateStore, codec, clientTick,
+            keywordIndex, actionTriggered: false, allowDeadCleanup: true, cancellationToken);
 
     public static async ValueTask<LegacyAutoTradeCloseDispatchPlan> CloseForActionAndCaptureAsync(int connectionId,
         LoginSessionRegistry sessions, WorldHub world, LegacyAutoTradeBook book,
         ILegacyAutoTradeStateStore? stateStore, LegacyFrameCodec codec, CancellationToken cancellationToken = default)
         => await CloseAndCaptureCoreAsync(connectionId, sessions, world, book, stateStore, codec, 0, 0,
-            actionTriggered: true, cancellationToken);
+            actionTriggered: true, allowDeadCleanup: false, cancellationToken);
 
     private static async ValueTask<LegacyAutoTradeCloseDispatchPlan> CloseAndCaptureCoreAsync(int connectionId,
         LoginSessionRegistry sessions, WorldHub world, LegacyAutoTradeBook book,
         ILegacyAutoTradeStateStore? stateStore, LegacyFrameCodec codec, uint clientTick, byte keywordIndex,
-        bool actionTriggered, CancellationToken cancellationToken)
+        bool actionTriggered, bool allowDeadCleanup, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(codec);
         IReadOnlyList<LegacyAutoTradeCloseFramePlan> frames = [];
-        var outcome = await CloseCoreAsync(connectionId, sessions, world, book, stateStore, actionTriggered, cancellationToken,
+        var outcome = await CloseCoreAsync(connectionId, sessions, world, book, stateStore, actionTriggered, allowDeadCleanup, cancellationToken,
             (lease, result) =>
             {
                 if (result.Trade is not { } trade || !lease.Covers(trade.ConnectionId) ||
@@ -54,11 +61,11 @@ public static class LegacyAutoTradeCloseCoordinator
     public static ValueTask<LegacyAutoTradeCloseOutcome> CloseAsync(int connectionId,
         LoginSessionRegistry sessions, WorldHub world, LegacyAutoTradeBook book,
         ILegacyAutoTradeStateStore? stateStore, CancellationToken cancellationToken = default) =>
-        CloseCoreAsync(connectionId, sessions, world, book, stateStore, actionTriggered: false, cancellationToken, null);
+        CloseCoreAsync(connectionId, sessions, world, book, stateStore, actionTriggered: false, allowDeadCleanup: false, cancellationToken, null);
 
     private static async ValueTask<LegacyAutoTradeCloseOutcome> CloseCoreAsync(int connectionId,
         LoginSessionRegistry sessions, WorldHub world, LegacyAutoTradeBook book,
-        ILegacyAutoTradeStateStore? stateStore, bool actionTriggered, CancellationToken cancellationToken,
+        ILegacyAutoTradeStateStore? stateStore, bool actionTriggered, bool allowDeadCleanup, CancellationToken cancellationToken,
         Action<LegacyAutoTradeOperationLease, LegacyAutoTradeCloseOutcome>? capture)
     {
         ArgumentNullException.ThrowIfNull(sessions); ArgumentNullException.ThrowIfNull(world); ArgumentNullException.ThrowIfNull(book);
@@ -105,7 +112,9 @@ public static class LegacyAutoTradeCloseCoordinator
         LegacyTradeCloseReservation? reservation;
         var prepared = actionTriggered
             ? world.TryReserveTradeCloseForAction(connectionId, opponentId, out reservation)
-            : world.TryReserveTradeClose(connectionId, opponentId, out reservation);
+            : allowDeadCleanup
+                ? world.TryReserveTradeCloseForTinyCombineInvalidPosition(connectionId, opponentId, out reservation)
+                : world.TryReserveTradeClose(connectionId, opponentId, out reservation);
         if (prepared != LegacyTradeClosePrepareResult.Prepared || reservation is null)
             return Failure(prepared == LegacyTradeClosePrepareResult.NotAlive ? LegacyAutoTradeCloseResult.NotAlive : LegacyAutoTradeCloseResult.Conflict);
         if (handles.Count == 0)

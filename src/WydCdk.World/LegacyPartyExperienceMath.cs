@@ -14,7 +14,7 @@ public static class LegacyPartyExperienceMath
         int targetExperience,
         int targetLevel,
         bool newbieEventServer = false,
-        bool doubleMode = false,
+        int doubleModeMultiplier = 1,
         bool kefraLive = true)
     {
         if (normalizedExperience <= 0 || targetExperience <= 0)
@@ -72,8 +72,7 @@ public static class LegacyPartyExperienceMath
 
         experience = 6 * experience / 10;
         experience = Math.Min(experience, targetExperience);
-        if (doubleMode)
-            experience *= 2;
+        experience *= doubleModeMultiplier;
         if (!kefraLive)
             experience /= 2;
         experience = newbieEventServer ? experience + (experience / 4) : experience - ((experience * 15) / 100);

@@ -19,7 +19,7 @@ public sealed record LegacyAccountSnapshot(
     string AccountName,
     LegacyCharacterSelection Characters,
     IReadOnlyList<LegacyItem> Cargo,
-    int Coin,
+    int BankCoin,
     bool WelcomeItemReceived,
     LegacyDailyQuest DailyQuest,
     string BlockPassword,
@@ -42,6 +42,7 @@ public sealed record LegacyAccountSnapshot(
     public const int AffectStride = 256; // MAX_AFFECT(32) * sizeof(STRUCT_AFFECT)(8), per slot
     public const int MobExtraOffset = 5600;
     public const int MobExtraStride = 552; // sizeof(STRUCT_MOBEXTRA)
+    public const int MobExtraSecondaryLearnedSkillOffset = 4; // offsetof(SecLearnedSkill), 7.69/W2PP x86 probe: 552:4:4
     public const int DonateOffset = 7808;
     private const int ReceivedItemOffset = 7864; // bool
     private const int QuestDiariaOffset = 7872; // STRUCT_QUEST, file layout (56 bytes) differs from the wire's 52-byte format
@@ -55,7 +56,8 @@ public sealed record LegacyAccountSnapshot(
     public const int MobGuildOffset = 18;
     public const int MobClassOffset = 20; // STRUCT_MOB.Class, confirmed by the x86 layout probe
     public const int MobRsvOffset = 22; // STRUCT_MOB.Rsv, confirmed by the x86 layout probe
-    public const int MobCoinOffset = 28;
+    public const int MobCarriedGoldOffset = 28;
+    public const int MobCoinOffset = MobCarriedGoldOffset;
     public const int MobExperienceOffset = 32;
     public const int MobSavedPositionXOffset = 40; // STRUCT_MOB.SPX
     public const int MobSavedPositionYOffset = 42; // STRUCT_MOB.SPY
@@ -73,11 +75,14 @@ public sealed record LegacyAccountSnapshot(
     public const int MobScoreBonusOffset = 788; // STRUCT_MOB.ScoreBonus, confirmed by STRUCT_MOB layout
     public const int MobSpecialBonusOffset = 790; // STRUCT_MOB.SpecialBonus, confirmed by STRUCT_MOB layout
     public const int MobSkillBonusOffset = 792; // STRUCT_MOB.SkillBonus, confirmed by the x86 layout probe
+    public const int MobCriticalOffset = 794; // signed STRUCT_MOB.Critical, confirmed by Basedef.h layout
     public const int MobSkillBarOffset = 796; // offsetof(STRUCT_MOB, SkillBar), confirmed by x86 layout probe
+    public const int MobRegenHpOffset = 802; // offsetof(W2PP STRUCT_MOB.RegenHP), confirmed by the x86 layout probe
     public const int MobRegenMpOffset = 804; // STRUCT_MOB.RegenMP, confirmed by the x86 layout probe
     public const int MobResistOffset = 806; // STRUCT_MOB.Resist[4], confirmed by the x86 layout probe
 
     public const int MobExtraClassMasterOffset = 0;
+    public const int MobExtraSoulOffset = 12; // offsetof(MOBEXTRA.Soul), 7.69 DBSrv/TMSrv and W2PP x86 probe
     public const int MobExtraCitizenOffset = 2; // STRUCT_MOBEXTRA.Citizen in the 7.59 account layout
     public const int MobExtraMortalFaceOffset = 14;
     public const int MobExtraPilulaOrcOffset = 19; // QuestInfo.Mortal.PilulaOrc, confirmed by the x86 layout probe
@@ -119,7 +124,7 @@ public sealed record LegacyAccountSnapshot(
                 savedPositionY = LegacyCharacterStorageDefaults.EmptyCharacterPosition;
             }
             var score = LegacyScore.Read(mob.Slice(MobCurrentScoreOffset, LegacyScore.SizeInBytes));
-            var coin = BinaryPrimitives.ReadInt32LittleEndian(mob[MobCoinOffset..]);
+            var coin = BinaryPrimitives.ReadInt32LittleEndian(mob[MobCarriedGoldOffset..]);
             var experience = BinaryPrimitives.ReadInt64LittleEndian(mob[MobExperienceOffset..]);
 
             var equipment = new LegacyItem[LegacyCharacterSelection.EquipmentCount];
@@ -151,7 +156,7 @@ public sealed record LegacyAccountSnapshot(
         for (var index = 0; index < CargoCount; index++)
             cargo[index] = LegacyItem.Read(file.Slice(CargoOffset + (index * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
 
-        var coinTotal = BinaryPrimitives.ReadInt32LittleEndian(file[AccountCoinOffset..]);
+        var bankCoin = BinaryPrimitives.ReadInt32LittleEndian(file[AccountCoinOffset..]);
         var welcomeItemReceived = file[ReceivedItemOffset] != 0;
 
         var quest = file.Slice(QuestDiariaOffset, 56);
@@ -167,7 +172,7 @@ public sealed record LegacyAccountSnapshot(
         var blockPassword = ReadCString(file.Slice(BlockPassOffset, NameFieldLength));
         var isBlocked = file[IsBlockedOffset] != 0;
 
-        return new LegacyAccountSnapshot(accountName, new LegacyCharacterSelection(slots), cargo, coinTotal, welcomeItemReceived, dailyQuest, blockPassword, isBlocked);
+        return new LegacyAccountSnapshot(accountName, new LegacyCharacterSelection(slots), cargo, bankCoin, welcomeItemReceived, dailyQuest, blockPassword, isBlocked);
     }
 
     private static string ReadCString(ReadOnlySpan<byte> source)
@@ -187,7 +192,7 @@ public sealed record LegacyAccountSnapshot(
         WelcomeItemReceived ? 1 : 0,
         Characters,
         Cargo,
-        Coin,
+        BankCoin,
         AccountName,
         new byte[12],
         DailyQuest,

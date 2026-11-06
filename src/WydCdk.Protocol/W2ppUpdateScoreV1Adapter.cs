@@ -23,7 +23,14 @@ public static class W2ppUpdateScoreV1Adapter
     public const int SourceMagicOffset = 132;
     public const int SourceSpecialOffset = 136;
 
-    public static UpdateScoreConfirmationV769 AdaptPayload(ReadOnlySpan<byte> sourcePayload)
+    public static UpdateScoreConfirmationV769 AdaptPayload(ReadOnlySpan<byte> sourcePayload) =>
+        AdaptPayload(sourcePayload, rsv: 0);
+
+    /// <summary>
+    /// Adapts a W2PP score payload while preserving the authoritative RSV from
+    /// the full MOB snapshot. RSV is absent from the W2PP UpdateScore payload.
+    /// </summary>
+    public static UpdateScoreConfirmationV769 AdaptPayload(ReadOnlySpan<byte> sourcePayload, ushort rsv)
     {
         if (sourcePayload.Length != SourcePayloadSize)
             throw new ArgumentException($"W2PP UpdateScore requires exactly {SourcePayloadSize} payload bytes.", nameof(sourcePayload));
@@ -48,7 +55,7 @@ public static class W2ppUpdateScoreV1Adapter
             BinaryPrimitives.ReadInt32LittleEndian(sourcePayload[SourceCurrentHpOffset..]),
             BinaryPrimitives.ReadInt32LittleEndian(sourcePayload[SourceCurrentMpOffset..]),
             (ushort)magic,
-            0,
+            rsv,
             0);
     }
 

@@ -10,5 +10,6 @@
     <Project Path="tests/WydCdk.Engine.Tests/WydCdk.Engine.Tests.csproj" />
     <Project Path="tests/WydCdk.Client.E2E/WydCdk.Client.E2E.csproj" />
     <Project Path="tests/WydCdk.AutoTrade.Integration/WydCdk.AutoTrade.Integration.csproj" />
+    <Project Path="tests/WydCdk.Character.Integration/WydCdk.Character.Integration.csproj" />
   </Folder>
 </Solution>

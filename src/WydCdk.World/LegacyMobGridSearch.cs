@@ -16,10 +16,13 @@ internal static class LegacyMobGridSearch
         ref int y,
         Func<int, int, int> occupantAt,
         Func<int, int, bool> blockedAt,
-        bool checkCandidateTerrain = false)
+        bool checkCandidateTerrain = false,
+        int maximumRadius = 4)
     {
         ArgumentNullException.ThrowIfNull(occupantAt);
         ArgumentNullException.ThrowIfNull(blockedAt);
+        if (maximumRadius < 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumRadius));
 
         if (!IsInBounds(x, y))
             return false;
@@ -36,7 +39,7 @@ internal static class LegacyMobGridSearch
         // the candidate cell in all fallback loops. Keep that quirk by
         // default; strict candidate checks are an explicit opt-in policy.
         var originBlocked = blockedAt(originX, originY);
-        for (var radius = 1; radius <= 4; radius++)
+        for (var radius = 1; radius <= maximumRadius; radius++)
         {
             for (var candidateY = originY - radius; candidateY <= originY + radius; candidateY++)
             {

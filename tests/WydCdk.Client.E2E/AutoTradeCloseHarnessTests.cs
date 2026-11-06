@@ -6,11 +6,67 @@ internal static class AutoTradeCloseHarnessTests
 {
     public static async Task RunAsync()
     {
+        var scaledHealRoot = Path.Combine(Path.GetTempPath(), "Backup", "Build", "AutoTradeCloseSmoke", "scaled-heal-harness-test");
+        var scaledHealArgs = new[] { "--host", "127.0.0.1", "--port", "18283", "--account-file",
+            Path.Combine(scaledHealRoot, "account", "T", "TESTE2"), "--autotrade-close-peer-account-file",
+            Path.Combine(scaledHealRoot, "account", "T", "TESTE"), "--autotrade-state-file",
+            Path.Combine(scaledHealRoot, "autotrade.json"), "--attack-skill-heal-smoke",
+            "--expected-double-mode", "3" };
+        var scaledHealAccepted = false;
+        try
+        {
+            var parsed = E2eOptions.Parse(scaledHealArgs);
+            scaledHealAccepted = parsed.AttackSkillHealSmoke &&
+                parsed.GetType().GetProperty("ExpectedDoubleModeMultiplier")?.GetValue(parsed) is 3;
+        }
+        catch (ArgumentException) { }
+        Check(scaledHealAccepted, "Attack heal smoke cannot assert a non-default DoubleMode FakeExp multiplier.");
+
         var root = Path.Combine(Path.GetTempPath(), "Backup", "Build", "AutoTradeCloseSmoke", "nonexistent-guard-fixture");
         var args = new[] { "--host", "127.0.0.1", "--account-file", Path.Combine(root, "account", "T", "TESTE2"),
             "--autotrade-close-peer-account-file", Path.Combine(root, "account", "T", "TESTE"), "--autotrade-state-file", Path.Combine(root, "autotrade.json") };
-        // Parse only: no files, credentials or connections needed for the unsafe-port RED.
+        var blessingRoot = Path.Combine(Path.GetTempPath(), "Backup", "Build", "AutoTradeCloseSmoke", "divine-blessing-harness-test");
+        var blessingActor = Path.Combine(blessingRoot, "account", "T", "TESTE2");
+        var blessingObserver = Path.Combine(blessingRoot, "account", "T", "TESTE");
+        var blessingDistantObserver = Path.Combine(blessingRoot, "account", "T", "TESTE4");
+        var blessingArgs = new[] { "--host", "127.0.0.1", "--port", "18283", "--account-file", blessingActor,
+            "--autotrade-close-peer-account-file", blessingObserver, "--autotrade-state-file", Path.Combine(blessingRoot, "autotrade.json"),
+            "--attack-divine-blessing-distant-observer-account-file", blessingDistantObserver,
+            "--attack-divine-blessing-smoke" };
+        var blessingAccepted = false;
+        try
+        {
+            var parsed = E2eOptions.Parse(blessingArgs);
+            blessingAccepted = parsed.GetType().GetProperty("AttackDivineBlessingSmoke")?.GetValue(parsed) is true;
+        }
+        catch (ArgumentException) { }
+        Check(blessingAccepted, "Divine Blessing Attack loopback mode unavailable.");
+        var lowManaArgs = blessingArgs[..^1].Concat(new[] { "--attack-divine-blessing-insufficient-mana-smoke" }).ToArray();
+        var lowManaAccepted = false;
+        try
+        {
+            var parsed = E2eOptions.Parse(lowManaArgs);
+            lowManaAccepted = parsed.GetType().GetProperty("AttackDivineBlessingInsufficientManaSmoke")?.GetValue(parsed) is true;
+        }
+        catch (ArgumentException) { }
+        Check(lowManaAccepted, "Divine Blessing insufficient-mana loopback mode unavailable.");
         var rejected = false;
+        try { E2eOptions.Parse(blessingArgs.Select((value, index) => index == 3 ? "8281" : value).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Divine Blessing Attack accepted the normal port 8281.");
+        rejected = false;
+        try { E2eOptions.Parse(blessingArgs.Select((value, index) => index == 1 ? "192.0.2.1" : value).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Divine Blessing Attack accepted a non-loopback host.");
+        rejected = false;
+        try { E2eOptions.Parse(blessingArgs.Select((value, index) => index == 7 ? blessingActor : value).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Divine Blessing Attack accepted duplicate actor/observer fixture paths.");
+        rejected = false;
+        try { E2eOptions.Parse(blessingArgs.Select((value, index) => index == 11 ? blessingActor : value).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Divine Blessing Attack accepted a distant observer that aliases the actor fixture.");
+        var originalActor = Path.Combine(Path.GetTempPath(), "Backup", "Build", "E2E7670", "account", "T", "TESTE2");
+        rejected = false;
+        try { E2eOptions.Parse(blessingArgs.Select((value, index) => index == 5 ? originalActor : value).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Divine Blessing Attack accepted an original E2E fixture path.");
+        // Parse only: no files, credentials or connections needed for the unsafe-port RED.
         try { E2eOptions.Parse(args); } catch (ArgumentException) { rejected = true; }
         Check(rejected, "Autotrade parser accepted the normal port8281.");
         rejected = false;
@@ -33,6 +89,61 @@ internal static class AutoTradeCloseHarnessTests
         Check(rejected, "Dead Attack parser accepted port8281.");
         Check(E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-dead-gate-smoke" }).ToArray()).AttackDeadGateSmoke,
             "Dead Attack guarded mode unavailable.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--attack-golden-shield-coin-smoke" }).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Golden Shield coin parser accepted the normal port 8281.");
+        var goldenShieldMode = E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-golden-shield-coin-smoke" }).ToArray());
+        Check(goldenShieldMode.AttackGoldenShieldCoinSmoke, "Golden Shield coin loopback mode unavailable.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-golden-shield-coin-smoke", "--attack-skill-gate-smoke" }).ToArray()); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Conflicting Golden Shield and Attack skill gate modes accepted.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--attack-mana-control-smoke" }).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Physical ManaControl parser accepted the normal port8281.");
+        Check(E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-mana-control-smoke" }).ToArray()).AttackManaControlSmoke,
+            "Physical ManaControl loopback mode unavailable.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--attack-type6-protection-smoke" }).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Type 6 protection parser accepted the normal port8281.");
+        Check(E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-type6-protection-smoke" }).ToArray()).AttackType6ProtectionSmoke,
+            "Type 6 protection loopback mode unavailable.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--attack-party-skill-gate-smoke" }).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Party skill gate parser accepted the normal port8281.");
+        var partySkillMode = E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-party-skill-gate-smoke" }).ToArray());
+        Check(partySkillMode.AttackPartySkillGateSmoke, "Party skill gate loopback mode unavailable.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-party-skill-gate-smoke", "--attack-skill-gate-smoke" }).ToArray()); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Conflicting party and general Attack skill gate modes accepted.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-type6-protection-smoke", "--attack-multi-target-smoke" }).ToArray()); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Conflicting Type 6 protection/multi-target smoke modes accepted.");
+        rejected = false;
+        var mixedFixtureArgs = args.Concat(new[] { "--attack-mixed-out-of-range-account-file", Path.Combine(root, "account", "T", "TESTE3") }).ToArray();
+        try { E2eOptions.Parse(mixedFixtureArgs.Concat(new[] { "--attack-mixed-slots-smoke" }).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Mixed-slot Attack parser accepted the normal port 8281.");
+        rejected = false;
+        try { E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-mixed-slots-smoke" }).ToArray()); } catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Mixed-slot Attack parser accepted a missing out-of-range fixture.");
+        var mixedMode = E2eOptions.Parse(mixedFixtureArgs.Concat(new[] { "--port", "18283", "--attack-mixed-slots-smoke" }).ToArray());
+        Check(mixedMode.AttackMixedSlotsSmoke, "Mixed-slot Attack loopback mode unavailable.");
+        rejected = false;
+        try { E2eOptions.Parse(mixedFixtureArgs.Concat(new[] { "--host", "192.0.2.1", "--port", "18283", "--attack-mixed-slots-smoke" }).ToArray()); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Mixed-slot Attack parser accepted a non-loopback host.");
+        rejected = false;
+        var duplicateMixedFixtureArgs = mixedFixtureArgs.Concat(new[] {
+            "--autotrade-close-peer-account-file", Path.Combine(root, "account", "T", "TESTE3") }).ToArray();
+        try { E2eOptions.Parse(duplicateMixedFixtureArgs.Concat(new[] { "--port", "18283", "--attack-mixed-slots-smoke" }).ToArray()); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Mixed-slot Attack parser accepted a duplicate peer/out-of-range fixture.");
+        rejected = false;
+        try { E2eOptions.Parse(mixedFixtureArgs.Concat(new[] { "--port", "18283", "--attack-mixed-slots-smoke", "--attack-multi-target-smoke" }).ToArray()); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "Conflicting mixed-slot/multi-target Attack smoke modes accepted.");
         rejected = false;
         try { E2eOptions.Parse(args.Concat(new[] { "--port", "18283", "--attack-dead-gate-smoke", "--action-gate-smoke" }).ToArray()); }
         catch (ArgumentException) { rejected = true; }

@@ -13,7 +13,7 @@ namespace WydCdk.World;
 /// protocol tests while moving ownership out of the legacy account directory. World state is keyed by the
 /// explicit UP/PVP string, so the same account can have an independent character snapshot in each world.
 /// </summary>
-public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFactory, string worldKey) : ICharacterStore, IClientEquipmentStateStore, IDonateBalanceStore, IAtomicCharacterStateStore, ILegacyAutoTradePurchaseCommitStore
+public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFactory, string worldKey) : ICharacterStore, IClientEquipmentStateStore, IDonateBalanceStore, IAtomicCharacterStateStore, IAtomicCharacterGuildInviteStore, IAtomicNpcCargoSaleStore, ILegacyAutoTradePurchaseCommitStore
 {
     private const int AccountNameLength = 16;
     private const int CharacterNameLength = 16;
@@ -151,6 +151,80 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         }
     }
 
+    public async ValueTask<LegacyCharacterCheckpointSaveResult> TrySaveCharacterCheckpointAsync(
+        LegacyCharacterCheckpointSaveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request is null)
+            return LegacyCharacterCheckpointSaveResult.InvalidLength;
+        if (!IsValidSlot(request.CharacterSlot))
+            return LegacyCharacterCheckpointSaveResult.SlotOutOfRange;
+        if (request.Mob.Length != LegacyAccountSnapshot.CharacterStride ||
+            request.MobExtra.Length != LegacyAccountSnapshot.MobExtraStride ||
+            request.Affect.Length != LegacyAccountSnapshot.AffectStride ||
+            request.ClientEquipment is null ||
+            request.ClientEquipment.Count != ClientEquipmentStateV769.EquipmentCount)
+            return LegacyCharacterCheckpointSaveResult.InvalidLength;
+        if (string.IsNullOrWhiteSpace(request.AccountName))
+            return LegacyCharacterCheckpointSaveResult.AccountNotFound;
+
+        string normalized;
+        try
+        {
+            normalized = NormalizeAccountName(request.AccountName);
+        }
+        catch (ArgumentException)
+        {
+            return LegacyCharacterCheckpointSaveResult.AccountNotFound;
+        }
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var blob = await ReadBlobAsync(connection, transaction, normalized, forUpdate: true, cancellationToken);
+            if (blob is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return LegacyCharacterCheckpointSaveResult.AccountNotFound;
+            }
+
+            var characterOffset = LegacyAccountSnapshot.CharactersOffset + (request.CharacterSlot * LegacyAccountSnapshot.CharacterStride);
+            if (blob[characterOffset + LegacyAccountSnapshot.MobNameOffset] == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return LegacyCharacterCheckpointSaveResult.CharacterNotAvailable;
+            }
+
+            var mob = request.Mob.ToArray();
+            blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobSkillBarOffset, sizeof(uint))
+                .CopyTo(mob.AsSpan(LegacyAccountSnapshot.MobSkillBarOffset, sizeof(uint)));
+            BinaryPrimitives.WriteInt16LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobSavedPositionXOffset), request.PositionX);
+            BinaryPrimitives.WriteInt16LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobSavedPositionYOffset), request.PositionY);
+            mob.CopyTo(blob, characterOffset);
+            request.MobExtra.CopyTo(blob.AsMemory(
+                LegacyAccountSnapshot.MobExtraOffset + (request.CharacterSlot * LegacyAccountSnapshot.MobExtraStride)));
+            request.Affect.CopyTo(blob.AsMemory(
+                LegacyAccountSnapshot.AffectOffset + (request.CharacterSlot * LegacyAccountSnapshot.AffectStride)));
+            await UpsertBlobAsync(connection, transaction, normalized, blob, cancellationToken);
+            await UpsertClientEquipmentAsync(
+                connection,
+                transaction,
+                normalized,
+                request.CharacterSlot,
+                new ClientEquipmentStateV769(request.ClientEquipment).ToBytes(),
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return LegacyCharacterCheckpointSaveResult.Success;
+        }
+        catch (DbException)
+        {
+            try { await transaction.RollbackAsync(CancellationToken.None); } catch (DbException) { }
+            return LegacyCharacterCheckpointSaveResult.NotAvailable;
+        }
+    }
+
     public ValueTask<int?> ReadDonateAsync(string accountName, CancellationToken cancellationToken = default) =>
         donateStore.ReadDonateAsync(accountName, cancellationToken);
 
@@ -170,23 +244,28 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         }, cancellationToken);
     }
 
-    public ValueTask<CharacterStateSaveResult> TrySaveCharacterStateAsync(string accountName, int slot, ReadOnlyMemory<byte> mob, short positionX, short positionY, CancellationToken cancellationToken = default, ReadOnlyMemory<byte> mobExtra = default)
+    public ValueTask<CharacterStateSaveResult> TrySaveCharacterStateAsync(string accountName, int slot, ReadOnlyMemory<byte> mob, short positionX, short positionY, CancellationToken cancellationToken = default, ReadOnlyMemory<byte> mobExtra = default, ReadOnlyMemory<byte> affect = default)
     {
         if (!IsValidSlot(slot)) return ValueTask.FromResult(CharacterStateSaveResult.SlotOutOfRange);
-        if (mob.Length != LegacyAccountSnapshot.CharacterStride || (!mobExtra.IsEmpty && mobExtra.Length != LegacyAccountSnapshot.MobExtraStride))
+        if (mob.Length != LegacyAccountSnapshot.CharacterStride ||
+            (!mobExtra.IsEmpty && mobExtra.Length != LegacyAccountSnapshot.MobExtraStride) ||
+            (!affect.IsEmpty && affect.Length != LegacyAccountSnapshot.AffectStride))
             return ValueTask.FromResult(CharacterStateSaveResult.InvalidLength);
 
         return MutateBlobAsync(accountName, slot, CharacterStateSaveResult.AccountNotFound, (blob, characterOffset) =>
         {
             if (blob[characterOffset + LegacyAccountSnapshot.MobNameOffset] == 0)
                 return (false, CharacterStateSaveResult.NotAvailable);
-            mob.CopyTo(blob.AsMemory(characterOffset, LegacyAccountSnapshot.CharacterStride));
+            var snapshot = mob.ToArray();
+            blob.AsMemory(characterOffset + LegacyAccountSnapshot.MobSkillBarOffset, 4)
+                .CopyTo(snapshot.AsMemory(LegacyAccountSnapshot.MobSkillBarOffset, 4));
+            snapshot.CopyTo(blob.AsMemory(characterOffset, LegacyAccountSnapshot.CharacterStride));
             BinaryPrimitives.WriteInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobSavedPositionXOffset), positionX);
             BinaryPrimitives.WriteInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobSavedPositionYOffset), positionY);
-            var coin = BinaryPrimitives.ReadInt32LittleEndian(mob.Span[LegacyAccountSnapshot.MobCoinOffset..]);
-            BinaryPrimitives.WriteInt32LittleEndian(blob.AsSpan(LegacyAccountSnapshot.AccountCoinOffset), coin);
             if (!mobExtra.IsEmpty)
                 mobExtra.CopyTo(blob.AsMemory(LegacyAccountSnapshot.MobExtraOffset + (slot * LegacyAccountSnapshot.MobExtraStride), LegacyAccountSnapshot.MobExtraStride));
+            if (!affect.IsEmpty)
+                affect.CopyTo(blob.AsMemory(LegacyAccountSnapshot.AffectOffset + (slot * LegacyAccountSnapshot.AffectStride), LegacyAccountSnapshot.AffectStride));
             return (true, CharacterStateSaveResult.Success);
         }, cancellationToken);
     }
@@ -238,15 +317,14 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
                 return AtomicCharacterStateSaveResult.CharacterNotAvailable;
             }
 
+            var savedSkillBar = blob.AsSpan(
+                characterOffset + LegacyAccountSnapshot.MobSkillBarOffset, 4).ToArray();
             entry.Request.Mob.AsMemory().CopyTo(blob.AsMemory(characterOffset, LegacyAccountSnapshot.CharacterStride));
+            savedSkillBar.CopyTo(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobSkillBarOffset, 4));
             BinaryPrimitives.WriteInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobSavedPositionXOffset), entry.Request.PositionX);
             BinaryPrimitives.WriteInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobSavedPositionYOffset), entry.Request.PositionY);
             entry.Request.MobExtra.AsMemory().CopyTo(blob.AsMemory(LegacyAccountSnapshot.MobExtraOffset + (entry.Request.CharacterSlot * LegacyAccountSnapshot.MobExtraStride), LegacyAccountSnapshot.MobExtraStride));
 
-            // The legacy account snapshot exposes Coin both inside the MOB and
-            // at the account-wide offset used by character selection.
-            var coin = BinaryPrimitives.ReadInt32LittleEndian(entry.Request.Mob.AsSpan(LegacyAccountSnapshot.MobCoinOffset));
-            BinaryPrimitives.WriteInt32LittleEndian(blob.AsSpan(LegacyAccountSnapshot.AccountCoinOffset), coin);
         }
 
         foreach (var entry in blobs.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
@@ -356,7 +434,6 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         request.BuyerMobExtra.AsMemory().CopyTo(buyerBlob.AsMemory(
             LegacyAccountSnapshot.MobExtraOffset + (request.BuyerCharacterSlot * LegacyAccountSnapshot.MobExtraStride),
             LegacyAccountSnapshot.MobExtraStride));
-        BinaryPrimitives.WriteInt32LittleEndian(buyerBlob.AsSpan(LegacyAccountSnapshot.AccountCoinOffset), request.Plan.BuyerCoin);
 
         sellerBlob.AsSpan(
             LegacyAccountSnapshot.CargoOffset + (request.Plan.SellerCargoPosition * LegacyItem.SizeInBytes),
@@ -370,6 +447,212 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         return LegacyAutoTradePurchaseCommitResult.Committed;
     }
 
+    public async ValueTask<LegacyNpcCargoSaleCommitResult> TryCommitNpcCargoSaleAsync(
+        LegacyNpcCargoSaleCommitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!LegacyNpcCargoSalePersistenceRules.IsValid(request))
+            return LegacyNpcCargoSaleCommitResult.InvalidRequest;
+
+        string account;
+        try
+        {
+            account = NormalizeAccountName(request.AccountName);
+        }
+        catch (ArgumentException)
+        {
+            return LegacyNpcCargoSaleCommitResult.InvalidRequest;
+        }
+
+        try
+        {
+            await using var connection = CreateConnection();
+            await connection.OpenAsync(cancellationToken);
+            var expectedCargo = request.ExpectedCargo.ToArray();
+            var newCargo = request.NewCargo.ToArray();
+            var blob = await ReadBlobAsync(connection, null, account, forUpdate: false, cancellationToken);
+            if (blob is null)
+                return LegacyNpcCargoSaleCommitResult.AccountNotFound;
+            if (blob.Length < LegacyAccountSnapshot.RequiredFileLength)
+                return LegacyNpcCargoSaleCommitResult.Unavailable;
+
+            var characterOffset = LegacyAccountSnapshot.CharactersOffset + (request.CharacterSlot * LegacyAccountSnapshot.CharacterStride);
+            var characterNameOffset = characterOffset + LegacyAccountSnapshot.MobNameOffset;
+            if (blob[characterNameOffset] == 0)
+                return LegacyNpcCargoSaleCommitResult.CharacterNotAvailable;
+
+            var cargoOffset = LegacyAccountSnapshot.CargoOffset;
+            var cargoLength = LegacyAccountSnapshot.CargoCount * LegacyItem.SizeInBytes;
+            var currentCargo = blob.AsSpan(cargoOffset,
+                cargoLength);
+            var mobCoinOffset = characterOffset + LegacyAccountSnapshot.MobCoinOffset;
+            var currentCoin = BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(mobCoinOffset));
+            if (!currentCargo.SequenceEqual(expectedCargo) || currentCoin != request.ExpectedMobCoin)
+                return LegacyNpcCargoSaleCommitResult.Conflict;
+
+            // The CAS predicate and byte-range patch run in one UPDATE. A locking SELECT followed by
+            // an upsert can fail with MariaDB 1020 under concurrent FOR UPDATE readers, and replacing
+            // the whole blob here could overwrite independently changing account fields.
+            var characterName = blob.AsSpan(characterNameOffset, CharacterNameLength).ToArray();
+            var expectedMobCoin = new byte[sizeof(int)];
+            var newMobCoin = new byte[sizeof(int)];
+            BinaryPrimitives.WriteInt32LittleEndian(expectedMobCoin, request.ExpectedMobCoin);
+            BinaryPrimitives.WriteInt32LittleEndian(newMobCoin, request.NewMobCoin);
+
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "UPDATE wyd_world_account_state SET account_blob = CONCAT(SUBSTRING(account_blob, 1, @coin_prefix_length), @new_mob_coin, SUBSTRING(account_blob, @cargo_middle_start, @cargo_middle_length), @new_cargo, SUBSTRING(account_blob, @cargo_suffix_start)), version = version + 1 WHERE account_name = @account_name AND world_key = @world_key AND OCTET_LENGTH(account_blob) >= @required_length AND SUBSTRING(account_blob, @coin_start, @coin_length) = @expected_mob_coin AND SUBSTRING(account_blob, @cargo_start, @cargo_length) = @expected_cargo AND SUBSTRING(account_blob, @character_name_start, @character_name_length) = @expected_character_name";
+                AddParameter(command, "@coin_prefix_length", mobCoinOffset);
+                AddParameter(command, "@new_mob_coin", newMobCoin);
+                AddParameter(command, "@cargo_middle_start", mobCoinOffset + sizeof(int) + 1);
+                AddParameter(command, "@cargo_middle_length", cargoOffset - (mobCoinOffset + sizeof(int)));
+                AddParameter(command, "@new_cargo", newCargo);
+                AddParameter(command, "@cargo_suffix_start", cargoOffset + cargoLength + 1);
+                AddParameter(command, "@account_name", account);
+                AddParameter(command, "@world_key", worldKey);
+                AddParameter(command, "@required_length", LegacyAccountSnapshot.RequiredFileLength);
+                AddParameter(command, "@coin_start", mobCoinOffset + 1);
+                AddParameter(command, "@coin_length", sizeof(int));
+                AddParameter(command, "@expected_mob_coin", expectedMobCoin);
+                AddParameter(command, "@cargo_start", cargoOffset + 1);
+                AddParameter(command, "@cargo_length", cargoLength);
+                AddParameter(command, "@expected_cargo", expectedCargo);
+                AddParameter(command, "@character_name_start", characterNameOffset + 1);
+                AddParameter(command, "@character_name_length", CharacterNameLength);
+                AddParameter(command, "@expected_character_name", characterName);
+                if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return LegacyNpcCargoSaleCommitResult.Conflict;
+                }
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // Keep the server-side commit decision observable even if shutdown is requested now.
+                await transaction.CommitAsync(CancellationToken.None);
+                return LegacyNpcCargoSaleCommitResult.Success;
+            }
+            catch (Exception error) when (error is DbException or IOException)
+            {
+                return LegacyNpcCargoSaleCommitResult.Ambiguous;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (error is DbException or IOException)
+        {
+            return LegacyNpcCargoSaleCommitResult.Unavailable;
+        }
+    }
+
+    public async ValueTask<GuildInvitePairSaveResult> TrySaveGuildInvitePairAsync(
+        GuildInvitePairSaveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!LegacyGuildInvitePersistence.IsValid(request))
+            return GuildInvitePairSaveResult.InvalidRequest;
+
+        string sourceAccount;
+        string targetAccount;
+        try
+        {
+            sourceAccount = NormalizeAccountName(request.Source.AccountName);
+            targetAccount = NormalizeAccountName(request.Target.AccountName);
+        }
+        catch (ArgumentException)
+        {
+            return GuildInvitePairSaveResult.InvalidRequest;
+        }
+
+        try
+        {
+            await using var connection = CreateConnection();
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+            var updates = new[]
+            {
+                (AccountName: sourceAccount, Update: request.Source),
+                (AccountName: targetAccount, Update: request.Target),
+            };
+            var blobs = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            foreach (var account in updates.Select(static value => value.AccountName).Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal))
+            {
+                var blob = await ReadBlobAsync(connection, transaction, account, forUpdate: true, cancellationToken);
+                if (blob is null)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return GuildInvitePairSaveResult.AccountNotFound;
+                }
+                if (blob.Length < LegacyAccountSnapshot.RequiredFileLength)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return GuildInvitePairSaveResult.Unavailable;
+                }
+                blobs.Add(account, blob);
+            }
+
+            foreach (var entry in updates)
+            {
+                var blob = blobs[entry.AccountName];
+                var characterOffset = LegacyAccountSnapshot.CharactersOffset + (entry.Update.CharacterSlot * LegacyAccountSnapshot.CharacterStride);
+                if (blob[characterOffset + LegacyAccountSnapshot.MobNameOffset] == 0)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return GuildInvitePairSaveResult.CharacterNotAvailable;
+                }
+
+                var currentGuild = BinaryPrimitives.ReadUInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobGuildOffset));
+                var currentCoin = BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobCoinOffset));
+                if (currentGuild != entry.Update.ExpectedGuildId || currentCoin != entry.Update.ExpectedCoin)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return GuildInvitePairSaveResult.Conflict;
+                }
+            }
+
+            foreach (var entry in updates)
+            {
+                var blob = blobs[entry.AccountName];
+                var characterOffset = LegacyAccountSnapshot.CharactersOffset + (entry.Update.CharacterSlot * LegacyAccountSnapshot.CharacterStride);
+                BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobGuildOffset), checked((ushort)entry.Update.NewGuildId));
+                BinaryPrimitives.WriteInt32LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobCoinOffset), entry.Update.NewCoin);
+            }
+
+            foreach (var entry in blobs.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+                await UpsertBlobAsync(connection, transaction, entry.Key, entry.Value, cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // A cancellation after the commit is sent cannot safely be reported as a rollback.
+                await transaction.CommitAsync(CancellationToken.None);
+                return GuildInvitePairSaveResult.Success;
+            }
+            catch (DbException)
+            {
+                return GuildInvitePairSaveResult.Ambiguous;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (DbException)
+        {
+            return GuildInvitePairSaveResult.Unavailable;
+        }
+        catch (IOException)
+        {
+            return GuildInvitePairSaveResult.Unavailable;
+        }
+    }
+
     public ValueTask<CharacterGuildSaveResult> TrySaveCharacterGuildAsync(string accountName, int slot, int guildId, int coin, CancellationToken cancellationToken = default)
     {
         if (!IsValidSlot(slot)) return ValueTask.FromResult(CharacterGuildSaveResult.SlotOutOfRange);
@@ -379,7 +662,6 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
                 return (false, CharacterGuildSaveResult.NotAvailable);
             BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobGuildOffset), checked((ushort)guildId));
             BinaryPrimitives.WriteInt32LittleEndian(blob.AsSpan(characterOffset + LegacyAccountSnapshot.MobCoinOffset), coin);
-            BinaryPrimitives.WriteInt32LittleEndian(blob.AsSpan(LegacyAccountSnapshot.AccountCoinOffset), coin);
             return (true, CharacterGuildSaveResult.Success);
         }, cancellationToken);
     }
@@ -470,6 +752,8 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         BinaryPrimitives.WriteInt16LittleEndian(blob.AsSpan(mobExtraOffset + LegacyAccountSnapshot.MobExtraMortalFaceOffset), faceIndex);
 
         await UpsertBlobAsync(connection, transaction, normalizedAccount, blob, cancellationToken);
+        // A row left by an earlier character in this slot must not rehydrate into the new one.
+        await DeleteClientEquipmentAsync(connection, transaction, normalizedAccount, slot, cancellationToken);
         using var reservation = connection.CreateCommand();
         reservation.Transaction = transaction;
         reservation.CommandText = "UPDATE wyd_character_names SET slot_index = @slot_index WHERE world_key = @world_key AND character_name = @character_name AND account_name = @account_name";
@@ -525,6 +809,7 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         blob.AsSpan(LegacyAccountSnapshot.AffectOffset + (slot * LegacyAccountSnapshot.AffectStride), LegacyAccountSnapshot.AffectStride).Clear();
         LegacyCharacterStorageDefaults.ResetDeletedCharacterSlot(blob, slot);
         await UpsertBlobAsync(connection, transaction, normalizedAccount, blob, cancellationToken);
+        await DeleteClientEquipmentAsync(connection, transaction, normalizedAccount, slot, cancellationToken);
 
         using var reservation = connection.CreateCommand();
         reservation.Transaction = transaction;
@@ -648,6 +933,32 @@ public sealed class MariaDbWorldCharacterStore(Func<DbConnection> connectionFact
         AddParameter(command, "@account_name", accountName);
         AddParameter(command, "@character_slot", characterSlot);
         AddParameter(command, "@equipment_blob", equipmentBlob);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async ValueTask DeleteClientEquipmentAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string accountName,
+        int characterSlot,
+        CancellationToken cancellationToken)
+    {
+        // The extension table is optional during the migration window. Probe the catalog
+        // instead of catching the DELETE error, so a real failure (deadlock, timeout)
+        // still aborts the character mutation instead of committing it without cleanup.
+        using (var probe = connection.CreateCommand())
+        {
+            probe.Transaction = transaction;
+            probe.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'wyd_client_equipment_769'";
+            if (Convert.ToInt64(await probe.ExecuteScalarAsync(cancellationToken)) == 0) return;
+        }
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM wyd_client_equipment_769 WHERE world_key = @world_key AND account_name = @account_name AND character_slot = @character_slot";
+        AddParameter(command, "@world_key", worldKey);
+        AddParameter(command, "@account_name", accountName);
+        AddParameter(command, "@character_slot", characterSlot);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

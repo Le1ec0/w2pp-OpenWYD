@@ -20,7 +20,37 @@ public enum LegacyUseItemResult
     MapRestricted,
     CoinLimitReached,
     DonateLimitReached,
+    LevelRequirementNotMet,
+    RequiredSkillNotLearned,
+    CompetingSkillAlreadyLearned,
 }
+
+public sealed record LegacyBloodHandsBookOutcome(
+    int SourceSlot,
+    LegacyItem SourceItem,
+    byte[] MobSnapshot,
+    byte[] MobExtraSnapshot);
+
+public sealed record LegacyMagicMirrorBookOutcome(
+    int SourceSlot,
+    LegacyItem SourceItem,
+    byte[] MobSnapshot,
+    byte[] MobExtraSnapshot);
+
+public sealed record LegacyDivineProtectionBookOutcome(
+    int SourceSlot,
+    LegacyItem SourceItem,
+    byte[] MobSnapshot,
+    byte[] MobExtraSnapshot);
+
+public sealed record LegacySephiraSkillBookOutcome(
+    int SourceSlot,
+    LegacyItem SourceItem,
+    int Volatile,
+    uint LearnedSkillBit,
+    bool AffectApplied,
+    byte[] MobSnapshot,
+    byte[] AffectSnapshot);
 
 public sealed record LegacyUseItemOutcome(
     int SourceSlot,
@@ -73,7 +103,8 @@ public sealed record LegacyAffectConsumableOutcome(
     byte AffectValue,
     uint AffectTime,
     byte[] MobSnapshot,
-    byte[] AffectSnapshot);
+    byte[] AffectSnapshot,
+    byte AffectType = 4);
 
 public sealed record LegacyPvpJewelryOutcome(
     int SourceSlot,

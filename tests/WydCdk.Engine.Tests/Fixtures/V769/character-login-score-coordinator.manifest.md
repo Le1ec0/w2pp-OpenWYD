@@ -1,17 +1,25 @@
 # Coordenador dos blocos auditados de `BASE_GetCurrentScore`
 
 - Fonte-alvo: `Backup/Tools/ReferenceSources/TMProject2GlobalClient/Servidor/Source/Code/Basedef.cpp`.
-- A ordem coordenada segue os blocos já portados/testados: rebuild base/equipamento, `Cur Special`, transformação `Type=16`, `Type=11` Escudo Magico, `Type=9` Arma Magica, `Type=15` Toque de Athena, `Type=5` Fanatismo, `Type=6` DEX, `Type=12` redução de AC, `Type=2` Haste, Soul e override Kibita.
-- O estado `AfterTransformation` projeta somente Damage aditivo, AC e MaxHp. Attack/Run, multiplicador, Critical e equipamento permanecem em snapshots explícitos porque seus blocos de commit ainda não foram portados.
-- A Soul observa o MaxHp produzido pela transformação; Kibita observa o resultado da Soul. Isso é validado por vetores Mortal Wolf, Celestial Eden e gate de classe.
-- `RsvWithAffects` é somente a união do Rsv resetado pelo rebuild com o mask produzido pelo Haste; não substitui o MOB persistido.
-- A resistência clampada vem do estagio geral de affects, após a transformação, e não soma `RegAdd` novamente.
-- Este coordenador é uma fronteira de composição local: não integra login/listener, não troca encoder e não declara paridade dos blocos de buffs ainda pendentes.
-- O Type=11 Escudo Magico projeta seu delta de AC entre Type=16 e Soul: o alvo usa `Level / 5 + Value` e o W2PP `Level / 3 + Value`.
-- O Type=9 Arma Magica projeta Damage depois do Type=11 e antes de Soul; o alvo nao acrescenta Magic, enquanto o W2PP acrescenta `+5` por affect.
-- O Type=15 Toque de Athena projeta os quatro Special depois de Type=9 e antes de Soul; o alvo usa cap 255 em todos, enquanto o W2PP usa cap 200 apenas em Special1.
-- O Type=5 Fanatismo projeta a redução sequencial de `Dex` antes de Type=6; alvo e W2PP usam o mesmo fator `float` e narrowing para `short`.
-- O Type=6 DEX projeta a mutacao sequencial de `Dex` depois de Type=15; alvo e W2PP usam o mesmo fator `float` e narrowing para `short`.
-- O Type=12 reducao de AC projeta a mutacao sequencial de `Ac` depois de Type=6; alvo e W2PP usam o mesmo fator `float` e truncamento para `int`.
+- `TMSrv.vcxproj` inclui o helper comum por `..\\Basedef.cpp`; a copia `TMSrv/Basedef.cpp` nao compilada diverge em Type 35 e Type 4.
+- O coordenador preserva os snapshots dos blocos portados: rebuild base/equipamento, `Cur Special`, o estágio de Meditação Type 21, transformação `Type=16`, `Type=11` Escudo Mágico, `Type=9` Arma Mágica, `Type=15` Toque de Athena, `Type=5` Fanatismo, `Type=6` DEX, Haste, Soul e override Kibita. As parcelas de score Type 4/34/35/8/38 continuam na passagem por slot do composer.
+- AC possui a passagem ordenada propria confirmada na 7.69: primeiro Type 24/31/25/16/11/21 sobre todos os slots; depois Type 12 e Type 8 bit 4 intercalados pela ordem dos slots. Type 21 subtrai `Level / 3 + 10` por slot no primeiro passe. O AC final do coordenador e usado por `AfterScoreAffects` e pela projecao de login.
+- O composer geral aplica os demais campos dos Type 8 selecionados, mas suprime sua parcela de AC bit 4 quando chamado pelo coordenador, evitando duplicar a aplicacao do estagio AC.
+- Os ACs de `AfterTransformation`, `AfterSamaritan` e `AfterArmorClassReduction` preservam os resultados locais desses estagios para diagnostico; `AfterScoreAffects` e o campo AC canonico apos as duas passagens selecionadas.
+- `AfterScoreAffects` projeta MaxHP/MaxMP/AC/Damage, Magic local, LearnedSkill e RSV aditivo do Type 8 bit 2 antes de Soul. Os deltas de Magic leem `MOB.Magic` de origem por slot e se acumulam no valor local.
+- Type 25 aplica `Level / 2 + Value` e mais 30 em `Level >= 255` na primeira passagem; W2PP só altera resistências e não soma AC. Type 21 aplica sua redução de AC nesse mesmo passe; seu ajuste `DAMAGEMULTI` entra no multiplicador final de login pela fórmula 7.69 `Level / 25 + Value`, enquanto W2PP usa `Level / 10 + Value`. Outros branches ainda não portados ficam fora desta projeção selecionada.
+- Soul observa os MaxHP/MaxMP produzidos pelos blocos projetados; Kibita observa o resultado da Soul. `RsvWithAffects` une RSV_VISION do Type 8 e o mask de Haste.
+- O estado `AfterTransformation` projeta somente Damage aditivo, AC e MaxHP. Attack/Run, multiplicador, Critical e equipamento permanecem em snapshots explicitos porque seus blocos de commit ainda nao foram portados.
+- Type 11 Escudo Magico usa `Level / 5 + Value`; W2PP usa `Level / 3 + Value`.
+- Type 9 Arma Magica projeta Damage; o alvo nao acrescenta Magic, enquanto o W2PP acrescenta `+5` por affect.
+- Type 15 Toque de Athena projeta os quatro Special; o alvo usa cap 255 em todos, enquanto o W2PP usa cap 200 apenas em Special1.
+- Type 5 Fanatismo e Type 6 DEX projetam a mutacao sequencial de Dex; alvo e W2PP usam o mesmo fator float e narrowing para short.
+- Type 12 reducao de AC usa o mesmo fator float e truncamento para int nas fontes; a ordem global 7.69 difere do loop unico W2PP.
+- Type 35 segue o helper comum 7.69: HP +15% e MP +7% por slot, com o teto comparado ao delta. W2PP e a copia TMSrv nao compilada usam 10%/10%.
+- Type 8 bit 1 fica no estagio separado de resistencia; bits 0/3 ficam na trilha de ataque. O composer trata os bits selecionados 2/4/5/6/7; bit 4 AC e delegado a passagem AC ordenada quando integrado.
+- Type 4 usa o helper comum selecionado pelo `TMSrv.vcxproj`: HP +15%, MP +10%, Damage +30% e Magic +20% de `MOB.Magic`, com limites comparados ao delta. W2PP diverge: sem HP/MP, `DAMAGEMULTI +4`, Damage +30 e Magic +5.
+- Type 38 transfere `MaxMP / 2` do MaxMP corrente para MaxHP por slot. A source comum 7.69 e W2PP tem a mesma formula.
+- O caso `interleaved-type-4-8-34-35-38-composition-before-soul` inclui Type 31 no slot 7, Type 25 no slot 8 e Type 21 no slot 9: base AC 101 recebe Type 31 +15, Type 25 +157, Type 21 -26 e Type 8 bit 4 +24, terminando em AC 271. Type 21 também contribui `50 / 25 + 10 = 12` ao `DAMAGEMULTI`; no golden de login, o dano 172 após os affects termina em 192 após o multiplicador final de 112%. Os testes do coordenador verificam o estágio Meditation, Type 21/24 em ambas as ordens de slot e Type 25/16, incluindo os limites de Type 25.
+- Este fixture valida a composicao do coordenador, consumida pela projecao de login. Nao declara paridade integral nem altera persistencia ou wire.
 - SHA-256 do `Basedef.cpp` alvo: `D84B2E358825CC0AF1FF8D0CFD316E09304892C15422A48C3D94A3D047927610`.
 - SHA-256 do `Server/W2PP/Source/Code/Basedef.cpp`: `C9E04E7F0AAC87DFDAB367B77F3DC8384355FE1166898FFEB62E095C551B99F7`.

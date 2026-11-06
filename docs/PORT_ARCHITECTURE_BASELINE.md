@@ -48,7 +48,24 @@ Contrato de conectividade confirmado estaticamente na source TMProject 7.69:
 `szList[63-i]`; slot 0 da linha e URL HTTP de status, slots 1..10 sao hosts IPv4.
 O binario empacotado tem 7045 bytes e a decodificacao de seus primeiros 7040 bytes
 produz texto invalido; nao o usar como configuracao. A fonte fixa `8281` como porta
-de jogo, sem porta por canal. A tabela `pKeyWord[512]` coincide exatamente com a
+de jogo, sem porta por canal.
+
+Comparativo de origem: W2PP `Basedef.cpp:6874-6958` le `serverlist.txt` como
+`grupo servidor endereco` e gera a mesma matriz `10x11x64` usando a mesma chave
+invertida `szList[63-i]` e o mesmo encoder encontrado na TMSrv da TMProject
+7.69 (`Basedef.cpp:6492-6570`). A UI 7.69 (`TMSelectServerScene.cpp:433-466,
+1364-1416`) consulta o slot 0 de cada grupo como URL de status, hosts nos slots
+1..10 e percorre grupos 0..9. Isso confirma compatibilidade do formato/encoder
+entre as duas sources; nao prova que W2PP descenda de um autor ou release
+especifico dos topicos WebCheats. A orientacao do forum de que a primeira
+"sessao" nao e usada e que precisa haver duas linhas e uma dica para a release
+em discussao, com ressalva do proprio autor de memoria incerta; nao substitui o
+contrato 7.69. Referencias:
+[topico sobre canal ausente](https://www.webcheats.com.br/topic/2308630-canal-nao-aparece-no-cliente/),
+[TOA 7.62](https://www.webcheats.com.br/topic/2273583-source-release-toa-762/) e
+[Full PvP 7662](https://www.webcheats.com.br/topic/2272626-releasesource-wyd-full-pvp-7662/).
+
+A tabela `pKeyWord[512]` coincide exatamente com a
 tabela C#, e um handshake/frame sintetico conforme a source foi aceito pelo
 listener diagnostico em `127.0.0.1:8281` (`0x020D`, 116 bytes, versao 1758). O
 perfil ativo `Client\7670` agora tem `sn.bin`/`sn2.bin`/`serverlist.bin` gerados
@@ -482,6 +499,122 @@ Socket.Accept
   -> ServerWireLog (TX)
 ```
 
+Recorte SHOP-005 recente: o parser `RepurchaseItemsMessage` para `0x03E8`
+valida `Header.ID` e `USER_PLAY`, consulta snapshot transitório em
+`WorldHub.Participant` por `LegacyRecycleBinRequestHandler`, projeta os dez
+itens na ABI cliente e responde no mesmo fluxo TCP. `WorldHub.Leave` descarta
+esse estado; não há persistência de recycle bin. `LegacyNpcSellPreparationCoordinator`
+compõe o lookup autoritativo, TradeMode, itemdata e avaliador numa preparação
+read-only; o handler stateful `LegacyNpcSellRecycleBinHandler` ainda não é
+chamado por `0x037A`.
+
+As snapshots de WorldHub e account store não compartilham lock/transação. O
+recorte `LegacyNpcSellCompletionRules` + `WorldHub.TryCommitNpcSell` agora
+revalida sob o lock do WorldHub o MOB, Coin, localização/taxa do alvo, recycle
+bin e espelho runtime do equipamento antes de limpar carry/equipamento, creditar
+Coin e inserir a recompra juntos. Slots de equipamento também limpam a cópia
+independente de 18 itens e resetam o ajuste de parry; rollback condicional
+restaura os estados. A persistência do MOB e do sidecar de equipamento continua
+no caminho separado de save do personagem, sem transação conjunta, e a recycle
+bin segue transitória.
+
+A comparação de `_MSG_Sell` em TMProject e W2PP mostrou que `BASE_GetVillage`
+retorna 5 fora das cinco zonas, enquanto o handler deixa passar 5 e lê
+`g_pGuildZone[5]` (`MAX_GUILDZONE=5`). O acesso é fora dos limites; a preparação
+e o builder retornam sem plano em vez de inventar uma taxa ou assumir
+`LABEL_S2`. Cargo e o acesso fora dos limites da vila 5 continuam sem plano. O
+snapshot de tesouraria já é gravado pelo checkpoint periódico do host; isso
+não torna a venda e o save do personagem uma transação conjunta. TMProject
+inclui `GetRecycleBin`; W2PP não tem esse passo em `_MSG_Sell`.
+
+Atualização do recorte seguinte: o preço bruto e líquido agora alimentam o
+cálculo 7.69 `tcoin=(gross-net)/2; tcoin/=2`. `TryCommitNpcSell` aplica em
+memória os créditos ao `GuildImpostoID[sVillage]` e depois ao índice global 4,
+com gates e limites do fonte; a vila 4 pode creditar o mesmo NPC duas vezes.
+`RegisterGuildTreasuryNpcLocked` aceita IDs `[MAX_USER,MAX_MOB)`, inclusive o
+primeiro slot NPC 1000, alinhado ao gate da fonte e compartilhado com Tiny.
+`GuildTaxNpcUpdates` retorna snapshots para rollback condicional, que compara
+todos os destinos antes de restaurar qualquer estado. Os MOBs tributários são
+gravados pelo checkpoint de 12 s; o checkpoint não é uma transação conjunta
+com o MOB/sidecar do vendedor, e a recycle bin continua transitória.
+
+`LegacyNpcSellResponsePlanner` valida o `MSG_Sell` decodificado contra o
+outcome do commit. O Host autenticado agora envia a resposta 7.69 em ordem:
+aviso amarelo `0x5000` (`Adquiriu {net} de gold`), echo `0x037A`; para
+equipamento nos slots 1..7, `0x036B` aos participantes na visão 33x33 exceto o
+vendedor; e `0x0337` ao vendedor por último. Venda carry e equipamento nos
+slots 8..15 não têm relay visual. Se o plano falha depois do commit, o Host
+tenta rollback condicional antes de transmitir qualquer sucesso. O checkpoint
+de personagem foi portado com
+ring de conexão `1..999` e scan serial nominal de 4 s: pula slots vazios/não
+`Playing`, salva no máximo um personagem por passagem e retoma após o último
+slot salvo. Com N jogadores ativos, cada personagem volta ao checkpoint em
+aproximadamente `N × 4 s`; ticks durante I/O são coalescidos. Logout e
+desconexão compartilham o gate por slot e revalidam a sessão antes de capturar o
+snapshot.
+
+A operação composta salva MOB, posição, Extra, affects e sidecar de equipamento
+cliente 18-slot. `MOB.Coin` é Gold carregado; `STRUCT_ACCOUNTFILE.Coin` no
+`AccountCoinOffset` é saldo bancário (`pUser.Coin`), conforme Deposit/Withdraw,
+`SendCargoCoin` e o fluxo AutoTrade das fontes 7.69/W2PP. A retomada 05/11
+renomeou o campo exposto pelo snapshot para `BankCoin` e removeu a cópia do
+Gold do MOB para o saldo bancário nos writers de checkpoint, estado de
+personagem, guilda e estado atômico. Testes do store de arquivo passaram; a
+integração de escrita/rollback MariaDB continua pendente. O MOB persistido
+preserva o SkillBar armazenado;
+ShortSkill tem writer próprio. Cargo e quest diária não têm owner mutável na
+sessão de venda NPC e ficam fora do snapshot; a compra AutoTrade tem
+um commit especializado que altera Cargo no backend, sem criar estado Cargo
+online para `MSG_Sell`. Donate também fica fora: o adapter de arquivo preserva
+seu campo do blob sob o mesmo state gate, enquanto `accounts.donate` no MariaDB
+tem writer separado e não participa da transação do checkpoint. O backend de
+arquivo usa um gate process-local compartilhado por raiz entre checkpoint de
+conta e journal da compra AutoTrade, além do journal v2 para blob+sidecar e
+leitura/recovery do journal v1 de duas contas. MariaDB grava blob e sidecar numa
+transação `Serializable`, sem schema novo. Os dois `SaveUser` de referência
+atribuem incorretamente os contadores diários a `MobCount1`; o port não reproduz
+o defeito nem tenta salvar campos sem estado vivo.
+
+Durabilidade e validação atualizadas em 04/11: `TryCommitNpcSell` altera
+vendedor e tesoureiros em memória; o dispatch não grava nenhum dos stores antes
+de responder. O vendedor usa checkpoint serial de 4 s e tentativa best-effort
+na saída; cada MOB tributário usa arquivo raw separado no ciclo de 12 s, quando
+`--npc-root` está ativo. No shutdown, o Host drena as tarefas de conexão,
+aguarda o loop periódico e então executa uma varredura final
+`SaveRegisteredAsync` quando o root NPC foi configurado. Falhas são registradas
+e agregadas, sem bloquear a publicação do status offline. O teste `NPC sell and
+treasury independent checkpoints` confirmou com stores reais que os arquivos
+tributários só refletem EXP `1125/2125` após `SaveRegisteredAsync`. Interrupção
+pode deixar nenhum lado, só o vendedor, só tesouraria ou ambos persistidos; não
+há transação, replay nem reconciliação conjunta.
+
+Build completa passou com 0 avisos/erros. O rerun Engine.Tests com `TEMP/TMP`
+sob o workspace passou `590/592`, incluindo o teste novo do gate compartilhado;
+as únicas falhas foram os dois loopbacks bloqueados (`SocketException 10013`).
+O smoke autenticado
+headless confirmou logout do vendedor, Coin/carry persistidos e log da varredura
+final de tesouraria no shutdown. Ele não comprova bytes tributários não-zero ou
+transação conjunta. O smoke de carry vazio também confirmou `0x0182`/slot 0 sem
+mutação. As respostas de Language 170 (carga em auto-venda), 116
+(não comerciante) e 167 (`EF_VOLATILE == 1`) estão ligadas ao Host via
+`MSG_MessagePanel`. Para alvo fora da visão, o Host também envia o sinal vazio
+`0x0196`, ID `30000` (`ESCENE_FIELD`), equivalente ao
+`SendClientSignal(ESCENE_FIELD, _MSG_CloseShop)` de TMProject/W2PP. Para item
+com índice zero em carry, o Host envia `SendItem` (`0x0182`) com o slot e item
+do snapshot autoritativo. Índices negativos/fora da tabela seguem silenciosos:
+`GetItemPointer` retorna `NULL` antes do ramo nativo de resync.
+MariaDB segue pendente: `127.0.0.1:3306` está fechado e o último provider 1042
+ocorreu antes de DDL. SDK 10.0.401; `dotnet --info` saiu 1 por acesso negado ao
+Service Control Manager. Build, Engine.Tests e smoke de carry vazio finais em
+`Backup/Build/shop-005-carry-resync-20261104/`; os smokes de venda e fora da
+visão permanecem em `Backup/Build/npc-sell-close-shop-20261104/`. O smoke de
+venda confirmou Coin e carry após shutdown; o smoke fora da visão confirmou
+`0x0196`/ID `30000`, frame vazio e item preservado. Sem E2E visual, schema, Site,
+deploy, commit ou push.
+Próximo: repetir integração MariaDB quando o serviço aceitar conexão; depois
+definir a mutação autoritativa de cargo e avançar buyback, `MSG_Buy` e estoque.
+A recycle bin permanece transitória.
+
 O pipeline funciona, mas o roteamento e uma cadeia ordenada de `TryParse`. Isso torna a ordem parte implicita do contrato, permite colisao entre parsers e concentra o conhecimento de sessao, resposta e persistencia no listener.
 
 ## 4. Inventario de responsabilidades e chamadas
@@ -883,3 +1016,115 @@ para a visao, sem PK, Action relay, CreateMobTrade ou RemoveMob. Unidade (276
 PASS), build (0 avisos/0 erros) e E2E wire combinado em loopback passaram.
 E2E visual, evento AFK/ISTradTimer e ban/deteccao 7.69 continuam pendentes;
 nenhum deploy foi feito neste recorte.
+
+## Mapa estrutural do checkout ativo (31/10/2026)
+
+Esta secao registra a estrutura encontrada no codigo atual; complementa o
+baseline historico acima e nao representa uma reorganizacao ou arquitetura-alvo
+ja implementada.
+
+### Projetos e dependencias reais
+
+```text
+WYD 7.670
+  | TCP / CPSock
+  v
+WydCdk.Server.Core (WydCdk.Server)
+  |--> WydCdk.Protocol
+  |--> WydCdk.World --------> WydCdk.Protocol
+  |       |-- WorldHub e regras/coordenadores
+  |       |-- stores de arquivo e MariaDB
+  |       `-- relays que montam alguns frames
+  `--> sockets, dispatch, composicao e loops
+
+WydCdk.Server (ControlPanel) --inicia como processo--> WydCdk.Server.Core
+WydCdk.ClientPatcher --ferramentas locais independentes
+```
+
+Os projetos de runtime encontrados sao `Protocol`, `World`, `Server`,
+`Server.ControlPanel` e `ClientPatcher`. Ainda nao existem projetos separados de
+Transport, Application, Domain ou Infrastructure. O projeto `World` referencia
+`Protocol` e tambem contem `LegacyFileAccountStore`, os adapters MariaDB, os
+contratos de persistencia e dependencias `MySqlConnector`/`BCrypt.Net-Next`.
+Logo, seus nomes atuais indicam agrupamentos de codigo, nao fronteiras limpas de
+camada. O painel WinForms inicia `WydCdk.Server.Core.exe`; nao hospeda as regras
+do jogo. Cliente, Site e fontes de referencia ficam fora desse grafo do servidor.
+
+### Caminho efetivo de um frame
+
+```text
+TcpListener.AcceptTcpClientAsync (Program.cs)
+  -> InspectConnectionAsync / SerializedNetworkStream
+  -> LegacyFrameStream: handshake e buffering de TCP
+  -> LegacyFrameCodec: decodifica frame CPSock
+  -> ServerWireLog + ClientTickPolicy
+  -> parsers TryParse em sequencia e gate de LoginSessionRegistry
+  -> coordenador ou operacao sincronizada do WorldHub
+  -> store de personagem, quando a operacao exige durabilidade
+  -> montagem da confirmation/adaptacao de ABI
+  -> stream da conexao ou WorldHub.SendAsync para relay/broadcast
+```
+
+O handshake esperado pelo decoder e `0x1F11F311`. O header tem 12 bytes e o
+limite de frame e 8192 bytes; o stream TCP e acumulado ate haver handshake,
+header e frame completos. `DecodedFrame` conserva o resultado do checksum e cada
+parser de mensagem decide se aceita checksum, opcode, tamanho e offsets. O
+dispatch do host e uma cadeia ordenada de `TryParse`, nao um roteador central por
+opcode; portanto, ordem e especificidade dos parsers fazem parte do risco de
+compatibilidade. `SerializedNetworkStream` e o lock de envio do participante
+evitam intercalar frames quando resposta e broadcast escrevem na mesma conexao.
+
+No sentido inverso, a maioria das confirmations tem serializer em `Protocol`,
+mas o host tambem possui builders/adapters de 7.69 e `WorldHub`/relays podem
+receber codec e produzir bytes de frame. O `WorldHub` guarda o callback de envio
+da conexao para permitir relay sem manter seu lock durante I/O. Assim, hoje a
+fronteira de wire atravessa `Protocol`, `Server` e partes de `World`.
+
+### Estado, regra e durabilidade
+
+`WorldHub` e uma fachada de estado compartilhado por um processo/mundo. O arquivo
+central atual tem cerca de 15 mil linhas, concentra participantes, NPCs, drops,
+party, summons, eventos, mapas e operacoes de jogo; um unico `gate` protege seus
+colecoes e transicoes. Os arquivos `WorldHub.*.cs` extraem alguns contextos,
+mas continuam sendo partes da mesma classe. Calculadoras, regras puras e
+coordenadores `Legacy*` ja formam unidades menores, embora ainda convivam no
+assembly `World`.
+
+O estado em runtime usa snapshots de bytes do layout legado em varios fluxos.
+`LegacyAccountSnapshot` mapeia o blob de conta de 7945 bytes e offsets x86
+medidos; `LegacyFileAccountStore` e `MariaDbWorldCharacterStore` implementam
+acesso duravel no mesmo projeto. A persistencia de personagem e extensoes com
+layout novo tem contratos separados quando a ABI antiga nao comporta a nova
+informacao. Regras que alteram o mundo devem continuar separadas do I/O e do
+envio: ha coordenadores com planos/resultado, mas o host ainda tem casos que
+coordenam diretamente validacao, mutacao, persistencia e relay.
+
+Ao comparar layouts de skills, nao reutilizar offsets de outra ABI: neste blob
+C# `LearnedSkill` fica em `+780` e `Magic` em `+784`; a struct MOB do cliente
+TMProject 7.69 poe `LearnedSkill[0]`/`LearnedSkill[1]` em `+796`/`+800`. O adapter
+ativo ainda nao tem estado canonico para esse segundo word, portanto `+784` nao
+pode ser tratado como ele.
+
+### Dispatcher de referencia e como usar este mapa no port
+
+Na TMSrv C++ da TMProject 7.69, `ProcessClientMessage` faz os gates comuns e
+roteia o opcode para `Exec_MSG_*`; o handler geralmente le a struct de mensagem,
+aplica a regra, altera `pMob` e envia os retornos. W2PP preserva uma organizacao
+parecida e serve para comparar divergencias. O port C# distribui o mesmo caminho
+por request/confirmation em `Protocol`, composicao/dispatch em `Server` e estado
+em `World`, mas essa separacao ainda e parcial.
+
+Para cada novo recorte wire, rastrear explicitamente:
+
+1. struct/opcode e caminho de envio no cliente 7.69;
+2. gate/handler e efeitos em estado na TMSrv 7.69;
+3. equivalente W2PP e diferencas deliberadamente mantidas;
+4. parser/ABI em `Protocol`, roteamento em `Server` e mutacao em `World`;
+5. frames e ordem de resposta/relay;
+6. testes de contrato, regra e rede correspondentes, com E2E visual como gate
+   distinto.
+
+Esse mapa ajuda a localizar problemas de wire antes de alterar regras e evita
+reorganizacao em massa. Ele nao substitui inventario por opcode, auditoria de
+persistencia nem validacao de cliente; o proximo recorte segue isolado nas
+fronteiras atuais.

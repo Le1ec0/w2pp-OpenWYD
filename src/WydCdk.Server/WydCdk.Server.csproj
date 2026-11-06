@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WydCdk.Engine.Tests" />
+    <InternalsVisibleTo Include="WydCdk.Client.E2E" />
   </ItemGroup>
 </Project>

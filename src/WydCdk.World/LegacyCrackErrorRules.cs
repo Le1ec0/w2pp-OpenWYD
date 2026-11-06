@@ -6,6 +6,8 @@ public static class LegacyCrackErrorRules
     public const int LogoutThreshold = 2_000_000_000;
     public const int QuitTradePoints = 10;
     public const int QuitTradeType = 17;
+    public const int NpcSellHpModePoints = 10;
+    public const int NpcSellHpModeType = 23;
     public const int AttackDeadPoints = 1;
     public const int AttackDeadType = 8;
     public const int AttackTimingPoints = 1;

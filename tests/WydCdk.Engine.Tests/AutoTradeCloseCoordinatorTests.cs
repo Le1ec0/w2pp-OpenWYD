@@ -456,6 +456,7 @@ internal static class AutoTradeCloseCoordinatorTests
 
     public static void CloseAtomicAndRetry() => RunAtomicAndRetry().GetAwaiter().GetResult();
     public static void DeadClosePreservesEverything() => RunDead().GetAwaiter().GetResult();
+    public static void TinyInvalidPositionCleanupClosesDeadAuthor() => RunTinyInvalidPositionCleanup().GetAwaiter().GetResult();
     public static void CloseWaitsDurabilityAndHpAcceptance() => RunHeld().GetAwaiter().GetResult();
     public static void CloseFailuresPreservePair() => RunFailures().GetAwaiter().GetResult();
     public static void CloseCancellation() => RunCancellation().GetAwaiter().GetResult();
@@ -567,6 +568,28 @@ internal static class AutoTradeCloseCoordinatorTests
                 "Dead close returned a success/PK/visual plan.");
             Check(store.DeleteCalls == 0 && fixture.Book.Snapshot().Count == 2 && fixture.World.IsLiveTradeActive(7) &&
                 fixture.World.IsLiveTradeActive(12) && (await store.ReadAllAsync()).Count == 2, "Dead close changed pair or durable shops.");
+            fixture.CheckMobs();
+        }
+    }
+
+    private static async Task RunTinyInvalidPositionCleanup()
+    {
+        foreach (var hp in new[] { 0, -1 })
+        {
+            var fixture = SetHp(Create(), hp);
+            await using var store = await HeldStore.Create(fixture);
+            var codec = LegacyFrameCodec.CreateDefault();
+            var dispatch = await LegacyAutoTradeCloseCoordinator.CloseForTinyCombineInvalidPositionAndCaptureAsync(
+                7, fixture.Sessions, fixture.World, fixture.Book, store, codec, 19, 3);
+
+            Check(dispatch.Outcome.Result == LegacyAutoTradeCloseResult.Closed && dispatch.Outcome.Trade?.OpponentId == 12 &&
+                dispatch.Outcome.ClosedListings.Count == 2 && dispatch.Frames.Count == 5,
+                $"Tiny invalid-position cleanup did not close the dead author and bilateral listings at HP {hp}.");
+            Check(dispatch.Frames.Count(plan => codec.Decode(plan.Frame).Header.Type == 0x0384) == 2 &&
+                store.DeleteCalls == 1 && fixture.Book.Snapshot().Count == 0 &&
+                !fixture.World.IsLiveTradeActive(7) && !fixture.World.IsLiveTradeActive(12) &&
+                (await store.ReadAllAsync()).Count == 0,
+                $"Tiny invalid-position cleanup did not clear runtime and durable trade state at HP {hp}.");
             fixture.CheckMobs();
         }
     }

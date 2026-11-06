@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using WydCdk.Protocol;
 using WydCdk.World;
@@ -28,12 +29,135 @@ if (args.Length == 1 && args[0] == "--account-review-process-test")
 }
 
 var tests = new (string Name, Action Run)[] { ("header round-trip", HeaderRoundTrip), ("frame round-trip with real legacy table", FrameRoundTrip), ("stream accepts partial and concatenated frames", StreamFraming), ("checksum detects incompatible key table", ChecksumDetectsIncompatibleKeyTable), ("account login parser", AccountLoginParser), ("create character parser", CreateCharacterParser), ("delete character wire", DeleteCharacterWire), ("character logout wire", CharacterLogoutWire), ("login session transitions", LoginSessionTransitions), ("legacy account store is read-only", LegacyAccountStoreIsReadOnly), ("account login coordinator", AccountLoginCoordinatorFlow), ("character selection wire layout", CharacterSelectionWireLayout), ("account login confirmation wire layout", AccountLoginConfirmationWireLayout), ("new character confirmation wire layout", NewCharacterConfirmationWireLayout), ("legacy account snapshot reads fixture", LegacyAccountSnapshotReadsFixture), ("legacy character name validation", LegacyCharacterNameValidation), ("legacy character template store reads class files", LegacyCharacterTemplateStoreReadsClassFiles), ("create character coordinator persists character", CreateCharacterCoordinatorPersistsCharacter), ("create character coordinator rejects invalid requests", CreateCharacterCoordinatorRejectsInvalidRequests), ("character login parser", CharacterLoginParser), ("character login confirmation wire layout", CharacterLoginConfirmationWireLayout), ("character login coordinator reads persisted character", CharacterLoginCoordinatorReadsPersistedCharacter), ("character login coordinator rejects invalid requests", CharacterLoginCoordinatorRejectsInvalidRequests), ("account secure parser", AccountSecureParser), ("account secure signal wire layout", AccountSecureSignalWireLayout), ("account secure coordinator first time setup", AccountSecureCoordinatorFirstTimeSetup), ("account secure coordinator verifies and changes pin", AccountSecureCoordinatorVerifiesAndChangesPin), ("account secure coordinator rejects wrong pin and unverified change", AccountSecureCoordinatorRejectsWrongPinAndUnverifiedChange) };
-tests = tests.Append(("client tick policy", ClientTickPolicyRules)).Append(("attack timing gate", AttackTimingGate)).Append(("attack parser", AttackParser)).Append(("attack response wire", AttackResponseWire)).Append(("attack authoritative pipeline", AttackAuthoritativePipeline)).Append(("set hp mp wire", SetHpMpWire)).Append(("set hp mode wire", SetHpModeWire)).Append(("send item wire", SendItemWire)).Append(("update carry wire", UpdateCarryWire)).Append(("physical combat formula", PhysicalCombatFormula)).Append(("skill combat formula", SkillCombatFormula)).Append(("experience formula", ExperienceFormula)).Append(("weapon damage formula", WeaponDamageFormula)).Append(("item data table", ItemDataTable)).Append(("item bonus math", ItemBonusMath)).Append(("item refinement bonus math", ItemRefinementBonusMath)).Append(("use item wire and class reset", UseItemWireAndClassReset)).Append(("world physical attack", WorldPhysicalAttack)).Append(("world npc experience", WorldNpcExperience)).Append(("world npc skill", WorldNpcSkill)).Append(("world npc party experience", WorldNpcPartyExperience)).Append(("world experience hold", WorldExperienceHold)).Append(("party experience modifiers", PartyExperienceModifiers)).Append(("experience bonus", ExperienceBonus)).Append(("world skill attack", WorldSkillAttack)).Append(("world summon skill", WorldSummonSkill)).Append(("world npc summon", WorldNpcSummon)).Append(("world ethereal flames", WorldEtherealFlames)).Append(("skill data table", SkillDataTable)).Append(("skill attack gate", SkillAttackGate)).Append(("legacy mob combat layout", LegacyMobCombatLayout)).Append(("legacy map grid attributes", LegacyMapGridAttributes)).Append(("legacy release map recall", LegacyReleaseMapRecall)).Append(("character login spawn", CharacterLoginSpawnPosition)).Append(("legacy guild zone state", LegacyGuildZoneStateFile)).Append(("short skill wire and persistence", ShortSkillWireAndPersistence)).Append(("action parser", ActionParser)).Append(("motion wire", MotionWire)).Append(("world hub broadcast", WorldHubBroadcast)).Append(("world skill mana mutation", WorldSkillManaMutation)).Append(("world illusion fixed mana mutation", WorldIllusionFixedManaMutation)).Append(("world guild invite", WorldGuildInvite)).Append(("guild invite visual update", GuildInviteVisualUpdate)).Append(("create mob wire", CreateMobWire)).Append(("initial world state wire", InitialWorldStateWire)).Append(("guild invite wire", GuildInviteWire)).Append(("message panel wire", MessagePanelWire)).Append(("pk info wire", PkInfoWire)).Append(("npc chat wire", NpcChatWire)).Append(("message chat wire", MessageChatWire)).Append(("world player chat view", WorldPlayerChatView)).Append(("message whisper wire", MessageWhisperWire)).Append(("world whisper target", WorldWhisperTarget)).Append(("get item wire", GetItemWire)).Append(("world ground item pickup", WorldGroundItemPickup)).Append(("donate shop wire", DonateShopWire)).Append(("donate shop client state", DonateShopClientStateFlow)).Append(("donate shop catalog and purchase", DonateShopCatalogAndPurchase)).ToArray();
+tests = tests.Append(("client tick policy", ClientTickPolicyRules)).Append(("attack timing gate", AttackTimingGate)).Append(("attack parser", AttackParser)).Append(("attack response wire", AttackResponseWire)).Append(("attack authoritative pipeline", AttackAuthoritativePipeline)).Append(("set hp mp wire", SetHpMpWire)).Append(("set hp mode wire", SetHpModeWire)).Append(("send item wire", SendItemWire)).Append(("update carry wire", UpdateCarryWire)).Append(("physical combat formula", PhysicalCombatFormula)).Append(("skill combat formula", SkillCombatFormula)).Append(("experience formula", ExperienceFormula)).Append(("weapon damage formula", WeaponDamageFormula)).Append(("item data table", ItemDataTable)).Append(("item bonus math", ItemBonusMath)).Append(("item refinement bonus math", ItemRefinementBonusMath)).Append(("use item wire and class reset", UseItemWireAndClassReset)).Append(("Blood Hands book acquisition", BloodHandsBookAcquisition)).Append(("world physical attack", WorldPhysicalAttack)).Append(("world physical DoubleCritical passive", WorldPhysicalDoubleCritical)).Append(("world physical mana control", WorldPhysicalManaControl)).Append(("skill 46 Type18 cast and physical response", WorldSkill46ManaControlCast)).Append(("world npc experience", WorldNpcExperience)).Append(("world npc skill", WorldNpcSkill)).Append(("world npc party experience", WorldNpcPartyExperience)).Append(("world experience hold", WorldExperienceHold)).Append(("party experience modifiers", PartyExperienceModifiers)).Append(("experience bonus", ExperienceBonus)).Append(("world skill attack", WorldSkillAttack)).Append(("world summon skill", WorldSummonSkill)).Append(("world npc summon", WorldNpcSummon)).Append(("world ethereal flames", WorldEtherealFlames)).Append(("skill data table", SkillDataTable)).Append(("skill attack gate", SkillAttackGate)).Append(("legacy mob combat layout", LegacyMobCombatLayout)).Append(("legacy map grid attributes", LegacyMapGridAttributes)).Append(("legacy release map recall", LegacyReleaseMapRecall)).Append(("character login spawn", CharacterLoginSpawnPosition)).Append(("legacy guild zone state", LegacyGuildZoneStateFile)).Append(("short skill wire and persistence", ShortSkillWireAndPersistence)).Append(("action parser", ActionParser)).Append(("motion wire", MotionWire)).Append(("world hub broadcast", WorldHubBroadcast)).Append(("world skill mana mutation", WorldSkillManaMutation)).Append(("world illusion fixed mana mutation", WorldIllusionFixedManaMutation)).Append(("world guild invite", WorldGuildInvite)).Append(("guild invite visual update", GuildInviteVisualUpdate)).Append(("create mob wire", CreateMobWire)).Append(("initial world state wire", InitialWorldStateWire)).Append(("guild invite wire", GuildInviteWire)).Append(("message panel wire", MessagePanelWire)).Append(("pk info wire", PkInfoWire)).Append(("npc chat wire", NpcChatWire)).Append(("message chat wire", MessageChatWire)).Append(("world player chat view", WorldPlayerChatView)).Append(("message whisper wire", MessageWhisperWire)).Append(("world whisper target", WorldWhisperTarget)).Append(("get item wire", GetItemWire)).Append(("world ground item pickup", WorldGroundItemPickup)).Append(("donate shop wire", DonateShopWire)).Append(("donate shop client state", DonateShopClientStateFlow)).Append(("donate shop catalog and purchase", DonateShopCatalogAndPurchase)).ToArray();
 tests = tests.Append(("party wire", PartyWire)).Append(("world party lifecycle", WorldPartyLifecycle)).ToArray();
-tests = tests.Append(("world npc common drop", WorldNpcCommonDrop)).Append(("world npc boss drop", WorldNpcBossDrop)).Append(("castle quest configuration", CastleQuestConfiguration)).Append(("castle quest rewards", CastleQuestRewards)).Append(("npc generation catalog", NpcGenerationCatalogFlow)).Append(("pista mob-left wire and area", PistaMobLeftWireAndArea)).Append(("quest request parser", QuestRequestParser)).Append(("pista registration flow", PistaRegistrationFlow)).Append(("pista entry schedule", PistaEntrySchedule)).Append(("pista fixed entry spawns", PistaFixedEntrySpawns)).Append(("pista entry generator matrix", PistaEntryGeneratorMatrix)).Append(("pista level 0 retry", PistaLevel0Retry)).Append(("pista level 2 reward", PistaLevel2Reward)).Append(("pista level 1 counters", PistaLevel1Counters)).Append(("pista level 1 exit reward", PistaLevel1ExitReward)).Append(("pista level 4 progression", PistaLevel4Progression)).Append(("pista level 3 progression", PistaLevel3Progression)).Append(("pista level 5 progression", PistaLevel5Progression)).ToArray();
+tests = tests.Append(("world npc common drop", WorldNpcCommonDrop)).Append(("world npc boss drop", WorldNpcBossDrop)).Append(("pista level 6 uses 7.69 generator ids", PistaLevel6V769DeathIdentifiers)).Append(("castle quest configuration", CastleQuestConfiguration)).Append(("castle quest rewards", CastleQuestRewards)).Append(("npc generation catalog", NpcGenerationCatalogFlow)).Append(("pista mob-count wire and area", PistaMobCountWireAndArea)).Append(("quest request parser", QuestRequestParser)).Append(("pista registration flow", PistaRegistrationFlow)).Append(("pista entry schedule", PistaEntrySchedule)).Append(("pista fixed entry spawns", PistaFixedEntrySpawns)).Append(("pista entry generator matrix", PistaEntryGeneratorMatrix)).Append(("pista level 0 retry", PistaLevel0Retry)).Append(("pista level 2 reward", PistaLevel2Reward)).Append(("pista level 1 counters", PistaLevel1Counters)).Append(("pista level 1 exit reward", PistaLevel1ExitReward)).Append(("pista level 4 progression", PistaLevel4Progression)).Append(("pista level 3 progression", PistaLevel3Progression)).Append(("pista level 5 progression", PistaLevel5Progression)).ToArray();
+tests = tests.Append(("NPC generation route parsing", LegacyNpcGenerationRouteTests.Run)).ToArray();
+tests = tests.Append(("NPC generation follower groups", LegacyNpcGenerationGroupTests.Run)).ToArray();
+tests = tests.Append(("NPC generation runtime schedule", LegacyNpcGenerationRuntimeTests.Run)).ToArray();
+tests = tests.Append(("account and auto-trade writers share account-root gate", () => LegacyAccountFileCoordinationTests.AccountAndAutoTradeWritersShareRootGate().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("account operation reservation gate", () => Task.WhenAll(
+    LegacyAccountOperationGateTests.SameAccountReservationsAreExclusiveAndCaseCanonical(),
+    LegacyAccountOperationGateTests.MultiAccountReservationsAreSortedAndDeduplicated(),
+    LegacyAccountOperationGateTests.CancellationAndDisposalReleaseReservations(),
+    LegacyAccountOperationGateTests.RecoveryBarrierBlocksUntilResolved()).GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("guild invite pair persistence", () => Task.WhenAll(
+    LegacyGuildInvitePersistenceTests.SameAccountPairIsAtomicAndConflictDoesNotWrite(),
+    LegacyGuildInvitePersistenceTests.DistinctAccountPairUpdatesAtomically()).GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("NPC Cargo sale persistence CAS", () => Task.WhenAll(
+    LegacyNpcCargoSalePersistenceTests.FileCasChangesOnlyCargoAndSellerMobCoin(),
+    LegacyNpcCargoSalePersistenceTests.FileCasConflictDoesNotWrite(),
+    LegacyNpcCargoSalePersistenceTests.FileJournalRecoversPreparedAndCommittedCargoCas()).GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("NPC Cargo durable runtime publication", LegacyNpcCargoSaleRuntimeCoordinatorTests.DurableCommitPublishesSharedCargoOwner))
+    .Append(("NPC Cargo conflict owner reconciliation", LegacyNpcCargoSaleRuntimeCoordinatorTests.ConflictReloadsOwnerBeforeNextRequest))
+    .Append(("NPC Cargo ambiguous after-image reconciliation", LegacyNpcCargoSaleRuntimeCoordinatorTests.AmbiguousCommitMatchingAfterImagePublishesOnce))
+    .Append(("NPC Cargo conflict snapshot failure barrier", LegacyNpcCargoSaleRuntimeCoordinatorTests.ConflictWithoutAuthoritativeReadRequiresRecovery))
+    .Append(("NPC Cargo seller coin conflict barrier", LegacyNpcCargoSaleRuntimeCoordinatorTests.ConflictWithChangedSellerCoinRequiresRecovery))
+    .Append(("NPC Cargo compensation exception barrier", LegacyNpcCargoSaleRuntimeCoordinatorTests.CompensationExceptionRequiresRecovery)).ToArray();
+tests = tests.Append(("account Cargo runtime owner", () =>
+{
+    LegacyAccountCargoRuntimeTests.SharedAccountOwnerUsesRevisionedCompareAndSwap();
+    LegacyAccountCargoRuntimeTests.AuthoritativeReloadReconcilesAndAdvancesRevision();
+})).ToArray();
+tests = tests.Append(("legacy mob AI planner", LegacyMobAiPlannerTests.Run)).ToArray();
+tests = tests.Append(("mob AI WorldHub", MobAiWorldTests.Run)).ToArray();
+tests = tests.Append(("mob AI WorldHub application", MobAiWorldApplicationTests.Run)).ToArray();
+tests = tests.Append(("mob AI runtime", LegacyMobAiRuntimeTests.Run)).ToArray();
+tests = tests.Append(("player transformation affect timer", PlayerTransformationAffectTimerTests.Run)).ToArray();
+tests = tests.Append(("generated mob AttackOne wire", LegacyMobAttackConfirmationTests.Run)).ToArray();
 tests = tests.Append(("world trade disconnect cleanup", WorldTradeDisconnectCleanup)).ToArray();
+tests = tests.Append(("legacy GetAttackMiss rate", AttackMissTests.Run)).Append(("world physical attack batch cardinality and order", WorldPhysicalAttackBatchCardinalityAndOrder)).ToArray();
+tests = tests.Append(("MSG_Attack Type 8 Abs restores final damage to the attacker", AttackPvpJewelAbsorptionTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack 7.69 Skill 204 Mãos Sangrentas double-critical heal", AttackBloodHandsTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack Zard quest progress and reward", AttackZardQuestTests.Run)).ToArray();
+tests = tests.Append(("isolated Type 8 bit 6 Parry arithmetic for positive PvP hits", AttackPvpJewelParryTests.Run)).ToArray();
+tests = tests.Append(("Type 8 bit 6 PvP Parry runtime integration", WorldPvpJewelParryStatefulIntegration)).ToArray();
+tests = tests.Append(("MSG_Attack skill Type 6 protection", AttackSkillType6Tests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill ForceDamage and PvPDamage modifiers", WorldSkillPostDamageModifiers)).ToArray();
+tests = tests.Append(("MSG_Attack 7.69 equipment grade ForceDamage/ReflectDamage", WorldEquipmentCombatGradeBonuses)).ToArray();
+tests = tests.Append(("MSG_Attack class 1 Type 6 self-cleanup", AttackClassOneType6Tests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 30 Judgment Divine HP cost and multi-target damage", AttackJudgmentDivineTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 6 Furia Divina knockback and target-loop gates", AttackFuryDivineTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack mortar skill ground-item gate", AttackMortarTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skills 41/44 Special-based target count", AttackSupportSkillTargetLimitTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 47 Cancelamento removes Type 19 and preserves generic Type 32 fallback", AttackCancelAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 51 Enfraquecer applies and expires Type 10 on the legacy first NPC index", AttackNpcWeakenAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 51 Enfraquecer applies and expires Type 10 on player targets", AttackPlayerWeakenAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 11 Assalto projects and restores Type 13 on player targets", AttackPlayerAssaultAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 3 Possuído projects and restores Type 14 on player self-targets", AttackPlayerPossuidoAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 43 Escudo Mágico projects and restores Type 11 on player targets", AttackPlayerMagicShieldAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 45 Toque de Athena projects and restores Type 15 on player self-targets", AttackPlayerAthenaTouchAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 77 Meditacao projects and restores Type 21 on player self-targets", AttackPlayerMeditationAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 13 Samaritano projects and restores Type 24 on player self-targets", AttackPlayerSamaritanAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 96 Poder Superior projects and restores Type 4 on player self-targets", AttackPlayerSuperiorPowerAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 53 Protecao Elemental projects and restores Type 25 on player self-targets", AttackPlayerElementalProtectionAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 85 Explosao Eterea projects and restores Type 31 on player self-targets", AttackPlayerGoldenShieldAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 76 Imunidade projects and restores Type 19 on player self-targets", AttackPlayerImmunityAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 87 Troca de Espiritos projects and restores Type 38 on player self-targets", AttackPlayerSpiritExchangeAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 216 Magia Misteriosa projects and restores Type 42 on player self-targets", AttackPlayerSoulSwapAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 75 Encantar Gelo projects Type 27 RSV_FROST on its player caster", AttackPlayerIceEnchantAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 95 Invisibilidade projects Type 28 RSV_HIDE on its player caster", AttackPlayerInvisibilityAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 89 Evasao Aprimorada projects Type 26 RSV_PARRY on its player caster", AttackPlayerEvasionAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 92 Olhos de Aguia projects Type 36 RSV_DRAIN with the weapon gate", AttackPlayerEagleEyesAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 81 Ligacao Espectral adds Type 37 to ForceDamage", AttackPlayerSpectralLinkAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skills 16/226 apply and expire Type 3 on NPC targets", AttackNpcPursuitAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 1 Toque Sagrado applies and expires Type 1 on the legacy first NPC index", AttackNpcHolyTouchAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 34 Lança de Gelo applies and expires Type 1 through the damaging NPC skill path", AttackNpcIceLanceAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack damage skills 23/36 apply Type 1 through the damaging NPC skill path", AttackNpcType1DamageSkillAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack RSV_FROST/RSV_DRAIN secondary affects target NPCs through legacy gates", AttackPhysicalNpcSecondaryAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack RSV_FROST Type 1 projects and restores player score", AttackPhysicalPlayerSecondaryAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill-hit RSV_FROST/RSV_DRAIN procs across player and NPC targets", AttackSkillSecondaryAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack Type 1 skills project and restore player score", AttackPlayerType1SkillAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skills 16/226 project and restore player Type 3 resistances", AttackPlayerPursuitAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 19 Lamina Congelante projects Type 7 on player targets", AttackPlayerFrozenBladeAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 19 Lâmina Congelante applies and expires Type 7 through the damaging NPC skill path", AttackNpcFrozenBladeAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack damage skills 20/21/40 produce Type 20 ticks on NPCs", AttackNpcPoisonTickAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 98 Book Vinha spawns an NPC at the target grid", AttackVineSummonTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack skill 102 Type 29 class-master affect delay", AttackSkill102DelayTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack rejects passive skill 82 and projects active skill 102 Type 29", AttackPlayerSoulAffectTests.Run)).ToArray();
+tests = tests.Append(("BASE_GetCurrentScore skill 82 Hunter Proficiency passive", HunterProficiencyPassiveSkillTests.Run)).ToArray();
+tests = tests.Append(("BASE_GetCurrentScore skill 15 Armadura Critica passive", ArmorCriticalPassiveSkillTests.Run)).ToArray();
+tests = tests.Append(("BASE_GetCurrentScore skill 14 Nocao de Combate passive", CombatAwarenessPassiveSkillTests.Run)).ToArray();
+tests = tests
+    .Append(("BASE_GetCurrentScore Hunter skill 2 Agressividade passive", HunterClassPassiveSkillTests.AggressivenessAddsSpecial2PlusTenForClawOrBow))
+    .Append(("BASE_GetCurrentScore Hunter skill 7 Tempestade de Raios passive", HunterClassPassiveSkillTests.LightningStormAddsTwiceSpecial2))
+    .Append(("BASE_GetCurrentScore Hunter skill 22 Protecao das Sombras passive", HunterClassPassiveSkillTests.ShadowProtectionRequiresClawAndAddsSpecial4ThirdPlusTenArmor))
+    .Append(("BASE_GetCurrentScore Hunter skill 18 Visao do Cacador passive", HunterClassPassiveSkillTests.HunterVisionAddsDexterityOverFiftyCritical))
+    .ToArray();
+tests = tests.Append(("MSG_Attack transformation skills project Type 16 equipment", AttackTransformationSkillTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack Type 9 terminal summon failure aborts later slots", AttackSkillSummonNoticeTests.Run)).ToArray();
+tests = tests.Append(("Ethereal Flame capture threshold falls with mob strength", AttackEtherealFlameCaptureTests.CaptureThresholdFallsAsTheMobGetsStronger))
+    .Append(("Ethereal Flame solo capture joins the caster party", AttackEtherealFlameCaptureTests.SoloCasterCapturesMobIntoOwnParty))
+    .Append(("Ethereal Flame capture gates keep the client marker", AttackEtherealFlameCaptureTests.CaptureGateFailuresKeepTheClientMarker))
+    .Append(("Ethereal Flame member capture joins the leader party", AttackEtherealFlameCaptureTests.PartyMemberCaptureJoinsTheLeaderParty))
+    .Append(("Ethereal Flame full party aborts with notice", AttackEtherealFlameCaptureTests.FullPartyAbortsTheHandlerWithNotice))
+    .Append(("Ethereal Flame player branch keeps the client marker", AttackEtherealFlameCaptureTests.PlayerBranchKeepsTheClientMarker)).ToArray();
+tests = tests.Append(("InstanceType 11 summons send SendAddParty", AttackNpcSummonPartyTests.SummonsSendLeaderAndMemberPartyAdds))
+    .Append(("InstanceType 11 summon copies guild and maps cape", AttackNpcSummonPartyTests.SummonCopiesGuildAndMapsCape))
+    .Append(("InstanceType 11 party summon of another type conflicts", AttackNpcSummonPartyTests.PartyMemberSummonOfAnotherTypeConflicts))
+    .Append(("InstanceType 11 pulls an out-of-view summon", AttackNpcSummonPartyTests.OutOfViewSummonIsPulledToTheCaster))
+    .Append(("InstanceType 11 full party stops after partial creation", AttackNpcSummonPartyTests.FullPartyStopsAfterPartialCreationWithNotice)).ToArray();
+tests = tests.Append(("BR arena rules follow the source bounds", BattleRoyaleArenaGateTests.RulesFollowTheSourceBounds))
+    .Append(("BR arena drops party invite and accept", BattleRoyaleArenaGateTests.PartyInviteAndAcceptAreDroppedInsideTheArena))
+    .Append(("BR arena Action recalls by level band", BattleRoyaleArenaGateTests.ActionInsideTheArenaRecallsByLevelBand))
+    .Append(("BR arena chat mask follows sender position", BattleRoyaleArenaGateTests.ChatMaskFollowsTheSenderPosition))
+    .Append(("BR controller publishes BrGrid", BattleRoyaleArenaGateTests.ControllerPublishesBrGridForEligibleServers)).ToArray();
+tests = tests.Append(("MSG_Attack Magic Mirror Foema skill mana surcharge", AttackMagicMirrorManaTests.Run)).ToArray();
+tests = tests.Append(("world physical attack batch shared critical and progress", WorldPhysicalAttackBatchSharedCriticalProgress))
+    .Append(("physical attack batch aggregate confirmation uses original slots and attacker state", PhysicalAttackBatchAggregateConfirmation))
+    .Append(("world physical attack batch passive reserves slot one", WorldPhysicalAttackBatchPassiveReservesSlotOne))
+    .Append(("physical batch shares ManaControl-adjusted passive damage across slots", WorldPhysicalAttackBatchManaControlSharesPassiveDamage))
+    .Append(("world physical attack batch defers normal death finalization", WorldPhysicalAttackBatchDeathFinalizesAfterNormalCompletion))
+    .Append(("world physical attack batch abort preserves partial mutation", WorldPhysicalAttackBatchOutOfRangeKeepsPartialMutation))
+    .Append(("world physical attack batch abort does not consume resurrection", WorldPhysicalAttackBatchAbortDoesNotConsumeResurrection))
+    .Append(("world physical attack batch abort keeps summon registered", WorldPhysicalAttackBatchAbortKeepsSummonRegistered))
+    .Append(("world attack prunes dead party summons", WorldAttackPrunesDeadPartySummons))
+    .Append(("world attack prunes dead party summons for player and NPC targets", WorldAttackPrunesDeadPartySummonsForPlayerAndNpcTargets))
+    .Append(("MSG_Attack Type 6 protection", WorldPhysicalAttackType6Protection)).ToArray();
+tests = tests.Append(("unified physical batch matches legacy batch and single-slot wrapper", UnifiedPhysicalBatchMatchesLegacyBatchAndSingleSlotWrapper)).ToArray();
 tests = tests.Append(("crack error rules and threshold", () => CrackErrorTests.Rules().GetAwaiter().GetResult()))
     .Append(("crack error session lifetime", () => CrackErrorTests.SessionLifetime().GetAwaiter().GetResult()))
+    .Append(("Renascimento resets only the revived player's crack counter", () => CrackErrorTests.RenascimentoResetsOnlyTheRevivedPlayersCrackCounter().GetAwaiter().GetResult()))
     .Append(("crack error concurrent counters", () => CrackErrorTests.ConcurrentCounters().GetAwaiter().GetResult())).ToArray();
 tests = tests.Append(("motion and QuitTrade shared crack counter", () => CrackErrorTests.MotionSharesQuitTradeCounter().GetAwaiter().GetResult())).ToArray();
 tests = tests.Append(("ReqTradeList shared crack counter", () => CrackErrorTests.TradeListSharesCounter().GetAwaiter().GetResult())).ToArray();
@@ -43,6 +167,114 @@ tests = tests.Append(("dead Attack shared crack counter", () => CrackErrorTests.
 tests = tests.Append(("Attack timing shared crack counter", () => CrackErrorTests.AttackTimingSharesCounter().GetAwaiter().GetResult())).ToArray();
 tests = tests.Append(("Attack 4/type7 backstep counter", () => CrackErrorTests.AttackBackstepSharesCounter().GetAwaiter().GetResult())).ToArray();
 tests = tests.Append(("Attack backstep unsigned wrap policy", () => CrackErrorTests.AttackBackstepWrapPolicy())).ToArray();
+tests = tests.Append(("MSG_Attack golden shield coin fee", GoldenShieldCoinTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack Exterminar uses then consumes current MP", AttackExterminarTests.Run)).ToArray();
+tests = tests.Append(("Attack target-count gate, shared counter, and excess-slot relay", AttackTargetLimitTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack mixed-slot batch contract surface", AttackMixedSlotTests.ContractSurfaceExists)).ToArray();
+tests = tests.Append(("MSG_Attack declared damage marker validation", () => AttackDamageMarkerTests.Run().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("MSG_Attack short two-target type24 gate", () => AttackType24Tests.Run().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("MSG_Attack protected NPC head area gate", () => AttackNpcHeadAreaGateTests.Run().GetAwaiter().GetResult())).ToArray();
+tests = tests.Append(("MSG_Attack same-clan NPC physical damage gate", AttackSameClanNpcGateTests.PhysicalSameClanNpcDamageIsSuppressed)).Append(("MSG_Attack same-clan NPC skill damage gate", AttackSameClanNpcGateTests.SkillSameClanNpcDamageIsSuppressed)).ToArray();
+tests = tests.Append(("MSG_Attack same-party physical damage remains active", AttackFriendlyFireGateTests.SamePartyPhysicalDamageRemainsActive))
+    .Append(("MSG_Attack same-guild physical damage remains active", AttackFriendlyFireGateTests.SameGuildPhysicalDamageRemainsActiveForPlayersAndNpcs))
+    .Append(("MSG_Attack guild-disabled hostile-skill damage", AttackFriendlyFireGateTests.GuildDisabledAttackerMayDamageSameGuildWithHostileSkill))
+    .Append(("MSG_Attack Battle Royale hostile-skill friendly-fire override", AttackFriendlyFireGateTests.BattleRoyaleOverrideAppliesOnlyInsideItsInclusiveArea))
+    .Append(("MSG_Attack same-party skill damage gate", AttackFriendlyFireGateTests.SamePartySkillDamageIsSuppressedWithoutBlockingTheSkillSlot))
+    .Append(("MSG_Attack same-guild skill damage gate", AttackFriendlyFireGateTests.SameGuildSkillDamageIsSuppressedForPlayersAndNpcs)).ToArray();
+tests = tests.Append(("MSG_Attack hostile skill PK and guild-war gate", AttackSkillPkGateTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack same-clan area physical damage gate", AttackSameClanAreaGateTests.PhysicalDamageIsSuppressedForSameClanInsideArea))
+    .Append(("MSG_Attack same-clan area skips physical ManaControl", AttackSameClanAreaGateTests.PhysicalAreaGateSkipsLaterManaControlEffects))
+    .Append(("MSG_Attack same-clan area player skill gate", AttackSameClanAreaGateTests.PlayerSkillDamageIsSuppressedForSameClanInsideArea))
+    .Append(("MSG_Attack same-clan area NPC skill gate", AttackSameClanAreaGateTests.NpcSkillDamageIsSuppressedForSameClanInsideArea))
+    .Append(("MSG_Attack same-clan area gate boundaries", AttackSameClanAreaGateTests.GateUsesInclusiveBoundsAndRequiresPositiveDamage))
+    .Append(("MSG_Attack same-clan area clears mixed batch wire targets", AttackSameClanAreaGateTests.MixedBatchClearsBlockedTargetIdsOnWire)).ToArray();
+tests = tests.Append(("MSG_Attack same-Clan RvR physical damage gate", AttackRvrSameClanGateTests.PhysicalSameClanTargetInsideActiveRvrHasNoDamage))
+    .Append(("MSG_Attack same-Clan RvR player skill gate", AttackRvrSameClanGateTests.PlayerSkillSameClanTargetInsideActiveRvrHasNoDamage))
+    .Append(("MSG_Attack same-Clan RvR continues through mount split", AttackRvrSameClanGateTests.PhysicalRvrGateContinuesThroughMountedTargetSplit))
+    .Append(("MSG_Attack same-Clan RvR continues through ManaControl", AttackRvrSameClanGateTests.PhysicalRvrGateContinuesThroughManaControl))
+    .Append(("MSG_Attack same-Clan RvR gate bounds and conditions", AttackRvrSameClanGateTests.GateRequiresActiveWarSameClanAndTargetPlayerInsideInclusiveArea)).ToArray();
+tests = tests.Append(("MSG_Attack Clan 6 physical damage gate", AttackClanSixDamageGateTests.PhysicalAttackSuppressesClanSixDamage)).Append(("MSG_Attack Clan 6 player skill damage gate", AttackClanSixDamageGateTests.PlayerSkillAttackUsesLegacyHandlerLevelForClanSixGate)).Append(("MSG_Attack Clan 6 NPC skill damage gate", AttackClanSixDamageGateTests.NpcSkillAttackUsesLegacyHandlerLevelForClanSixGate)).ToArray();
+tests = tests.Append(("MSG_Attack physical damage cap", AttackDamageCapTests.PhysicalDamageIsCapped)).Append(("MSG_Attack player skill damage cap", AttackDamageCapTests.PlayerSkillDamageIsCapped)).Append(("MSG_Attack NPC skill damage cap", AttackDamageCapTests.NpcSkillDamageIsCapped)).ToArray();
+tests = tests.Append(("MSG_Attack Type 30 physical NPC damage bonus", AttackForceMobDamageTests.PhysicalNpcDamageIncludesActiveType30Levels)).Append(("MSG_Attack Type 30 NPC skill damage bonus", AttackForceMobDamageTests.NpcSkillDamageIncludesActiveType30Levels)).Append(("MSG_Attack Type 30 player target exclusion", AttackForceMobDamageTests.PlayerSkillDamageDoesNotIncludeType30Levels)).Append(("MSG_Attack Type 30 does not override Clan 6", AttackForceMobDamageTests.ClanSixZeroDamageIsNotRaisedByType30)).ToArray();
+tests = tests.Append(("MSG_Attack dead target cleanup", AttackDeadTargetCleanupTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack Merchant target gate", AttackMerchantTargetGateTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack view gate", AttackViewGateTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack class 3 invisibility cleanup", AttackHideAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack first Samaritan affect cleanup", AttackSamaritanoAffectTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack mixed-slot invalid batch shape", AttackMixedSlotTests.RejectsInvalidShapeWithoutMutation)).ToArray();
+tests = tests.Append(("MSG_Attack skill gate index is independent of wire slot", AttackMixedSlotTests.SkillTargetIndexCanOverrideWireIndex)).ToArray();
+tests = tests.Append(("MSG_Attack one-slot skill batch matches compatibility wrapper", AttackMixedSlotTests.GenericSingleSlotSkillBatchMatchesPublicWrapper)).ToArray();
+tests = tests.Append(("MSG_Attack mixed skill then physical ordering", AttackMixedSlotTests.SkillThenPhysicalDoesNotResolveSlotZeroCritical)).ToArray();
+tests = tests.Append(("MSG_Attack mixed physical then skill ordering", AttackMixedSlotTests.PhysicalThenSkillSharesSlotZeroActionState)).ToArray();
+tests = tests.Append(("MSG_Attack mixed passive reserves original skill slot 1", AttackMixedSlotTests.PassiveReservationSkipsOriginalSkillSlotOne)).ToArray();
+tests = tests.Append(("MSG_Attack mixed type28 before type27 per slot", AttackMixedSlotTests.MixedType28PrecedesPartyType27PerSlot)).ToArray();
+tests = tests.Append(("MSG_Attack mixed crack error is counted per slot", AttackMixedSlotTests.CrackErrorRemainsPerSlot)).ToArray();
+tests = tests.Append(("MSG_Attack unsupported mixed skill marker is isolated", AttackMixedSlotTests.UnsupportedSkillMarkerDoesNotMutateItsTarget)).ToArray();
+tests = tests.Append(("MSG_Attack unported skill gates run without effect data", AttackMixedSlotTests.HostCanRunSkillGatesWithoutApplyingUnportedEffects)).ToArray();
+tests = tests.Append(("MSG_Attack mixed skill NPC death finalizes once", AttackMixedSlotTests.MixedSkillNpcDeathFinalizesOnceAfterNormalCompletion)).ToArray();
+tests = tests.Append(("MSG_Attack mixed player resurrection finalizes after action", AttackMixedSlotTests.MixedPlayerResurrectionFinalizesAfterNormalCompletion)).ToArray();
+tests = tests.Append(("MSG_Attack mixed physical abort defers skill and player deaths", AttackMixedSlotTests.PhysicalOutOfRangeAbortDefersEarlierSkillAndPhysicalDeaths)).ToArray();
+tests = tests.Append(("Divine Blessing secondary-skill adapter reads only bit 0x2", AttackDivineBlessingTests.SecondarySkillAdapterUsesMeasuredOffsetAndReadsOnlyBit2))
+    .Append(("Divine Blessing fixture adapter writes only bit 0x2", AttackDivineBlessingTests.SecondarySkillAdapterWritesOnlyBit2))
+    .Append(("combat state projects authoritative secondary skills", AttackDivineBlessingTests.CombatStateReadsSecondarySkillFromAccountExtra)).ToArray();
+tests = tests.Append(("MSG_Attack skill 201 missing CSV row passes its gate", AttackDivineBlessingTests.Skill201MissingCsvDefinitionPassesTheSkillGate))
+    .Append(("MSG_Attack skill 201 uses a zero-cost parent descriptor", AttackDivineBlessingTests.Skill201UsesZeroCostParentDescriptor)).ToArray();
+tests = tests.Append(("Divine Blessing requires authoritative MOBEXTRA bit 0x2", AttackDivineBlessingTests.DivineBlessingRequiresMobExtraBit2))
+    .Append(("Divine Blessing child mana uses skill 29 Special=0 and SaveMana", AttackDivineBlessingTests.DivineBlessingUsesSkill29SpecialZeroAndSaveMana))
+    .Append(("Divine Blessing insufficient mana captures SetHpMp correction", AttackDivineBlessingTests.DivineBlessingInsufficientManaCapturesSetHpMpWithoutHealing))
+    .Append(("Divine Blessing uses 7.69 mount divisors and HP cap", AttackDivineBlessingTests.DivineBlessingUses769MountDivisorsAndHpCap))
+    .Append(("Divine Blessing preserves Clan and self-map predicates", AttackDivineBlessingTests.DivineBlessingClanAndSelfMapPredicatesMatch769))
+    .Append(("Divine Blessing distinguishes zero and negative HP", AttackDivineBlessingTests.DivineBlessingZeroAndNegativeHpFollowDifferentGates))
+    .Append(("Divine Blessing self-heal excludes FakeExp and persisted EXP", AttackDivineBlessingTests.DivineBlessingSelfHealDoesNotAddFakeOrPersistedExp))
+    .Append(("Divine Blessing child survives later mixed-batch abort", AttackDivineBlessingTests.DivineBlessingChildSurvivesLaterBatchAbort)).ToArray();
+tests = tests.Append(("Divine Blessing synthetic AttackOne uses the 7.69 wire layout", AttackDivineBlessingTests.SyntheticDivineBlessingRelayUsesAttackOneLayout))
+    .Append(("Divine Blessing synthetic AttackOne uses authoritative resources", AttackDivineBlessingTests.SyntheticDivineBlessingRelayUsesAuthoritativeResources)).ToArray();
+tests = tests.Append(("MSG_Attack response writes server-owned FakeExp", AttackHealingExperienceTests.AttackConfirmationCanSetFakeExp))
+    .Append(("MSG_Attack heal experience caps and excludes caster and village", AttackHealingExperienceTests.ContributionCapsAndExcludesSelfAndVillage))
+    .Append(("MSG_Attack aborted healing batch suppresses experience", AttackHealingExperienceTests.AbortSuppressesHealingExperienceOverride))
+    .Append(("DoubleMode scalar multiplier applies to FakeExp and party XP", AttackHealingExperienceTests.DoubleModeUsesScalarMultiplier))
+    .Append(("MSG_Attack heal experience uses maximum actual healing and scalar DoubleMode", AttackHealingExperienceTests.BatchUsesMaximumActualHealAndScalarDoubleMode)).ToArray();
+tests = tests.Append(("MSG_Attack skill 31 Renascimento branch", AttackRenascimentoTests.Run)).ToArray();
+tests = tests.Append(("AutoDouble configuration, weekly schedule, and world multiplier", AutoDoubleTests.Run))
+    .Append(("AutoDouble MagicTrumpet packet matches the 7.69 wire", MagicTrumpetTests.AutoDoublePacketMatches769Layout)).ToArray();
+tests = tests.Append(("Battle Royale schedule configuration required fields", BattleRoyaleScheduleTests.ConfigParsesAllRequiredFields))
+    .Append(("Battle Royale schedule configuration rejects missing and wrong fields", BattleRoyaleScheduleTests.ConfigRejectsMissingOrWrongFields))
+    .Append(("Battle Royale schedule configuration rejects invalid ranges", BattleRoyaleScheduleTests.ConfigRejectsInvalidRanges)).ToArray();
+tests = tests.Append(("Battle Royale schedule phase transitions", BattleRoyaleScheduleTests.ScheduleTransitionsAtPhasesZeroFiveThirteenAndFourteen))
+    .Append(("Battle Royale schedule legacy phase notices", BattleRoyaleScheduleTests.ScheduleEmitsLegacyAreaNotices))
+    .Append(("Battle Royale schedule level-clear phase bounds", BattleRoyaleScheduleTests.ScheduleCarriesLegacyAreaClearLevels))
+    .Append(("Battle Royale notice recipients use inclusive rectangles", BattleRoyaleScheduleTests.ScheduleNoticesUseInclusiveAreaRecipients))
+    .Append(("Battle Royale reward spawn precedes its notice", BattleRoyaleScheduleTests.RewardSpawnCreatesAltarItemBeforeRewardNotice))
+    .Append(("Battle Royale schedule suppresses duplicate transitions", BattleRoyaleScheduleTests.ScheduleRepeatsDoNotRepeatTransitions))
+    .Append(("Battle Royale schedule starts mid-cycle at zero", BattleRoyaleScheduleTests.ScheduleStartsMidCycleAtZero))
+    .Append(("Battle Royale schedule does not catch up missed phases", BattleRoyaleScheduleTests.ScheduleDoesNotCatchUpSkippedFiveOrThirteen))
+    .Append(("Battle Royale schedule daily channel and bypass eligibility", BattleRoyaleScheduleTests.ScheduleUsesDailyServerRotationAndExplicitBypasses)).ToArray();
+tests = tests.Append(("Battle Royale schedule controller publishes state atomically", BattleRoyaleScheduleTests.ControllerPublishesStateAndItemWithoutOverwritingWorldFields)).ToArray();
+tests = tests.Append(("Battle Royale ClearAreaLevel eligibility, revival, recall, and relay", BattleRoyaleAreaClearTests.AreaClearRecallsOnlyPlayersInTheInclusiveLevelBand)).ToArray();
+tests = tests.Append(("Battle Royale door schedule exposes legacy call order", BattleRoyaleDoorTests.ScheduleExposesLegacyDoorCallOrder))
+    .Append(("Battle Royale door masks, occupants, recipients, and 7.69 wire", BattleRoyaleDoorTests.DoorMaskOccupantsAndRelayMatch769))
+    .Append(("non-door transitions cannot mutate static Battle Royale gates", BattleRoyaleDoorTests.NonDoorTransitionsCannotMutateStaticDoors)).ToArray();
+tests = tests.Append(("Battle Royale grid refresh precedes in-arena party member removal", BattleRoyaleGridRefreshTests.GridRefreshPrecedesArenaPartyMemberRemoval))
+    .Append(("Battle Royale grid pass keeps already recalled party members", BattleRoyaleGridRefreshTests.RecalledPartyMemberIsNotRemovedByTheFollowingGridPass))
+    .Append(("Battle Royale grid send failure does not interrupt later party cleanup", BattleRoyaleGridRefreshTests.SendFailureDoesNotInterruptLaterPartyCleanup)).ToArray();
+tests = tests.Append(("Battle Royale CreateMob masks active arena players without changing world state", BattleRoyaleCreateMobVisualTests.WorldCreateMobMasksOnlyActiveArenaPlayers)).ToArray();
+tests = tests.Append(("Battle Royale schedule grid-refresh and party-cleanup phase bounds", BattleRoyaleScheduleTests.ScheduleCarriesGridRefreshAndPartyCleanupScope)).ToArray();
+tests = tests.Append(("Battle Royale environmental schedule selects legacy bands and cadence", BattleRoyaleEnvironmentalTests.EnvironmentalScheduleSelectsLegacyBandsAndCadence)).ToArray();
+tests = tests.Append(("Battle Royale environmental damage and effect wire frames", BattleRoyaleEnvironmentalTests.EnvironmentalDamageAndEffectFramesMatch769Wire)).ToArray();
+tests = tests.Append(("Battle Royale environmental damage mutates only active band players", BattleRoyaleEnvironmentalTests.WorldAppliesEnvironmentalDamageOnlyInsideActiveBands)).ToArray();
+tests = tests.Append(("Battle Royale environmental relay uses legacy views and order", BattleRoyaleEnvironmentalTests.EnvironmentalRelayUsesLegacyFramesViewsAndOrder)).ToArray();
+tests = tests.Append(("MSG_Attack bParty gate and type28 precedence", AttackPartySkillGateTests.Run)).ToArray();
+tests = tests.Append(("summon LeaderConnectionId versus SummonerConnectionId", AttackPartySkillGateTests.SummonLeaderMetadata)).ToArray();
+tests = tests.Append(("MSG_Attack bParty summon target and type28 precedence", AttackPartySkillGateTests.SummonPartyTargetGate)).ToArray();
+tests = tests.Append(("GuildDisable changes bParty eligibility and sends retail signal", GuildDisableTests.Run)).ToArray();
+tests = tests.Append(("GuildWar 7.69 request and SendWarInfo protocol", GuildWarProtocolTests.Run)).ToArray();
+tests = tests.Append(("GuildAlly 7.69 request protocol", GuildAllyProtocolTests.Run)).ToArray();
+tests = tests.Append(("GuildWar directed transitions and effects", GuildWarControlTests.Run)).ToArray();
+tests = tests.Append(("GuildAlly directed toggle transitions", GuildAllyControlTests.Run)).ToArray();
+tests = tests.Append(("GuildWar names and localized notices", GuildNameTests.Run)).ToArray();
+tests = tests.Append(("GuildWar WorldHub authorization, state, and recipients", GuildWarWorldTests.Run)).ToArray();
+tests = tests.Append(("GuildAlly WorldHub authorization, state, and recipients", GuildAllyWorldTests.Run)).ToArray();
+tests = tests.Append(("MSG_Attack 7.69 tower eligibility precedes damage and type28", AttackTowerGateTests.Run)).ToArray();
 tests = tests.Append(("dead Attack gate policy", () => CrackErrorTests.AttackDeadGatePolicy().GetAwaiter().GetResult())).ToArray();
 tests = tests.Append(("Attack RVR sector gate and authoritative snapshot", AttackRvrGateTests.Run)).ToArray();
 tests = tests.Append(("Action origin recalls", LegacyActionOriginRecall)).ToArray();
@@ -51,6 +283,8 @@ tests = tests.Append(("movement restriction recall view transition", LegacyMovem
 tests = tests.Append(("ground item ids follow configured map item slots", GroundItemIdsFollowConfiguredMapItemSlots)).ToArray();
 tests = tests.Append(("Action origin recall relays visible ground items", LegacyActionOriginRecallRelaysVisibleGroundItems)).ToArray();
 tests = tests.Append(("Action range inclusive boundaries", MovementRangeTests.Boundaries)).ToArray();
+tests = tests.Append(("occupied Action destination correction matches 7.69", ActionCollisionCorrectionTests.Run)).ToArray();
+tests = tests.Append(("rejected Action collision records LastMove", ActionCollisionCorrectionTests.RejectedCollisionRecordsMovementType)).ToArray();
 tests = tests.Append(("Action3 illusion eligibility class skill and level gate", MovementRangeTests.IllusionEligibilityUsesLegacyClassSkillAndLevelGate)).ToArray();
 tests = tests.Append(("Action range state and shared counter", MovementRangeTests.RejectionPreservesPositionAndSharedCounter)).ToArray();
 tests = tests.Append(("Action movement speed requires authoritative AttackRun", MovementRangeTests.AllowedSpeedRequiresAuthoritativeAttackRun))
@@ -84,6 +318,7 @@ tests = tests.Append(("autotrade list gates", AutoTradeListGates))
 tests = tests.Append(("autotrade conditional file close batch", AutoTradeCloseTests.FileCloseBatch)).ToArray();
 tests = tests.Append(("autotrade close atomic and retry", AutoTradeCloseCoordinatorTests.CloseAtomicAndRetry)).ToArray();
 tests = tests.Append(("autotrade dead close preserves everything", AutoTradeCloseCoordinatorTests.DeadClosePreservesEverything))
+    .Append(("Tiny invalid-position cleanup closes dead author", AutoTradeCloseCoordinatorTests.TinyInvalidPositionCleanupClosesDeadAuthor))
     .Append(("autotrade close durability and HP acceptance", AutoTradeCloseCoordinatorTests.CloseWaitsDurabilityAndHpAcceptance))
     .Append(("autotrade close failures preserve pair", AutoTradeCloseCoordinatorTests.CloseFailuresPreservePair))
     .Append(("autotrade close cancellation boundaries", AutoTradeCloseCoordinatorTests.CloseCancellation))
@@ -126,12 +361,39 @@ tests = tests.Append(("autotrade start request wire", AutoTradeStartRequestWire)
 tests = tests.Append(("autotrade purchase wire and gates", AutoTradePurchaseWireAndGates)).Append(("autotrade sale notification and settlement", AutoTradeSaleNotificationAndSettlement)).Append(("autotrade purchase commit contract", AutoTradePurchaseCommitContract)).ToArray();
 tests = tests.Append(("autotrade list relay", AutoTradeListRelay)).ToArray();
 tests = tests.Append(("world invisibility", WorldInvisibility)).Append(("server mode policy", ServerModePolicyFlow)).Append(("donate shop NPC target", DonateShopNpcTarget)).Append(("city Perzen NPCs", CityPerzenNpcs)).Append(("Perzen exchange", PerzenExchange)).Append(("donate shop rate limiter", DonateShopRateLimiter)).Append(("donate shop purchase messages", DonateShopPurchaseMessages)).Append(("account login failure notice", AccountLoginFailureNoticeFlow)).ToArray();
-tests = tests.Append(("drop item wire", DropItemWire)).Append(("world ground item drop", WorldGroundItemDrop)).Append(("trading item wire", TradingItemWire)).Append(("world carry item swap", WorldCarryItemSwap)).Append(("world equipment item swap", WorldEquipmentItemSwap)).Append(("delete item wire", DeleteItemWire)).Append(("world delete carry item", WorldDeleteCarryItem)).Append(("split item wire", SplitItemWire)).Append(("world split item", WorldSplitItem)).Append(("update item wire", UpdateItemWire)).Append(("start time signal wire", StartTimeSignalWire)).Append(("official ground mask", OfficialGroundMaskTable)).Append(("map item catalog and ground mask", MapItemCatalogAndGroundMask)).Append(("world map item update", WorldMapItemUpdate)).Append(("map item minute timer", MapItemMinuteTimer)).Append(("ground item decay timer", GroundItemDecayTimer)).Append(("castle gate update", CastleGateUpdate)).Append(("server status file publisher", ServerStatusFilePublisherFlow)).ToArray();
+tests = tests.Append(("MSG_Buy 7.69 wire", ShopBuyWire)).Append(("MSG_Sell 7.69 wire", ShopSellWire)).ToArray();
+tests = tests.Append(("NPC sell price math", LegacyNpcSellPriceMathTests.Run)).ToArray();
+tests = tests.Append(("NPC sell tax experience math", LegacyNpcSellTaxExperienceTests.Run)).ToArray();
+tests = tests.Append(("NPC sell source rules", LegacyNpcSellSourceRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell item eligibility", LegacyNpcSellItemRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell target rules", LegacyNpcSellTargetRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell HP mode rules", LegacyNpcSellHpModeRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell trade rules", LegacyNpcSellTradeRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell account rules", LegacyNpcSellAccountRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell volatile rules", LegacyNpcSellVolatileRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell recycle-bin stage", LegacyNpcSellRecycleBinHandlerTests.Run)).ToArray();
+tests = tests.Append(("NPC sell authoritative lookup", LegacyNpcSellAuthoritativeLookupTests.Run)).ToArray();
+tests = tests.Append(("NPC sell ordered flow rules", LegacyNpcSellFlowRulesTests.Run)).ToArray();
+tests = tests.Append(("NPC sell live preparation coordinator", LegacyNpcSellPreparationCoordinatorTests.Run)).ToArray();
+tests = tests.Append(("NPC sell localized rejection notices", LegacyNpcSellRejectionNoticeTests.Run)).ToArray();
+tests = tests.Append(("NPC sell empty carry resync", LegacyNpcSellCarryResyncTests.Run)).ToArray();
+tests = tests.Append(("NPC sell revalidated MOB commit", LegacyNpcSellCompletionTests.Run)).ToArray();
+tests = tests.Append(("NPC sell response sequence", LegacyNpcSellCompletionTests.RunResponseSequenceTests)).ToArray();
+tests = tests.Append(("NPC sell and treasury independent checkpoints", LegacyNpcSellCompletionTests.RunTreasuryCheckpointBoundaryTests)).ToArray();
+tests = tests.Append(("legacy experience message panel wire", ExperienceMessagePanelTests.Run)).ToArray();
+tests = tests.Append(("guild treasury save cadence", LegacyGuildTreasurySaveScheduleTests.Run)).ToArray();
+tests = tests.Append(("recycle bin insertion rules", LegacyRecycleBinRulesTests.Run)).ToArray();
+tests = tests.Append(("client repurchase items wire", RepurchaseItemsWireTests.Run)).ToArray();
+tests = tests.Append(("recycle-bin client projection", LegacyRecycleBinClientProjectionTests.Run)).ToArray();
+tests = tests.Append(("recycle-bin session state and request", LegacyRecycleBinSessionTests.Run)).ToArray();
+tests = tests.Append(("apply bonus score wire", ApplyBonusScoreWire)).Append(("apply bonus score allocation", ApplyBonusScoreAllocation)).Append(("apply bonus special allocation", ApplyBonusSpecialAllocation)).Append(("drop item wire", DropItemWire)).Append(("world ground item drop", WorldGroundItemDrop)).Append(("trading item wire", TradingItemWire)).Append(("world carry item swap", WorldCarryItemSwap)).Append(("world equipment item swap", WorldEquipmentItemSwap)).Append(("delete item wire", DeleteItemWire)).Append(("world delete carry item", WorldDeleteCarryItem)).Append(("split item wire", SplitItemWire)).Append(("world split item", WorldSplitItem)).Append(("update item wire", UpdateItemWire)).Append(("start time signal wire", StartTimeSignalWire)).Append(("official ground mask", OfficialGroundMaskTable)).Append(("map item catalog and ground mask", MapItemCatalogAndGroundMask)).Append(("world map item update", WorldMapItemUpdate)).Append(("map item minute timer", MapItemMinuteTimer)).Append(("ground item decay timer", GroundItemDecayTimer)).Append(("castle gate update", CastleGateUpdate)).Append(("server status file publisher", ServerStatusFilePublisherFlow)).ToArray();
+tests = tests.Append(("apply bonus skill allocation", ApplyBonusSkillAllocationTests.Run)).ToArray();
 tests = tests.Append(("world carry stack merge", WorldCarryItemMerge)).Append(("world trading item carry compatibility", WorldTradingItemCarryCompatibility)).ToArray();
 tests = tests.Append(("legacy equipment eligibility", LegacyEquipmentEligibilityRules)).ToArray();
 tests = tests.Append(("legacy movement map gate", LegacyMovementMapGate)).ToArray();
 tests = tests.Append(("legacy mob ability aggregation", LegacyMobAbilityAggregation)).Append(("legacy mob ability includes client extension slots", LegacyMobAbilityIncludesClientExtensionSlots)).Append(("legacy experience includes client extension slots", LegacyExperienceIncludesClientExtensionSlots)).ToArray();
-tests = tests.Append(("world client 18-slot equipment state", WorldClient18SlotEquipmentState)).ToArray();
+tests = tests.Append(("world client 18-slot state follows target equipment move bounds", WorldClient18SlotEquipmentState)).ToArray();
+tests = tests.Append(("world client extension move requires persisted equipment state", WorldClientExtensionMoveRequiresPersistedState)).ToArray();
 tests = tests.Append(("legacy current score base equipment stage", LegacyCurrentScoreBaseEquipmentStage)).ToArray();
 tests = tests.Append(("legacy current score special stage", LegacyCurrentScoreSpecialStage)).ToArray();
 tests = tests.Append(("legacy login HP MP base stage", LegacyLoginHpMpBaseStage)).ToArray();
@@ -157,6 +419,12 @@ tests = tests.Append(("legacy login weaken affect stage", LegacyLoginWeakenAffec
 tests = tests.Append(("legacy login meditation affect stage", LegacyLoginMeditationAffectStage)).ToArray();
 tests = tests.Append(("legacy login golden shield affect stage", LegacyLoginGoldenShieldAffectStage)).ToArray();
 tests = tests.Append(("legacy login elemental protection AC affect stage", LegacyLoginElementalProtectionArmorClassAffectStage)).ToArray();
+tests = tests.Append(("legacy login Type=35 Vigor affect stage", CurrentScoreVigorTests.Run)).ToArray();
+tests = tests.Append(("legacy login Type=34 Divina affect stage", CurrentScoreDivinaTests.Run)).ToArray();
+tests = tests.Append(("legacy login Type=8 PvP jewel affect stage", CurrentScorePvpJewelTests.Run)).ToArray();
+tests = tests.Append(("legacy current score affect composition and ordered AC passes", CurrentScoreAffectCompositionTests.Run)).ToArray();
+tests = tests.Append(("legacy current score login terminal projection vectors", CurrentScoreLoginProjectionTests.Run)).ToArray();
+tests = tests.Append(("authenticated startup requires ItemList before bind", CurrentScoreLoginStartupTests.Run)).ToArray();
 tests = tests.Append(("legacy login transformation speed affect stage", LegacyLoginTransformationSpeedAffectStage)).ToArray();
 tests = tests.Append(("legacy login transformation damage affect stage", LegacyLoginTransformationDamageAffectStage)).ToArray();
 tests = tests.Append(("legacy login transformation armor class affect stage", LegacyLoginTransformationArmorClassAffectStage)).ToArray();
@@ -171,6 +439,7 @@ tests = tests.Append(("7.69 character selection golden", CharacterSelectionV769G
     .Append(("7.69 account login golden", AccountLoginV769Golden))
     .Append(("7.69 character login golden", CharacterLoginV769Golden))
     .Append(("7.69 client equipment state wire", ClientEquipmentStateV769Wire))
+    .Append(("legacy file store persists versioned 18-slot equipment sidecar", LegacyFileClientEquipmentSidecarPersistence))
     .Append(("W2PP MOB to 7.69 character login projection", W2ppCharacterMobProjection))
     .Append(("W2PP MOB projection accepts client 18-slot equipment", W2ppCharacterMobProjectionWithClientEquipment))
     .Append(("W2PP character login extensions to 7.69 adapter", W2ppCharacterLoginExtensionsProjection))
@@ -190,6 +459,16 @@ tests = tests.Append(("7.69 character selection golden", CharacterSelectionV769G
     .Append(("7.69 UpdateScore golden and W2PP adapter", UpdateScoreV769Golden))
     .Append(("7.69 UpdateEtc golden and W2PP adapter", UpdateEtcV769Golden))
     .Append(("server ItemList 140-byte layout", ServerItemDataTable))
+    .Append(("7.69 Tiny combine match rules", LegacyTinyCombineMatchRules))
+    .Append(("Tiny combine preparation validates authoritative carry", LegacyTinyCombinePreparation))
+    .Append(("Tiny combine outcome preserves 7.69 success and failure mutations", LegacyTinyCombineOutcome))
+    .Append(("Tiny combine credits the registered guild treasury on success", TinyCombineGuildTax))
+    .Append(("Tiny combine ignores inactive and retired treasury NPCs", TinyCombineGuildTaxLifecycle))
+    .Append(("Tiny combine persists the raw guild treasury MOB", TinyCombineGuildTaxPersistence))
+    .Append(("Tiny combine treasury retry persists after a transient write failure", TinyCombineGuildTaxRetry))
+    .Append(("7.69 Tiny combine wire layout", TinyCombineWire))
+    .Append(("Tiny combine completion signal wire", TinyCombineCompleteWire))
+    .Append(("Tiny combine relay preserves 7.69 response order", TinyCombineRelayTests.Run))
     .Append(("serialized network stream concurrent writes", SerializedNetworkStreamConcurrentWrites))
     .Append(("trade wire", TradeWire))
     .Append(("world bilateral trade state", WorldBilateralTradeState))
@@ -200,6 +479,17 @@ tests = tests.Append(("7.69 character selection golden", CharacterSelectionV769G
     .Append(("world trade check requires staged offer", WorldTradeCheckRequiresStagedOffer))
     .Append(("world trade completion", WorldTradeCompletion))
     .Append(("legacy file atomic trade persistence", LegacyFileAtomicTradePersistence))
+    .Append(("Magic Mirror book acquisition", MagicMirrorBookAcquisition))
+    .Append(("Divine Protection book acquisition", DivineProtectionBookAcquisition))
+    .Append(("Sephira skill book acquisition", SephiraSkillBookAcquisition))
+    .Append(("connection slot allocator starts at 1", LegacyConnectionSlotAllocatorTests.StartsAtPlayerSlotOne))
+    .Append(("connection slot allocator fixed capacity and exhaustion", LegacyConnectionSlotAllocatorTests.AllocatesEveryPlayerSlotOnceThenReportsExhaustion))
+    .Append(("connection slot allocator reuse after wrap", LegacyConnectionSlotAllocatorTests.ReusesReleasedSlotAfterCircularWrap))
+    .Append(("connection slot allocator rejects invalid release", LegacyConnectionSlotAllocatorTests.RejectsInvalidAndDuplicateRelease))
+    .Append(("connection slot allocator concurrent uniqueness", LegacyConnectionSlotAllocatorTests.ConcurrentAllocationNeverDuplicatesPlayerSlots))
+    .Append(("legacy file character checkpoint composite", LegacyCharacterCheckpointFileStoreTests.Run))
+    .Append(("legacy character checkpoint runtime", LegacyCharacterCheckpointRuntimeTests.Run))
+    .Append(("host shutdown drains connection handlers", LegacyConnectionTaskRegistryTests.Run))
     .ToArray();
 var failures = 0;
 foreach (var test in tests)
@@ -869,6 +1159,8 @@ static void AutoTradePurchaseCoordinator()
         string.Empty,
         false);
     var commitStore = new FixedAutoTradePurchaseCommitStore(LegacyAutoTradePurchaseCommitResult.Committed);
+    var cargoRuntime = new LegacyAccountCargoRuntime("UP");
+    var accountOperationGate = new LegacyAccountOperationGate("UP");
     var outcome = LegacyAutoTradePurchaseCoordinator.ExecuteAsync(
         7,
         new AutoTradePurchaseRequest(0, 12, 100, 12, item),
@@ -877,7 +1169,9 @@ static void AutoTradePurchaseCoordinator()
         book,
         new FixedAccountSnapshotStore("SELLER", sellerSnapshot),
         new FixedCharacterLoginDataStore("BUYER", 0, buyerData),
-        commitStore).GetAwaiter().GetResult();
+        commitStore,
+        accountOperationGate: accountOperationGate,
+        cargoRuntime: cargoRuntime).GetAwaiter().GetResult();
 
     Assert(outcome.Result == LegacyAutoTradePurchaseHostResult.Accepted && outcome.Execution?.Outcome is not null,
         $"The host purchase coordinator rejected a valid offline-shop purchase: host={outcome.Result}, execution={outcome.Execution?.Result}.");
@@ -887,6 +1181,11 @@ static void AutoTradePurchaseCoordinator()
         commitStore.LastRequest.ExpectedPersistedBuyerMob.SequenceEqual(persistedBuyerMob) &&
         commitStore.LastRequest.ExpectedBuyerMob.SequenceEqual(buyerMob),
         "The host purchase coordinator did not pass distinct runtime and persisted buyer baselines.");
+    Assert(outcome.CargoSnapshot is { ChangedPositions.Count: 1 } &&
+        outcome.CargoSnapshot.ChangedPositions[0] == 4 &&
+        outcome.CargoSnapshot.Items[4] == default &&
+        cargoRuntime.TryGet("SELLER", out var cargoOwner) && cargoOwner!.Items[4] == default,
+        "The AutoTrade purchase did not publish the seller Cargo change through the shared account owner.");
 }
 
 static void AutoTradePurchaseRelay()
@@ -1389,10 +1688,10 @@ static void LegacyFileAtomicTradePersistence()
 
         Assert(store.TrySaveCharacterStatesAtomicallyAsync(firstRequest, secondRequest).GetAwaiter().GetResult() == AtomicCharacterStateSaveResult.Success,
             "The file account store rejected a valid two-account atomic trade commit.");
-        Assert(FileTradeAccountMatches(firstPath, 0, firstUpdatedMob, firstUpdatedExtra, 410, 2_200, 2_201) &&
-            FileTradeAccountMatches(secondPath, 1, secondUpdatedMob, secondUpdatedExtra, 390, 2_300, 2_301) &&
+        Assert(FileTradeAccountMatches(firstPath, 0, firstUpdatedMob, firstUpdatedExtra, 100, 2_200, 2_201) &&
+            FileTradeAccountMatches(secondPath, 1, secondUpdatedMob, secondUpdatedExtra, 200, 2_300, 2_301) &&
             !File.Exists(Path.Combine(accountRoot, ".wyd-cdk-atomic-state.journal")),
-            "The file account store did not persist both trade snapshots, account coins, positions, and MOBEXTRA atomically.");
+            "The file account store did not persist both trade snapshots and carried Gold while preserving bank balances atomically.");
 
         Assert(store.TrySaveCharacterStatesAtomicallyAsync(firstRequest, firstRequest).GetAwaiter().GetResult() == AtomicCharacterStateSaveResult.InvalidRequest,
             "The file account store accepted a same-account pair without a same-file contract.");
@@ -1590,28 +1889,57 @@ static void SkillDataTable()
 
 static void SkillAttackGate()
 {
-    using var reader = new StringReader("""
-        9,45,0,0,0,0,0,0,0,0,0,0,0,20.0.0.24.0.0.0.0,20.0.0.8.0.0.0.0,0,0,0,0,0,0,1,0,Mestre_das_Armas
-        10,69,1,20,15,1,1,40,0,0,0,0,0,8.0.0.7.0.0.0.0,8.0.0.7.0.0.0.0,0,0,1,2,0,0,0,1,Golpe_Mortal
-        """);
+    const string golpe = "69,1,20,15,1,1,40,0,0,0,0,0,8.0.0.7.0.0.0.0,8.0.0.7.0.0.0.0,0,0,1,2,0,0,0,1,Golpe_Mortal";
+    using var reader = new StringReader(string.Join(Environment.NewLine,
+        "9,45,0,0,0,0,0,0,0,0,0,0,0,20.0.0.24.0.0.0.0,20.0.0.8.0.0.0.0,0,0,0,0,0,0,1,0,Mestre_das_Armas",
+        "10," + golpe, "30," + golpe, "96," + golpe, "97," + golpe, "100," + golpe, "101," + golpe));
     var table = LegacySkillDataTable.Load(reader);
-    var codec = LegacyFrameCodec.CreateDefault();
-    var requestPayload = new byte[AttackRequest.OneTargetPacketSize - PacketHeader.SizeInBytes];
-    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(requestPayload.AsSpan(44), 10);
-    var requestFrame = codec.Decode(codec.Encode(AttackRequest.OneTargetMessageType, 4, 123, requestPayload, 16));
-    Assert(AttackRequest.TryParse(requestFrame, out var request) && request is not null, "Skill gate fixture attack was not parsed.");
-    var parsedRequest = request ?? throw new InvalidOperationException("Skill gate fixture attack was not parsed.");
+    SkillAttackGateDecision Eval(int skill, int cls, uint learned, uint tick = 5000, uint previous = 1000) =>
+        LegacySkillAttackGate.Evaluate(table, skill, cls, learned, tick, previous);
 
-    var accepted = LegacySkillAttackGate.Validate(table, parsedRequest, characterClass: 0, learnedSkill: 1u << 10, targetIndex: 0);
-    Assert(accepted == SkillAttackValidationResult.Accepted, "Learned skill 10 was rejected by the metadata gate.");
-    Assert(LegacySkillAttackGate.Validate(table, parsedRequest, 0, 0, 0) == SkillAttackValidationResult.SkillNotLearned, "An unlearned skill was accepted.");
-    Assert(LegacySkillAttackGate.Validate(table, parsedRequest, 1, 1u << 10, 0) == SkillAttackValidationResult.WrongClass, "A skill from another class was accepted.");
-    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(requestPayload.AsSpan(44), 9);
-    var passiveFrame = codec.Decode(codec.Encode(AttackRequest.OneTargetMessageType, 4, 123, requestPayload, 16));
-    Assert(AttackRequest.TryParse(passiveFrame, out var passiveRequest) && passiveRequest is not null, "Passive skill fixture was not parsed.");
-    Assert(LegacySkillAttackGate.Validate(table, passiveRequest!, 0, 1u << 9, 0) == SkillAttackValidationResult.PassiveSkill, "Passive skill 9 was accepted as an attack.");
-    Assert(LegacySkillAttackGate.Validate(table, parsedRequest, 0, 1u << 10, 3) == SkillAttackValidationResult.TooManyTargets, "A target index above skill 10 MaxTarget was accepted.");
-    Assert(LegacySkillAttackGate.Validate(table, parsedRequest, 0, 0, 0, skipClientChecks: true) == SkillAttackValidationResult.Accepted, "The explicit legacy skip-check path was not preserved.");
+    // 7.69 client physical attacks use SkillIndex -1 and skip the whole skill block, including the delay.
+    var physical = Eval(-1, 0, 0, tick: 1100, previous: 1000);
+    Assert(physical.IsAccepted && physical.IsPhysical && physical.LearnedSkillError is null, "Physical SkillIndex -1 did not bypass the skill block.");
+    Assert(Eval(-2, 0, uint.MaxValue).Result == SkillAttackValidationResult.InvalidSkillId, "SkillIndex -2 was accepted.");
+    Assert(Eval(LegacySkillDataTable.MaxSkillIndex, 0, uint.MaxValue).Result == SkillAttackValidationResult.InvalidSkillId, "SkillIndex MAX_SKILLINDEX was accepted.");
+    Assert(Eval(11, 0, uint.MaxValue).Result == SkillAttackValidationResult.MissingSkillDefinition, "An undefined skill was accepted.");
+
+    // Passive precedes the delay gate.
+    Assert(Eval(9, 0, 1u << 9, tick: 1100, previous: 1000).Result == SkillAttackValidationResult.PassiveSkill, "Passive skill 9 was accepted or delay ran first.");
+
+    // Delay: signed int(ClientTick - local LastAttackTick) < 700 -> type30; runs before the class check.
+    Assert(Eval(10, 0, 1u << 10, tick: 1699, previous: 1000).Result == SkillAttackValidationResult.SkillDelayTooShort, "699 ms skill delay was accepted.");
+    Assert(Eval(10, 0, 1u << 10, tick: 1700, previous: 1000).IsAccepted, "700 ms skill delay was rejected.");
+    Assert(Eval(10, 1, 1u << 10, tick: 1699, previous: 1000).Result == SkillAttackValidationResult.SkillDelayTooShort, "Class check ran before the delay gate.");
+    Assert(Eval(10, 0, 1u << 10, tick: 699, previous: 0).Result == SkillAttackValidationResult.SkillDelayTooShort, "First-attack tick below 700 was accepted.");
+    Assert(Eval(10, 0, 1u << 10, tick: 0x8000_0000u, previous: 0).Result == SkillAttackValidationResult.SkillDelayTooShort, "Signed isTime wrap was not preserved.");
+    Assert(Eval(10, 0, 1u << 10, tick: 1, previous: uint.MaxValue).IsAccepted, "LastAttackTick -1 did not skip the delay gate.");
+    Assert(LegacySkillAttackGate.SkillDelayPoints == 10 && LegacySkillAttackGate.SkillDelayType == 30, "Skill delay crack error differs from AddCrackError(10,30).");
+
+    // Other-class books 0..95 are rejected silently.
+    Assert(Eval(10, 1, uint.MaxValue).Result == SkillAttackValidationResult.WrongClass, "A skill from another class was accepted.");
+    var ownClass = Eval(30, 1, 1u << 6);
+    Assert(ownClass.IsAccepted && ownClass.LearnedSkillError is null, "Class 1 skill 30 with bit 6 was rejected.");
+
+    // Learned bits add crack points but do not stop the attack below the logout threshold.
+    var learned = Eval(10, 0, 1u << 10);
+    Assert(learned.IsAccepted && !learned.IsPhysical && learned.LearnedSkillError is null, "Learned skill 10 was rejected.");
+    Assert(Eval(10, 0, 0) is { IsAccepted: true, LearnedSkillError: { Points: 8, Type: 10 } }, "Unlearned class skill did not continue with AddCrackError(8,10).");
+    Assert(Eval(96, 3, 0) is { IsAccepted: true, LearnedSkillError: { Points: 208, Type: 1 } }, "Unlearned skill 96 did not continue with AddCrackError(208,1).");
+    Assert(Eval(96, 3, 1u << 24).LearnedSkillError is null, "Skill 96 did not use learned bit 24.");
+    Assert(Eval(100, 0, 1u << 28).LearnedSkillError is null && Eval(100, 0, 1u << 4).LearnedSkillError is not null, "Skill 100 did not use learned bit 28 (skill - 72).");
+    Assert(Eval(97, 0, 0) is { IsAccepted: true, RequiresMortarItem: true, LearnedSkillError: null }, "Mortar skill 97 did not bypass learned-bit checking like the 7.69 special branch.");
+    var extra = Eval(101, 2, 0);
+    Assert(extra.IsAccepted && extra.LearnedSkillError is null, "7.69 skill 101 was gated by class or learned bits.");
+
+    // Mana Special follows the same block: class bucket 0..95, Level 96..100, zero for 101+.
+    var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(40, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 1000, 0, 0, 0, 0, 0, 40, 0, 0).Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    mob[LegacyAccountSnapshot.MobSaveManaOffset] = 10;
+    var state = LegacyMobCombatState.Read(mob);
+    Assert(state.CurrentScore.Level == 40, "Mana fixture level offset differs.");
+    Assert(LegacySkillCombatMath.GetManaSpent(table[96]!, state) == 21, "Skill 96 mana did not use Level as Special.");
+    Assert(LegacySkillCombatMath.GetManaSpent(table[101]!, state) == 18, "Skill 101 mana did not use Special zero.");
 }
 
 static void LegacyMobCombatLayout()
@@ -1627,7 +1955,7 @@ static void LegacyMobCombatLayout()
     var state = LegacyMobCombatState.Read(mob);
     Assert(state.CharacterClass == 3 && state.Rsv == 0x80 && state.RegenMp == 12 && state.LearnedSkill == 0x80000005u && state.Magic == 321 && state.CurrentMana == 9876, "STRUCT_MOB combat offsets differ from the confirmed x86 layout.");
 
-    var score = new LegacyScore(100, 0, 0, 0, 0, 0, 0, 0, 0, 9876, 9876, 0, 0, 0, 0, 0, 40, 0, 0);
+    var score = new LegacyScore(100, 0, 0, 0, 0, 0, 0, 0, 0, 9876, 9876, 0, 0, 0, 0, 0, 0, 40, 0);
     score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     mob[LegacyAccountSnapshot.MobSaveManaOffset] = 10;
     state = LegacyMobCombatState.Read(mob);
@@ -1960,7 +2288,7 @@ static void LegacyReleaseMapRecall()
         Assert(hub.SetCharacterState(connectionId, 0, 0, 0, 0, 0, (short)occupied[i].Item1, (short)occupied[i].Item2, ReadOnlyMemory<byte>.Empty), "Real release recall occupancy state was not registered.");
     }
 
-    var result = hub.TryApplySkillAttack(1, 1, resurrection, null, 0, 90, out var outcome, resurrectionRoll: 40, resurrectionHpRoll: 0, resurrectionMpRoll: 0, recallCityRandomX: 0, recallCityRandomY: 7);
+    var result = hub.TryApplySkillAttack(1, 1, resurrection, null, 0, 90, out var outcome, resurrectionRoll: 40, resurrectionHpRoll: 0, recallCityRandomX: 0, recallCityRandomY: 7);
     Assert(result == LegacySkillAttackResult.Accepted && outcome?.RecallPositionX == 2452 && outcome.RecallPositionY == 2008, "Real release recall did not preserve the legacy candidate-height quirk.");
 
     var strictHub = new WorldHub(map, guildZones, LegacyMapCollisionMode.CandidateAware);
@@ -1972,7 +2300,7 @@ static void LegacyReleaseMapRecall()
         Assert(strictHub.SetCharacterState(connectionId, 0, 0, 0, 0, 0, (short)occupied[i].Item1, (short)occupied[i].Item2, ReadOnlyMemory<byte>.Empty), "Strict release occupancy state was not registered.");
     }
 
-    var strictResult = strictHub.TryApplySkillAttack(1, 1, resurrection, null, 0, 90, out var strictOutcome, resurrectionRoll: 40, resurrectionHpRoll: 0, resurrectionMpRoll: 0, recallCityRandomX: 0, recallCityRandomY: 7);
+    var strictResult = strictHub.TryApplySkillAttack(1, 1, resurrection, null, 0, 90, out var strictOutcome, resurrectionRoll: 40, resurrectionHpRoll: 0, recallCityRandomX: 0, recallCityRandomY: 7);
     Assert(strictResult == LegacySkillAttackResult.Accepted && strictOutcome?.RecallPositionX == 2451 && strictOutcome.RecallPositionY == 2005, $"Candidate-aware release recall did not skip the blocked terrain cell: result={strictResult}, position=({strictOutcome?.RecallPositionX},{strictOutcome?.RecallPositionY}).");
 }
 
@@ -2031,7 +2359,7 @@ static void LegacyGuildZoneStateFile()
         var skill = new LegacySkillDefinition(99, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Ressureicao");
         var hub = new WorldHub(guildZones: guildZones);
         Assert(hub.Enter(1, "GUILDDEAD", (_, _) => ValueTask.CompletedTask) && hub.SetCharacterState(1, 0, 77, 1, 0, 0, 2000, 2000, mob), "Guild-zone recall fixture was not registered.");
-        var result = hub.TryApplySkillAttack(1, 1, skill, null, 0, 90, out var outcome, resurrectionRoll: 40, resurrectionHpRoll: 0, resurrectionMpRoll: 0);
+        var result = hub.TryApplySkillAttack(1, 1, skill, null, 0, 90, out var outcome, resurrectionRoll: 40, resurrectionHpRoll: 0);
         Assert(result == LegacySkillAttackResult.Accepted && outcome?.RecallPositionX == 2088 && outcome.RecallPositionY == 2148, "ChargeGuild did not redirect resurrection to the configured guild spawn.");
     }
     finally
@@ -2090,6 +2418,12 @@ static void AttackTimingGate()
     var oldTimestampSession = new LoginSessionRegistry();
     Assert(oldTimestampSession.Open(6) && oldTimestampSession.BeginAccountLogin(6, login) == LoginTransitionResult.Accepted && oldTimestampSession.CompleteAccountLogin(6, "FIGHTER") == LoginTransitionResult.Accepted && oldTimestampSession.BeginCharacterWait(6) == LoginTransitionResult.Accepted && oldTimestampSession.CompleteCharacterLogin(6) == LoginTransitionResult.Accepted, "Old-timestamp fixture did not enter USER_PLAY.");
     Assert(oldTimestampSession.TryAcceptAttackTiming(6, 900_799, 1_020_800) == AttackTimingResult.OutsideServerWindow, "Attack more than 120s behind server time was accepted.");
+
+    // The skill delay gate reads the handler-local LastAttackTick: 0 before the first attack, then the previous tick.
+    var previousSession = new LoginSessionRegistry();
+    Assert(previousSession.Open(7) && previousSession.BeginAccountLogin(7, login) == LoginTransitionResult.Accepted && previousSession.CompleteAccountLogin(7, "FIGHTER") == LoginTransitionResult.Accepted && previousSession.BeginCharacterWait(7) == LoginTransitionResult.Accepted && previousSession.CompleteCharacterLogin(7) == LoginTransitionResult.Accepted, "Previous-tick fixture did not enter USER_PLAY.");
+    Assert(previousSession.TryAcceptAttackTiming(7, 2_000_000, 2_000_000, out _, out var firstPrevious) == AttackTimingResult.Accepted && firstPrevious == 0, "First attack did not report local LastAttackTick 0.");
+    Assert(previousSession.TryAcceptAttackTiming(7, 2_000_900, 2_000_900, out _, out var secondPrevious) == AttackTimingResult.Accepted && secondPrevious == 2_000_000, "Second attack did not report the previous attack tick.");
 }
 
 static void AttackParser()
@@ -2111,6 +2445,42 @@ static void AttackParser()
         var frame = codec.Decode(codec.Encode(type, 4, 123456, payload, 16));
         Assert(AttackRequest.TryParse(frame, out var attack) && attack!.MessageType == type && attack.PositionX == 2000 && attack.PositionY == 2001 && attack.TargetX == 2010 && attack.TargetY == 2011 && attack.AttackerId == 42 && attack.Motion == 7 && attack.SkillParameter == 3 && attack.SkillIndex == 72 && attack.RequestedMp == 55, "Attack intent differs from the legacy packet layout.");
     }
+
+    var clientPaddedOnePayload = new byte[72 - PacketHeader.SizeInBytes];
+    BinaryPrimitives.WriteUInt16LittleEndian(clientPaddedOnePayload.AsSpan(48), 42);
+    BinaryPrimitives.WriteInt32LittleEndian(clientPaddedOnePayload.AsSpan(52), -2);
+    var clientPaddedOne = codec.Decode(codec.Encode(AttackRequest.OneTargetMessageType, 4, 123457, clientPaddedOnePayload, 16));
+    Assert(AttackRequest.TryParse(clientPaddedOne, out var parsedPaddedOne) && parsedPaddedOne is { WireSize: 72, IsShortTwoTargetPacket: false } &&
+        AttackRequest.TryReadDamageSlot(clientPaddedOne, 0, out var paddedTargetId, out var paddedDamage) &&
+        paddedTargetId == 42 && paddedDamage == -2 &&
+        !AttackRequest.TryReadDamageSlot(clientPaddedOne, 1, out _, out _),
+        "The x86 TMProject MSG_AttackOne padding variant was not treated as exactly one complete slot.");
+
+    for (var size = 76; size < AttackRequest.TwoTargetPacketSize; size++)
+    {
+        var shortTwoPayload = new byte[size - PacketHeader.SizeInBytes];
+        BinaryPrimitives.WriteUInt16LittleEndian(shortTwoPayload.AsSpan(48), 42);
+        BinaryPrimitives.WriteInt32LittleEndian(shortTwoPayload.AsSpan(52), -2);
+        BinaryPrimitives.WriteUInt16LittleEndian(shortTwoPayload.AsSpan(56), 43);
+        BinaryPrimitives.WriteInt32LittleEndian(shortTwoPayload.AsSpan(60), -2);
+        var shortTwo = codec.Decode(codec.Encode(AttackRequest.TwoTargetMessageType, 4, 123458, shortTwoPayload, 16));
+        Assert(AttackRequest.TryParse(shortTwo, out var parsedShortTwo) && parsedShortTwo is { IsShortTwoTargetPacket: true, WireSize: var wireSize } && wireSize == size &&
+            AttackRequest.TryReadDamageSlot(shortTwo, 1, out var secondTargetId, out var secondDamage) &&
+            secondTargetId == 43 && secondDamage == -2,
+            $"A complete second slot in short MSG_AttackTwo size {size} was not parsed safely.");
+    }
+
+    var incompleteTwoPayload = new byte[75 - PacketHeader.SizeInBytes];
+    var incompleteTwo = codec.Decode(codec.Encode(AttackRequest.TwoTargetMessageType, 4, 123459, incompleteTwoPayload, 16));
+    Assert(!AttackRequest.TryParse(incompleteTwo, out _),
+        "A short MSG_AttackTwo without a complete second STRUCT_DAM slot was accepted.");
+
+    var belowAttackOnePayload = new byte[67 - PacketHeader.SizeInBytes];
+    var belowAttackOne = codec.Decode(codec.Encode(AttackRequest.OneTargetMessageType, 4, 123460, belowAttackOnePayload, 16));
+    var wrongPaddedTypePayload = new byte[72 - PacketHeader.SizeInBytes];
+    var wrongPaddedType = codec.Decode(codec.Encode(AttackRequest.TwoTargetMessageType, 4, 123461, wrongPaddedTypePayload, 16));
+    Assert(!AttackRequest.TryParse(belowAttackOne, out _) && !AttackRequest.TryParse(wrongPaddedType, out _),
+        "The attack parser accepted unsupported or opcode-mismatched short packet sizes.");
 }
 
 static void AttackResponseWire()
@@ -2121,6 +2491,7 @@ static void AttackResponseWire()
     BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(12), 111); // client-declared EXP must be replaced
     BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(40), 1); // client-declared MP must be replaced
     BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(46), 2); // client-declared ReqMp must be replaced
+    payload[36] = 0xFF; // client-declared DoubleCritical must not be authoritative
     BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(44), 10);
     BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(48), 2);
     BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(48), 999); // client-declared damage must not be relayed as authority
@@ -2132,15 +2503,72 @@ static void AttackResponseWire()
     BinaryPrimitives.WriteInt32LittleEndian(mob.AsSpan(92 + 24), 700);
     BinaryPrimitives.WriteInt32LittleEndian(mob.AsSpan(120), 79);
 
-    Assert(AttackConfirmation.TryCreate(input, mob, 79, out var confirmation) && confirmation is not null, "Authoritative attack confirmation was not created.");
+    Assert(AttackConfirmation.TryCreate(input, mob, out var confirmation) && confirmation is not null, "Authoritative attack confirmation was not created.");
     var confirmed = confirmation ?? throw new InvalidOperationException("Authoritative attack confirmation was not created.");
     var response = codec.Decode(confirmed.ToFrame(codec, input.Header.ClientTick, 17));
     Assert(response.IsChecksumValid && response.Header.Type == AttackRequest.OneTargetMessageType && response.Header.Id == AttackConfirmation.SceneId && response.Header.ClientTick == 123456, "Attack response header differs from the legacy relay.");
-    Assert(BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[4..]) == 700 && BinaryPrimitives.ReadInt64LittleEndian(response.Payload.Span[12..]) == 987654 && BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[40..]) == 79 && BinaryPrimitives.ReadInt16LittleEndian(response.Payload.Span[46..]) == 79, "Attack response did not replace HP/EXP/MP/ReqMp with authoritative values.");
+    Assert(response.Payload.Span[36] == 0, "Attack response relayed client-declared DoubleCritical as server authority.");
+    Assert(BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[4..]) == 700 && BinaryPrimitives.ReadInt64LittleEndian(response.Payload.Span[12..]) == 987654 && BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[40..]) == 79 && BinaryPrimitives.ReadInt16LittleEndian(response.Payload.Span[46..]) == 79, "Attack response did not derive ReqMp from authoritative CurrentMp.");
     Assert(BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[48..]) == 0, "Attack response relayed client-declared damage.");
     Assert(confirmed.TrySetDamageSlot(0, 2, 23), "Authoritative damage slot could not be filled.");
     var resolved = codec.Decode(confirmed.ToFrame(codec, input.Header.ClientTick, 17));
     Assert(BinaryPrimitives.ReadUInt16LittleEndian(resolved.Payload.Span[48..]) == 2 && BinaryPrimitives.ReadInt32LittleEndian(resolved.Payload.Span[52..]) == 23, "Authoritative target/damage slot was not encoded.");
+
+    var twoTargetPayload = new byte[AttackRequest.TwoTargetPacketSize - PacketHeader.SizeInBytes];
+    twoTargetPayload[36] = 0xFF;
+    var twoTargetInput = codec.Decode(codec.Encode(AttackRequest.TwoTargetMessageType, 4, 123457, twoTargetPayload, 16));
+    Assert(AttackConfirmation.TryCreate(twoTargetInput, mob, out var twoTargetConfirmation) && twoTargetConfirmation is not null, "Two-target attack confirmation was not created.");
+    Assert(twoTargetConfirmation!.TrySetDoubleCritical(4) && twoTargetConfirmation.TrySetDamageSlot(1, 0, 987), "Authoritative DoubleCritical second slot could not be filled.");
+    var twoTargetResponse = codec.Decode(twoTargetConfirmation.ToFrame(codec, twoTargetInput.Header.ClientTick, 17));
+    Assert(twoTargetResponse.Payload.Span[36] == 4 && BinaryPrimitives.ReadUInt16LittleEndian(twoTargetResponse.Payload.Span[56..]) == 0 && BinaryPrimitives.ReadInt32LittleEndian(twoTargetResponse.Payload.Span[60..]) == 987 && BinaryPrimitives.ReadInt16LittleEndian(twoTargetResponse.Payload.Span[46..]) == 79,
+        "Two-target attack confirmation did not encode server-generated DoubleCritical and secondary damage.");
+
+    var areaPayload = new byte[AttackRequest.AreaPacketSize - PacketHeader.SizeInBytes];
+    BinaryPrimitives.WriteInt16LittleEndian(areaPayload.AsSpan(46), 3);
+    var areaInput = codec.Decode(codec.Encode(AttackRequest.AreaMessageType, 4, 123458, areaPayload, 16));
+    Assert(AttackConfirmation.TryCreate(areaInput, mob, out var areaConfirmation) && areaConfirmation is not null,
+        "Area attack confirmation was not created.");
+    var areaResponse = codec.Decode(areaConfirmation!.ToFrame(codec, areaInput.Header.ClientTick, 17));
+    Assert(BinaryPrimitives.ReadInt16LittleEndian(areaResponse.Payload.Span[46..]) == 79,
+        "Area attack confirmation did not derive ReqMp from authoritative CurrentMp.");
+
+    var highManaMob = mob.ToArray();
+    BinaryPrimitives.WriteInt32LittleEndian(highManaMob.AsSpan(LegacyAccountSnapshot.MobCurrentMpOffset), 40_000);
+    Assert(AttackConfirmation.TryCreate(input, highManaMob, out var highManaConfirmation) && highManaConfirmation is not null,
+        "High-MP attack confirmation was not created.");
+    var highManaResponse = codec.Decode(highManaConfirmation!.ToFrame(codec, input.Header.ClientTick, 17));
+    Assert(BinaryPrimitives.ReadInt32LittleEndian(highManaResponse.Payload.Span[40..]) == 40_000 &&
+        BinaryPrimitives.ReadInt16LittleEndian(highManaResponse.Payload.Span[46..]) == unchecked((short)40_000),
+        "Attack ReqMp did not preserve the target x86 signed-short narrowing of CurrentMp.");
+
+    var clientPaddingPayload = Enumerable.Repeat((byte)0xCC, 72 - PacketHeader.SizeInBytes).ToArray();
+    BinaryPrimitives.WriteUInt16LittleEndian(clientPaddingPayload.AsSpan(48), 42);
+    BinaryPrimitives.WriteInt32LittleEndian(clientPaddingPayload.AsSpan(52), -2);
+    var paddedClientInput = codec.Decode(codec.Encode(AttackRequest.OneTargetMessageType, 4, 123459, clientPaddingPayload, 16));
+    Assert(AttackConfirmation.TryCreate(paddedClientInput, mob, out var paddedClientConfirmation) && paddedClientConfirmation is not null,
+        "The padded x86 client one-target frame could not create a server confirmation.");
+    var paddedClientResponse = codec.Decode(paddedClientConfirmation!.ToFrame(codec, paddedClientInput.Header.ClientTick, 17));
+    Assert(paddedClientResponse.Header.Size == AttackRequest.OneTargetClientPaddedPacketSize &&
+        paddedClientResponse.Payload.Span[56..].SequenceEqual(new byte[4]),
+        "The one-target relay did not preserve its 72-byte client ABI size while clearing padding.");
+
+    for (var size = AttackRequest.TwoTargetMinimumCompletePacketSize; size < AttackRequest.TwoTargetPacketSize; size++)
+    {
+        var partialPayload = Enumerable.Repeat((byte)0xCC, size - PacketHeader.SizeInBytes).ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(partialPayload.AsSpan(56), 43);
+        BinaryPrimitives.WriteInt32LittleEndian(partialPayload.AsSpan(60), -2);
+        var partialInput = codec.Decode(codec.Encode(AttackRequest.TwoTargetMessageType, 4, (uint)(123460 + size), partialPayload, 16));
+        Assert(AttackConfirmation.TryCreate(partialInput, mob, out var partialConfirmation) && partialConfirmation is not null &&
+            partialConfirmation.TrySetDamageSlot(1, 43, -2),
+            $"The partial two-target size {size} could not be safely relayed.");
+        var partialResponse = codec.Decode(partialConfirmation!.ToFrame(codec, partialInput.Header.ClientTick, 17));
+        var paddingStart = AttackRequest.TwoTargetMinimumCompletePacketSize - PacketHeader.SizeInBytes;
+        Assert(partialResponse.Header.Size == size &&
+            BinaryPrimitives.ReadUInt16LittleEndian(partialResponse.Payload.Span[56..]) == 43 &&
+            BinaryPrimitives.ReadInt32LittleEndian(partialResponse.Payload.Span[60..]) == -2 &&
+            partialResponse.Payload.Span[paddingStart..].SequenceEqual(new byte[size - AttackRequest.TwoTargetMinimumCompletePacketSize]),
+            $"The partial two-target size {size} changed its slot or relayed untrusted tail padding.");
+    }
 }
 
 static void AttackAuthoritativePipeline()
@@ -2161,11 +2589,11 @@ static void AttackAuthoritativePipeline()
 
     using var skillReader = new StringReader("10,69,1,20,15,1,1,40,0,0,0,0,0,8.0.0.7.0.0.0.0,8.0.0.7.0.0.0.0,0,0,1,2,0,0,0,1,Golpe_Mortal");
     var skills = LegacySkillDataTable.Load(skillReader);
-    Assert(LegacySkillAttackGate.Validate(skills, request!, characterClass: 0, learnedSkill: 1u << 10, targetIndex: 0) == SkillAttackValidationResult.Accepted, "Integrated attack fixture did not pass the legacy skill gate.");
+    Assert(LegacySkillAttackGate.Evaluate(skills, request!.SkillIndex, characterClass: 0, learnedSkill: 1u << 10, clientTick: 1_000_000, previousAttackTick: 0) is { IsAccepted: true, LearnedSkillError: null }, "Integrated attack fixture did not pass the legacy skill gate.");
 
     var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
     var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
-    new LegacyScore(100, 0, 100, 0, 0, 0, 0, 1000, 1000, 900, 100, 0, 0, 0, 0, 0, 40, 0, 0).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    new LegacyScore(100, 0, 100, 0, 0, 0, 0, 1000, 1000, 900, 100, 0, 0, 0, 0, 0, 0, 40, 0).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     new LegacyScore(100, 10, 0, 0, 0, 0, 0, 100, 100, 100, 50, 0, 0, 0, 0, 0, 0, 0, 0).Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     attackerMob[LegacyAccountSnapshot.MobClassOffset] = 0;
     BinaryPrimitives.WriteUInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), 1u << 10);
@@ -2176,8 +2604,8 @@ static void AttackAuthoritativePipeline()
     Assert(world.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && world.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Integrated attack participant state was not set.");
 
     Assert(world.TryConsumeSkillMana(1, skills[10]!, out _, out var authoritativeMob, out var requestedMp) == LegacySkillManaResult.Accepted && authoritativeMob is not null && requestedMp == 79, "Integrated attack did not consume server-calculated mana.");
-    Assert(AttackConfirmation.TryCreate(input, authoritativeMob, requestedMp, out var confirmation) && confirmation is not null, "Integrated attack confirmation was not created.");
-    Assert(world.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var physicalOutcome) == LegacyPhysicalAttackResult.Accepted && physicalOutcome is not null && physicalOutcome.Damage == 21, "Integrated attack did not resolve the legacy physical damage.");
+    Assert(AttackConfirmation.TryCreate(input, authoritativeMob, out var confirmation) && confirmation is not null, "Integrated attack confirmation was not created.");
+    Assert(world.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var physicalOutcome, attackMissRoll: 99) == LegacyPhysicalAttackResult.Accepted && physicalOutcome is not null && physicalOutcome.Damage == 21, "Integrated attack did not resolve the legacy physical damage.");
     Assert(confirmation!.TrySetDamageSlot(0, (ushort)physicalOutcome!.TargetConnectionId, physicalOutcome.Damage), "Integrated attack damage slot was not filled from authoritative combat state.");
 
     var response = codec.Decode(confirmation.ToFrame(codec, input.Header.ClientTick, 17));
@@ -2186,6 +2614,95 @@ static void AttackAuthoritativePipeline()
     Assert(BinaryPrimitives.ReadUInt16LittleEndian(response.Payload.Span[48..]) == 2 && BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[52..]) == 21, "Integrated attack relay exposed client-declared target damage.");
     Assert(world.TryGetCombatState(2, out var targetState) && targetState!.CurrentScore.Hp == 79, "Integrated attack did not persist target HP after the relay was built.");
     Assert(world.TryGetResourceState(2, out var targetResources, out var targetRequestedHp, out _) && targetResources!.CurrentScore.Hp == 79 && targetRequestedHp == 79, "Integrated attack did not synchronize the target ReqHp state used by SendSetHpMp.");
+}
+
+static void PhysicalAttackBatchAggregateConfirmation()
+{
+    var codec = LegacyFrameCodec.CreateDefault();
+    var (hub, targetIds) = CreatePhysicalAttackBatchFixture(
+        targetCount: 3,
+        attackerClass: 0,
+        learnedPassive: false,
+        attackRun: 0xF0,
+        mobCritical: 0,
+        strength: 10,
+        special4: 0);
+    Assert(hub.TryGetCharacterSnapshot(1, out var attackerBefore, out _, out _) && attackerBefore is not null,
+        "Could not capture aggregate-confirmation attacker state.");
+    BinaryPrimitives.WriteInt64LittleEndian(attackerBefore!.AsSpan(32), 123456789);
+    Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerBefore),
+        "Could not seed aggregate-confirmation attacker experience.");
+
+    var payload = new byte[AttackRequest.AreaPacketSize - PacketHeader.SizeInBytes];
+    BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(AttackRequest.ProgressOffset), 321);
+    payload[36] = 0xFF;
+    SetPhysical(payload, 0, checked((ushort)targetIds[0]));
+    SetPhysical(payload, 2, checked((ushort)targetIds[2]));
+    var input = codec.Decode(codec.Encode(AttackRequest.AreaMessageType, 1, 456789, payload, 17));
+    Assert(AttackRequest.TryParse(input, out var parsed) && parsed is { Progress: 321, DoubleCritical: 0xFF },
+        "Aggregate-confirmation attack intent was not parsed.");
+
+    var batchRequest = new LegacyPhysicalAttackBatchRequest(
+        1,
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, targetIds[0], new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(2, targetIds[2], new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        ClientProgress: parsed!.Progress,
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(
+            DoubleCriticalRoll: 3,
+            DoubleCriticalChanceRoll: 254,
+            DoubleCriticalDamageRoll: 1));
+    Assert(hub.TryApplyPhysicalAttackBatch(batchRequest, out var batch) && batch is { CompletedNormally: true, AttackerMobSnapshot: not null },
+        "Two-slot physical batch did not produce an aggregate authoritative state.");
+    Assert(batch!.SlotOutcomes.Select(result => result.SlotIndex).SequenceEqual([0, 2]) && batch.SlotOutcomes.All(result => result.Outcome is { Damage: > 0 }),
+        "Aggregate batch outcomes did not retain their original sparse wire indexes.");
+
+    Assert(AttackConfirmation.TryCreate(input, batch.AttackerMobSnapshot!, out var confirmation) && confirmation is not null,
+        "Aggregate physical attack confirmation could not be created from the final attacker snapshot.");
+    foreach (var slot in batch.SlotOutcomes)
+    {
+        var result = slot.Outcome!;
+        Assert(confirmation!.TrySetDamageSlot(slot.SlotIndex, checked((ushort)result.TargetConnectionId), result.Damage),
+            $"Aggregate physical slot {slot.SlotIndex} could not be written to the confirmation.");
+    }
+    foreach (var slotOverride in batch.WireSlotOverrides)
+        Assert(confirmation!.TrySetDamageSlot(slotOverride.SlotIndex, checked((ushort)slotOverride.TargetConnectionId), slotOverride.Damage),
+            $"Aggregate physical wire override at slot {slotOverride.SlotIndex} could not be written.");
+    Assert(confirmation!.TrySetDoubleCritical(batch.DoubleCritical) && confirmation.TrySetProgress(batch.NextProgress),
+        "Aggregate action DoubleCritical/Progress could not be written.");
+
+    var response = codec.Decode(confirmation.ToFrame(codec, input.Header.ClientTick, 18));
+    var finalScore = LegacyScore.Read(batch.AttackerMobSnapshot!.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(response.IsChecksumValid && response.Header.Type == AttackRequest.AreaMessageType && response.Header.Size == AttackRequest.AreaPacketSize,
+        "Aggregate confirmation changed the original 13-slot wire type or size.");
+    Assert(BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[4..]) == finalScore.Hp &&
+        BinaryPrimitives.ReadInt64LittleEndian(response.Payload.Span[12..]) == BinaryPrimitives.ReadInt64LittleEndian(batch.AttackerMobSnapshot.AsSpan(32)) &&
+        BinaryPrimitives.ReadInt32LittleEndian(response.Payload.Span[40..]) == finalScore.Mp &&
+        BinaryPrimitives.ReadInt16LittleEndian(response.Payload.Span[46..]) == unchecked((short)finalScore.Mp),
+        "Aggregate confirmation did not carry final authoritative attacker HP/EXP/MP and narrowed ReqMp.");
+    Assert(response.Payload.Span[36] == batch.DoubleCritical &&
+        BinaryPrimitives.ReadUInt16LittleEndian(response.Payload.Span[AttackRequest.ProgressOffset..]) == batch.NextProgress,
+        "Aggregate confirmation did not carry the single batch DoubleCritical/Progress result.");
+    Assert(ReadSlot(response, 0) == ((ushort)targetIds[0], batch.SlotOutcomes[0].Outcome!.Damage) &&
+        ReadSlot(response, 1) == (0, 0) &&
+        ReadSlot(response, 2) == ((ushort)targetIds[2], batch.SlotOutcomes[1].Outcome!.Damage),
+        "Aggregate confirmation moved sparse physical results from their original indexes or retained client damage.");
+
+    static void SetPhysical(Span<byte> destination, int slotIndex, ushort targetId)
+    {
+        var offset = AttackRequest.DamageArrayOffset + (slotIndex * AttackRequest.DamageSlotSize);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[offset..], targetId);
+        BinaryPrimitives.WriteInt32LittleEndian(destination[(offset + 4)..], -2);
+    }
+
+    static (ushort TargetId, int Damage) ReadSlot(DecodedFrame frame, int slotIndex)
+    {
+        Assert(AttackRequest.TryReadDamageSlot(frame, slotIndex, out var targetId, out var damage),
+            $"Could not read aggregate physical response slot {slotIndex}.");
+        return (targetId, damage);
+    }
 }
 
 static void SetHpMpWire()
@@ -2232,17 +2749,77 @@ static void SkillCombatFormula()
     Assert(LegacySkillCombatMath.GetParryRate(100, 0, 0, 0x2A0) == 250, "GetParryRate did not apply the three legacy attacker-Rsv bonuses.");
 
     var skill = new LegacySkillDefinition(10, 69, 1, 20, 15, 1, 1, 40, 0, 0, 0, 0, 0, [], [], 0, 0, 1, 2, 0, 0, 1, 0, "Golpe_Mortal");
-    var physicalClassScore = new LegacyScore(50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 300, 0, 0, 0, 20, 0, 0);
+    var physicalClassScore = new LegacyScore(50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 300, 0, 0, 0, 0, 20, 0);
     var physicalClass = new LegacyMobCombatState(0, 0, 0, physicalClassScore, 0);
-    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill, physicalClass, weather: 0, weaponDamage: 30, magic: 0) == 625, "BASE_GetSkillDamage skill-base formula differs for a TK weapon skill.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill, physicalClass, weather: 0, weaponDamage: 30, magic: 0) == 313, "7.69 BASE_GetSkillDamage differs for a TK weapon skill: (40+21+25+150+15)*5>>2.");
 
     var magicClassScore = physicalClassScore with { Intelligence = 300, Strength = 0 };
     var magicClass = new LegacyMobCombatState(1, 0, 50, magicClassScore, 0);
-    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill, magicClass, weather: 0, weaponDamage: 0, magic: 50) == 900, "BASE_GetSkillDamage skill-base formula differs for a Foema magic skill.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill, magicClass, weather: 0, weaponDamage: 0, magic: 50) == 590, "7.69 BASE_GetSkillDamage differs for a Foema magic skill: (236*(50*2+100)/100)*5>>2.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill, magicClass, weather: 0, weaponDamage: 0, magic: 200) == -35, "STRUCT_MOB.Magic was not narrowed to the 7.69 signed char (200 -> -56).");
 
     var lightning = skill with { Id = 79, InstanceType = 4, InstanceValue = 999 };
     var lightningScore = physicalClassScore with { Damage = 200 };
-    Assert(LegacySkillCombatMath.GetSkillBaseDamage(lightning, new LegacyMobCombatState(3, 0, 0, lightningScore, 0), weather: 0, weaponDamage: 0, magic: 0) == 360, "Skill 79 did not use the legacy lightning override.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(lightning, new LegacyMobCombatState(3, 0, 0, lightningScore, 0), weather: 0, weaponDamage: 0, magic: 0) == 200, "7.69 skill 79 did not return the attacker CurrentScore.Damage.");
+
+    // STRUCT_SCORE.Special[0..3] = Special1..4; 7.69/W2PP read Special[skill % 24 / 8 + 1] (stages 1..3).
+    var stageScore = new LegacyScore(77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 22, 33, 44);
+    var stageState = new LegacyMobCombatState(0, 0, 0, stageScore, 0);
+    int Special(int id) => LegacySkillCombatMath.GetSkillSpecial(skill with { Id = id }, stageState);
+    Assert(Special(0) == 22 && Special(7) == 22 && Special(24) == 22, "Stage 1 skills did not read Special[1] (Special2).");
+    Assert(Special(8) == 33 && Special(15) == 33 && Special(32) == 33, "Stage 2 skills did not read Special[2] (Special3).");
+    Assert(Special(16) == 44 && Special(23) == 44 && Special(95) == 44, "Stage 3 skills did not read Special[3] (Special4).");
+    Assert(Special(96) == 77 && Special(100) == 77 && Special(101) == 0 && Special(247) == 0, "Handler Special was not Level for 96..100 and zero for 101+.");
+    // 7.69 InstanceType 0: listed cases break out of the switch and are overwritten by `else Result = mob->Magic`.
+    var stageEleven = skill with { Id = 11, InstanceType = 0, TickValue = 5 };
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(stageEleven, stageState, weather: 0, weaponDamage: 0, magic: 7) == 7, "7.69 InstanceType 0 skill 11 was not overwritten by Magic.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(stageEleven with { Id = 12 }, stageState, weather: 0, weaponDamage: 0, magic: 7) == 0, "7.69 InstanceType 0 default case did not return 0.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill with { Id = 33, InstanceType = 6, InstanceValue = 4 }, stageState, 0, 0, 7) == (33 + 1) * 3 + 4, "7.69 InstanceType 6 did not return (Special[Stage]+(spell>>3))*3+InstanceValue.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(skill with { InstanceType = 11, InstanceValue = 9 }, stageState, 0, 0, 7) == 9, "7.69 InstanceType 11 did not return InstanceValue.");
+    var huntress = new LegacyMobCombatState(3, 0, 0, stageScore with { Strength = 101 }, 0);
+    var huntressSkill = skill with { Id = 74, InstanceType = 2, InstanceValue = 10 };
+    // spell 2 -> stage 1, rc0 0: 10 + 22 + (77>>1) + (101>>1) + 3*20; class 3 returns *5>>2 without Magic.
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(huntressSkill, huntress, 0, 20, 100) == ((10 + 22 + 38 + 50 + 60) * 5 >> 2), "7.69 Huntress skill formula differs.");
+    var weatherSkill = skill with { Id = 2, InstanceType = 2, InstanceValue = 10 };
+    var tk = new LegacyMobCombatState(0, 0, 0, stageScore with { Intelligence = 10 }, 0);
+    // TK, skill 2 (local8 0): 10 + 22 + 38 + 10/2 + (0+1)/2 = 75, then Magic multiplier (0*2+100)/100.
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(weatherSkill, tk, 0, 0, 0) == (75 * 5 >> 2), "7.69 TK non-weapon skill formula differs.");
+    Assert(LegacySkillCombatMath.GetSkillBaseDamage(weatherSkill, tk, 1, 0, 0) == ((75 * 90 / 100) * 5 >> 2), "7.69 weather 1 did not scale skill 2 by 90%.");
+    Assert(LegacySkillCombatMath.GetSkillWeather(1, 11 * 128, 26 * 128) == 0 && LegacySkillCombatMath.GetSkillWeather(1, 12 * 128, 26 * 128) == 1 && LegacySkillCombatMath.GetSkillWeather(2, 0, 25 * 128) == 2,
+        "7.69 weather region (x/128<12 && y/128>25) differs.");
+
+    // 7.69 BASE_GetSkillDamage(dam, ac, combat): `ac >> 1` and a 0..50 low band.
+    Assert(LegacySkillCombatMath.GetSkillDamage(50, 0, combat: 10, randomFactor: 100) == 67, "7.69 low band did not include 46..50 ((50*5>>2)+5).");
+    Assert(LegacySkillCombatMath.GetSkillDamage(10, -3, combat: 10, randomFactor: 100) == 20, "7.69 did not use arithmetic ac >> 1 for negative armor.");
+
+    // Defense and resistance after the skill roll.
+    Assert(LegacySkillCombatMath.GetSkillDefense(40, targetIsPlayer: true, 0) == 80 && LegacySkillCombatMath.GetSkillDefense(40, targetIsPlayer: false, 0) == 40 && LegacySkillCombatMath.GetSkillDefense(40, targetIsPlayer: true, 1) == 120,
+        "7.69 skill defense differs (player x2, Foema x3/2).");
+    byte[] resist = [20, 0xF6, 40, 60];
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 1, 100, true, 354, 3, 0, resist, out var lr) == 90 && lr == 10, "Lightning ResistPoint at level 354 was not 10.");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 1, 100, true, 355, 3, 0, resist, out lr) == 58 && lr == 42, "Celestial level 355+ lightning ResistPoint was not 42.");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 1, 100, true, 355, 1, 0, resist, out lr) == 74 && lr == 26, "Arch lightning ResistPoint was not 26.");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 1, 100, true, 355, 2, 0, resist, out lr) == 75 && lr == 25, "Mortal lightning ResistPoint was not 25.");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 1, 100, false, 355, 0, 45_999, resist, out lr) == 55 && lr == 45, "NPC lightning ResistPoint was not LearnedSkill / 1000.");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 2, 100, true, 1, 2, 0, resist, out var er) == 190 && er == 10, "Player element resist was not halved into dam*(200-resist)/100.");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(10, 3, 100, false, 1, 0, 0, resist, out er) == 210 && er == -10, "NPC element resist was not the signed Resist[1].");
+    Assert(LegacySkillCombatMath.ApplySkillResistance(97, 2, 100, true, 1, 2, 0, resist, out er) == 100 && er == 0, "Skill 97 was not excluded from element resistance.");
+
+    // InstanceType 6 heal: Special*2 (27) or *3, doubled above ARCH, caps 1100 at 1090+ / 638, 1..5 -> 6.
+    var healer = new LegacyMobCombatState(1, 0, 0, stageScore with { Special2 = 100 }, 0);
+    var cure = skill with { Id = 28, InstanceType = 6, InstanceValue = 20 };
+    Assert(LegacySkillCombatMath.GetHealAmount(cure, healer, 2) == 320 && LegacySkillCombatMath.GetHealAmount(cure with { Id = 27 }, healer, 2) == 220, "7.69 heal multipliers differ (Special*3, skill 27 Special*2).");
+    Assert(LegacySkillCombatMath.GetHealAmount(cure with { InstanceValue = 400 }, healer, 2) == 638, "Mortal heal was not capped at 638.");
+    Assert(LegacySkillCombatMath.GetHealAmount(cure, healer, 3) == 640 && LegacySkillCombatMath.GetHealAmount(cure with { InstanceValue = 245 }, healer, 3) == 1100 && LegacySkillCombatMath.GetHealAmount(cure with { InstanceValue = 244 }, healer, 3) == 1088,
+        "Celestial heal did not double and jump 1090+ to 1100.");
+    var weakHealer = new LegacyMobCombatState(1, 0, 0, default, 0);
+    Assert(LegacySkillCombatMath.GetHealAmount(cure with { InstanceValue = 3 }, weakHealer, 2) == 6 && LegacySkillCombatMath.GetHealAmount(cure with { InstanceValue = 0 }, weakHealer, 2) == 0, "7.69 heal minimum 6 applied outside 1..5.");
+
+    // InstanceType 9 target zones.
+    Assert(LegacySkillCombatMath.IsSummonTargetZoneBlocked(2335, 3896) && LegacySkillCombatMath.IsSummonTargetZoneBlocked(1755, 1995) &&
+        LegacySkillCombatMath.IsSummonTargetZoneBlocked(13 * 128, 0) && LegacySkillCombatMath.IsSummonTargetZoneBlocked(0, 16 * 128) &&
+        LegacySkillCombatMath.IsSummonTargetZoneBlocked(27 * 128, 0) && LegacySkillCombatMath.IsSummonTargetZoneBlocked(0, 11 * 128) &&
+        !LegacySkillCombatMath.IsSummonTargetZoneBlocked(2005, 2005), "7.69 summon target zones differ.");
 }
 
 static void ExperienceFormula()
@@ -2444,6 +3021,492 @@ static void LegacyEquipmentEligibilityRules()
     Assert(LegacyEquipmentRules.Evaluate(new LegacyItem(27, 0, 0, 0, 0, 0, 0), enoughForSecondary, 7, 0, LegacyAccountSnapshot.ClassMasterMortal, 0, equipment, table).Allowed, "A character meeting the scaled secondary-weapon requirements was rejected.");
 }
 
+static void LegacyTinyCombineMatchRules()
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 100, "ARCH WEAPON", unique: 0, position: 64, grade: 5, (LegacyItemEffect.MobType, 1));
+    WriteItemListRecord(body, 101, "TINY ATTRIBUTE", unique: 0, position: 64, grade: 8);
+    WriteItemListRequiredLevel(body, 101, 3);
+    WriteItemListRecord(body, 102, "TINY CATALYST", unique: 0, position: 0, grade: 0);
+    WriteItemListRecord(body, 103, "MORTAL WEAPON", unique: 0, position: 64, grade: 5, (LegacyItemEffect.MobType, 2));
+    WriteItemListRecord(body, 104, "LOW GRADE WEAPON", unique: 0, position: 64, grade: 4, (LegacyItemEffect.MobType, 1));
+    WriteItemListRecord(body, 105, "WRONG POSITION", unique: 0, position: 4, grade: 5);
+    WriteItemListRecord(body, 106, "HIGH GRADE ATTRIBUTE", unique: 0, position: 64, grade: 9);
+    WriteItemListRecord(body, 107, "TYPE ONE ATTRIBUTE", unique: 0, position: 64, grade: 5, (113, 1));
+    WriteItemListRecord(body, 108, "TYPE ONE CATALYST", unique: 0, position: 0, grade: 0, (113, 1));
+    WriteItemListRecord(body, 109, "MISMATCHED ATTRIBUTE", unique: 0, position: 192, grade: 5);
+    WriteItemListRecord(body, 110, "ZERO LEVEL ATTRIBUTE", unique: 0, position: 64, grade: 5);
+    var itemData = LegacyItemDataTable.Load(body.Select(static value => (byte)(value ^ 0x5A)).ToArray());
+
+    LegacyItem[] MakeItems(short target = 100, short attribute = 101, short catalyst = 102, byte targetSanctuary = 9, byte catalystSanctuary = 9)
+    {
+        var items = new LegacyItem[8];
+        items[0] = new LegacyItem(target, 116, targetSanctuary, 0, 0, 0, 0);
+        items[1] = new LegacyItem(attribute, 0, 0, 0, 0, 0, 0);
+        items[2] = new LegacyItem(catalyst, 116, catalystSanctuary, 0, 0, 0, 0);
+        return items;
+    }
+
+    Assert(LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(), itemData, tinyBase: 40, out var threshold) && threshold == 55,
+        "A valid ARCH weapon, grade-8 attribute, and untyped catalyst did not use CHANCEBASE + item level * 5.");
+    Assert(LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(target: 100, attribute: 101, catalyst: 102, targetSanctuary: 9), itemData, tinyBase: 0, out var zeroBase) && zeroBase == 15,
+        "The lowest configured Tiny base did not preserve the attribute-level contribution.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(attribute: 110), itemData, tinyBase: 0, out _),
+        "A recipe whose legacy matcher returns zero was treated as a valid Tiny combination.");
+
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(target: 103), itemData, tinyBase: 40, out _),
+        "A non-ARCH target passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(target: 104), itemData, tinyBase: 40, out _),
+        "A grade-4 target passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(target: 105), itemData, tinyBase: 40, out _),
+        "A target outside weapon positions 64/192 passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(attribute: 106), itemData, tinyBase: 40, out _),
+        "A grade-9 attribute passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(attribute: 107), itemData, tinyBase: 40, out _),
+        "An EF_ITEMTYPE=1 attribute passed the 7.69 Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(catalyst: 108), itemData, tinyBase: 40, out _),
+        "An EF_ITEMTYPE=1 catalyst passed the 7.69 Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(attribute: 109), itemData, tinyBase: 40, out _),
+        "An attribute with a different equipment position passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(targetSanctuary: 8), itemData, tinyBase: 40, out _),
+        "A target below sanctuary 9 passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(catalystSanctuary: 8), itemData, tinyBase: 40, out _),
+        "A catalyst below sanctuary 9 passed the Tiny combine match.");
+
+    var forbiddenItem = MakeItems();
+    forbiddenItem[7] = new LegacyItem(747, 0, 0, 0, 0, 0, 0);
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(forbiddenItem, itemData, tinyBase: 40, out _),
+        "Item 747 in an otherwise unused combine position was accepted.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems(target: 6500), itemData, tinyBase: 40, out _),
+        "An out-of-range ItemList index passed the Tiny combine match.");
+    Assert(!LegacyTinyCombineRules.TryGetSuccessThreshold(MakeItems()[..7], itemData, tinyBase: 40, out _),
+        "A combine array with fewer than MAX_COMBINE entries was accepted.");
+}
+
+static void LegacyTinyCombinePreparation()
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 100, "ARCH WEAPON", unique: 0, position: 64, grade: 5, (LegacyItemEffect.MobType, 1));
+    WriteItemListRecord(body, 101, "TINY ATTRIBUTE", unique: 0, position: 64, grade: 8);
+    WriteItemListRequiredLevel(body, 101, 3);
+    WriteItemListRecord(body, 102, "TINY CATALYST", unique: 0, position: 0, grade: 0);
+    var itemData = LegacyItemDataTable.Load(body.Select(static value => (byte)(value ^ 0x5A)).ToArray());
+    var target = new LegacyItem(100, 116, 9, 0, 0, 0, 0);
+    var attribute = new LegacyItem(101, 0, 0, 0, 0, 0, 0);
+    var catalyst = new LegacyItem(102, 116, 9, 0, 0, 0, 0);
+
+    WorldHub CreateHub(int connectionId, int coin, int firstSlot = 0, bool firstExpansion = false)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        new LegacyScore(50, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+            .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        target.Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (firstSlot * LegacyItem.SizeInBytes)));
+        attribute.Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + ((firstSlot + 1) * LegacyItem.SizeInBytes)));
+        catalyst.Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + ((firstSlot + 2) * LegacyItem.SizeInBytes)));
+        if (firstExpansion)
+            new LegacyItem(3467, 0, 0, 0, 0, 0, 0)
+                .Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (60 * LegacyItem.SizeInBytes)));
+
+        var hub = new WorldHub(itemData: itemData);
+        Assert(hub.Enter(connectionId, $"TINY_{connectionId}", (_, _) => ValueTask.CompletedTask) &&
+            hub.SetCharacterState(connectionId, 0, 0, 0, 0, coin, 2_000, 2_000, mob),
+            "Tiny combine participant state was not initialized.");
+        return hub;
+    }
+
+    LegacyItem[] MakeItems() => [target, attribute, catalyst, default, default, default, default, default];
+    sbyte[] MakePositions(int firstSlot = 0) => [
+        checked((sbyte)firstSlot), checked((sbyte)(firstSlot + 1)), checked((sbyte)(firstSlot + 2)), -1, -1, -1, -1, -1];
+
+    var hub = CreateHub(1, LegacyTinyCombineRules.CoinCost);
+    var requestedItems = MakeItems();
+    var inventoryPositions = MakePositions();
+    Assert(hub.TryGetCharacterSnapshot(1, out var before, out _, out _) && before is not null,
+        "Tiny combine fixture could not capture the authoritative MOB before preparation.");
+
+    var result = hub.TryPrepareTinyCombine(1, requestedItems, inventoryPositions, tinyBase: 40, out var plan);
+    Assert(result == LegacyTinyCombinePreparationResult.Accepted && plan is not null &&
+        plan.SuccessThreshold == 55 && plan.CoinBefore == LegacyTinyCombineRules.CoinCost &&
+        plan.RequestedItems.SequenceEqual(MakeItems()) && plan.InventoryPositions.SequenceEqual(MakePositions()) &&
+        plan.ExpectedMob.Span.SequenceEqual(before),
+        "A current Tiny request did not produce a complete, authoritative, non-mutating plan.");
+
+    requestedItems[0] = default;
+    inventoryPositions[0] = 29;
+    Assert(plan!.RequestedItems[0] == target && plan.InventoryPositions[0] == 0,
+        "The Tiny plan retained caller-owned mutable request arrays.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var after, out _, out _) && after is not null && after.SequenceEqual(before),
+        "Preparing a Tiny combine mutated the authoritative MOB.");
+
+    var changedItems = MakeItems();
+    changedItems[0] = target with { Value1 = 8 };
+    Assert(hub.TryPrepareTinyCombine(1, changedItems, MakePositions(), tinyBase: 40, out _) == LegacyTinyCombinePreparationResult.ItemChanged,
+        "A request containing a stale item payload passed the authoritative carry comparison.");
+    Assert(hub.TryPrepareTinyCombine(1, MakeItems(), MakePositions(firstSlot: 30), tinyBase: 40, out _) == LegacyTinyCombinePreparationResult.InvalidInventoryPosition,
+        "A slot beyond the character's 30-slot carry capacity passed Tiny preparation.");
+    Assert(hub.TryPrepareTinyCombine(1, MakeItems(), MakePositions(firstSlot: -1), tinyBase: 40, out _) == LegacyTinyCombinePreparationResult.InvalidInventoryPosition,
+        "A signed negative inventory position passed Tiny preparation.");
+    Assert(hub.TryPrepareTinyCombine(1, MakeItems()[..7], MakePositions(), tinyBase: 40, out _) == LegacyTinyCombinePreparationResult.InvalidRequestShape,
+        "A malformed Tiny request shape passed preparation.");
+    Assert(CreateHub(2, LegacyTinyCombineRules.CoinCost - 1).TryPrepareTinyCombine(2, MakeItems(), MakePositions(), tinyBase: 40, out _) == LegacyTinyCombinePreparationResult.InsufficientCoin,
+        "A character below the 100-million Tiny cost passed preparation.");
+    Assert(CreateHub(3, LegacyTinyCombineRules.CoinCost, firstSlot: 30, firstExpansion: true)
+        .TryPrepareTinyCombine(3, MakeItems(), MakePositions(firstSlot: 30), tinyBase: 40, out var expandedPlan) == LegacyTinyCombinePreparationResult.Accepted &&
+        expandedPlan is { SuccessThreshold: 55 },
+        "A valid slot within the first 15-slot carry expansion was rejected.");
+}
+
+static void LegacyTinyCombineOutcome()
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 100, "ARCH WEAPON", unique: 0, position: 64, grade: 5, (LegacyItemEffect.MobType, 1));
+    WriteItemListRecord(body, 101, "TINY ATTRIBUTE", unique: 0, position: 64, grade: 8);
+    WriteItemListRequiredLevel(body, 101, 3);
+    WriteItemListRecord(body, 102, "TINY CATALYST", unique: 0, position: 0, grade: 0);
+    WriteItemListRecord(body, 103, "EXTRA CONSUMABLE", unique: 0, position: 0, grade: 0);
+    WriteItemListRecord(body, 105, "ANOTHER CONSUMABLE", unique: 0, position: 0, grade: 0);
+    var itemData = LegacyItemDataTable.Load(body.Select(static value => (byte)(value ^ 0x5A)).ToArray());
+    var target = new LegacyItem(100, 116, 9, 2, 3, 4, 5);
+    var attribute = new LegacyItem(101, 116, 9, 13, 14, 15, 16);
+    var catalyst = new LegacyItem(102, 116, 9, 0, 0, 0, 0);
+    var extra3 = new LegacyItem(103, 21, 22, 23, 24, 25, 26);
+    var extra5 = new LegacyItem(105, 31, 32, 33, 34, 35, 36);
+    LegacyItem[] items = [target, attribute, catalyst, extra3, default, extra5, default, default];
+    sbyte[] positions = [0, 1, 2, 3, -1, 5, -1, -1];
+    var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+    for (var index = 0; index < items.Length; index++)
+        if (items[index].Index != 0)
+            items[index].Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (positions[index] * LegacyItem.SizeInBytes)));
+
+    var hub = new WorldHub(itemData: itemData);
+    Assert(hub.Enter(1, "TINY_OUTCOME", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(1, 0, 0, 0, 0, LegacyTinyCombineRules.CoinCost, 2_000, 2_000, mob),
+        "Tiny outcome fixture participant state was not initialized.");
+    Assert(hub.TryPrepareTinyCombine(1, items, positions, tinyBase: 40, out var plan) == LegacyTinyCombinePreparationResult.Accepted && plan is not null,
+        "Tiny outcome fixture could not produce a valid authoritative plan.");
+
+    var originalMob = plan!.ExpectedMob.ToArray();
+    Assert(LegacyTinyCombineOutcomeBuilder.TryBuild(plan, rawRoll: 55, localServer: false, out var success) == LegacyTinyCombineOutcomeBuildResult.Accepted &&
+        success is { Succeeded: true, RawRoll: 55, NormalizedRoll: 55, CoinBefore: 100_000_000, CoinAfter: 0, CompletionResult: 1 } &&
+        success.ItemUpdatePositions.SequenceEqual(new sbyte[] { 2, 3, 5, 1, 2, 0 }),
+        "The inclusive success threshold or 7.69 item-update order was not preserved.");
+    Assert(success!.ItemUpdates.Select(static update => update.Item).SequenceEqual(new[]
+        { default(LegacyItem), default, default, default, default,
+            target with { Effect1 = attribute.Effect1, Value1 = 7, Effect2 = attribute.Effect2, Value2 = attribute.Value2, Effect3 = attribute.Effect3, Value3 = attribute.Value3 } }),
+        "Tiny success did not preserve the per-send item snapshots, including the final sanctified target.");
+    Assert(LegacyItem.Read(success!.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)) ==
+        target with { Effect1 = attribute.Effect1, Value1 = 7, Effect2 = attribute.Effect2, Value2 = attribute.Value2, Effect3 = attribute.Effect3, Value3 = attribute.Value3 },
+        "Tiny success did not copy all three attribute effects and set the target's existing sanctuary effect to 7.");
+    Assert(LegacyItem.Read(success.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + LegacyItem.SizeInBytes, LegacyItem.SizeInBytes)) == default &&
+        LegacyItem.Read(success.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + (2 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) == default &&
+        LegacyItem.Read(success.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + (3 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) == default &&
+        LegacyItem.Read(success.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + (5 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) == default &&
+        BinaryPrimitives.ReadInt32LittleEndian(success.MobSnapshot.Span[LegacyAccountSnapshot.MobCoinOffset..]) == 0,
+        "Tiny success did not consume slots 1, 2, 3, and 5 or deduct the 100-million cost.");
+
+    Assert(LegacyTinyCombineOutcomeBuilder.TryBuild(plan, rawRoll: 100, localServer: false, out var failure) == LegacyTinyCombineOutcomeBuildResult.Accepted &&
+        failure is { Succeeded: false, RawRoll: 100, NormalizedRoll: 85, CoinBefore: 100_000_000, CoinAfter: 0, CompletionResult: 2 } &&
+        failure.ItemUpdatePositions.SequenceEqual(new sbyte[] { 2, 3, 5, 2 }),
+        "The 100-to-85 roll normalization or failure update order diverged from 7.69.");
+    Assert(failure!.ItemUpdates.Select(static update => update.Item).SequenceEqual(new[]
+        { default(LegacyItem), default, default, default }),
+        "Tiny failure did not preserve each per-send item snapshot.");
+    Assert(LegacyItem.Read(failure!.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)) == target &&
+        LegacyItem.Read(failure.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + LegacyItem.SizeInBytes, LegacyItem.SizeInBytes)) == attribute &&
+        LegacyItem.Read(failure.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + (2 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) == default &&
+        LegacyItem.Read(failure.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + (3 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) == default &&
+        LegacyItem.Read(failure.MobSnapshot.Span.Slice(LegacyAccountSnapshot.MobCarryOffset + (5 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) == default,
+        "Tiny failure changed the target or attribute, or failed to consume occupied catalyst slots.");
+    Assert(plan.ExpectedMob.Span.SequenceEqual(originalMob), "Tiny outcome construction mutated the prepared plan snapshot.");
+    Assert(LegacyTinyCombineOutcomeBuilder.TryBuild(plan, rawRoll: 114, localServer: true, out var forced) == LegacyTinyCombineOutcomeBuildResult.Accepted && forced is { Succeeded: true, NormalizedRoll: 99 },
+        "LOCALSERVER no longer forces success at the maximum normalized roll.");
+    Assert(LegacyTinyCombineOutcomeBuilder.TryBuild(plan, rawRoll: 115, localServer: false, out _) == LegacyTinyCombineOutcomeBuildResult.InvalidRoll,
+        "A raw rand()%115 value outside 0..114 was accepted.");
+
+    Assert(hub.TryApplyTinyCombine(1, plan, rawRoll: 55, localServer: false, out var applied) == LegacyTinyCombineApplicationResult.Accepted &&
+        applied is not null && hub.TryGetCharacterSnapshot(1, out var appliedMob, out _, out _) &&
+        appliedMob is not null && appliedMob.SequenceEqual(applied.MobSnapshot.Span),
+        "Applying a prepared Tiny outcome did not atomically publish the new authoritative MOB.");
+    Assert(hub.TryApplyTinyCombine(1, plan, rawRoll: 55, localServer: false, out _) == LegacyTinyCombineApplicationResult.StateChanged,
+        "Reapplying a prepared Tiny outcome overwrote the newer MOB/Gold state.");
+    Assert(hub.TryRollbackTinyCombine(applied!) &&
+        hub.TryPrepareTinyCombine(1, items, positions, tinyBase: 40, out var restoredPlan) == LegacyTinyCombinePreparationResult.Accepted &&
+        restoredPlan is not null && restoredPlan.CoinBefore == plan.CoinBefore && restoredPlan.ExpectedMob.Span.SequenceEqual(originalMob),
+        "Tiny rollback did not restore the previous MOB and authoritative Gold snapshot.");
+}
+
+static void TinyCombineGuildTax()
+{
+    var fixture = CreateTinyCombineGuildTaxFixture(treasuryExperience: 199_999_999_999L);
+    Assert(fixture.Hub.TryGetNpcSnapshot(fixture.NpcId, out var spawnedTreasury) && spawnedTreasury is not null &&
+        BinaryPrimitives.ReadUInt16LittleEndian(spawnedTreasury.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobGuildOffset)) == 77,
+        "A Merchant=6 NPC was not assigned the charged guild during registration.");
+
+    Assert(fixture.Hub.TryPrepareTinyCombine(1, fixture.Items, fixture.Positions, tinyBase: 100, out var successPlan) == LegacyTinyCombinePreparationResult.Accepted &&
+        successPlan is not null,
+        "The successful guild-tax fixture could not prepare a combine.");
+    var applySuccess = fixture.Hub.TryApplyTinyCombine(1, successPlan!, rawRoll: 0, localServer: false, out var success);
+    Assert(applySuccess == LegacyTinyCombineApplicationResult.Accepted && success is { Succeeded: true, GuildTaxNpcUpdate.ConnectionId: 1001 },
+        "A successful Tiny combine did not return its registered treasury mutation.");
+
+    Assert(fixture.Hub.TryGetNpcSnapshot(fixture.NpcId, out var creditedTreasury) && creditedTreasury is not null &&
+        BinaryPrimitives.ReadInt64LittleEndian(creditedTreasury.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobExperienceOffset)) == 200_009_999_999L,
+        "The successful Tiny combine did not add exactly 10M EXP below the source threshold, including its permitted overshoot.");
+    Assert(fixture.Hub.TryRollbackTinyCombine(success!) &&
+        fixture.Hub.TryGetNpcSnapshot(fixture.NpcId, out var restoredTreasury) && restoredTreasury is not null &&
+        BinaryPrimitives.ReadInt64LittleEndian(restoredTreasury.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobExperienceOffset)) == 199_999_999_999L,
+        "Tiny combine rollback did not restore the treasury snapshot with the player result.");
+
+    var firstNpcSlotFixture = CreateTinyCombineGuildTaxFixture(
+        treasuryExperience: 0,
+        treasuryNpcId: LegacyMobAiPlanner.MaximumPlayerId);
+    Assert(firstNpcSlotFixture.Hub.TryGetRegisteredGuildTreasuryNpcSnapshot(
+            firstNpcSlotFixture.NpcId,
+            out var firstNpcTreasury) && firstNpcTreasury is not null &&
+          BinaryPrimitives.ReadUInt16LittleEndian(
+              firstNpcTreasury.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobGuildOffset)) == 77 &&
+          firstNpcSlotFixture.Hub.TryPrepareTinyCombine(
+              1,
+              firstNpcSlotFixture.Items,
+              firstNpcSlotFixture.Positions,
+              tinyBase: 100,
+              out var firstNpcPlan) == LegacyTinyCombinePreparationResult.Accepted &&
+          firstNpcPlan is not null &&
+          firstNpcSlotFixture.Hub.TryApplyTinyCombine(
+              1,
+              firstNpcPlan,
+              rawRoll: 0,
+              localServer: false,
+              out var firstNpcOutcome) == LegacyTinyCombineApplicationResult.Accepted &&
+          firstNpcOutcome is { GuildTaxNpcUpdate.ConnectionId: 1000 } &&
+          firstNpcSlotFixture.Hub.TryGetNpcSnapshot(1000, out var firstNpcCredited) &&
+          firstNpcCredited is not null &&
+          BinaryPrimitives.ReadInt64LittleEndian(
+              firstNpcCredited.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobExperienceOffset)) == 10_000_000L,
+        "The first NPC slot at MAX_USER did not register and receive Tiny guild tax.");
+
+    Assert(fixture.Hub.TryPrepareTinyCombine(1, fixture.Items, fixture.Positions, tinyBase: 40, out var failurePlan) == LegacyTinyCombinePreparationResult.Accepted &&
+        failurePlan is not null,
+        "The failed guild-tax fixture could not prepare a combine.");
+    var applyFailure = fixture.Hub.TryApplyTinyCombine(1, failurePlan!, rawRoll: 114, localServer: false, out var failure);
+    Assert(applyFailure == LegacyTinyCombineApplicationResult.Accepted && failure is { Succeeded: false, GuildTaxNpcUpdate: null },
+        "A failed Tiny combine credited the guild treasury.");
+    Assert(fixture.Hub.TryRollbackTinyCombine(failure!), "The failed Tiny combine fixture could not be rolled back.");
+}
+
+static void TinyCombineGuildTaxLifecycle()
+{
+    var inactiveFixture = CreateTinyCombineGuildTaxFixture(treasuryExperience: 0);
+    Assert(inactiveFixture.Hub.SetNpcCombatState(
+            inactiveFixture.NpcId,
+            LegacyNpcMode.Empty,
+            LegacyNpcMode.EmptyTarget,
+            [0]),
+        "The inactive treasury fixture could not enter the empty NPC mode.");
+    Assert(inactiveFixture.Hub.TryPrepareTinyCombine(1, inactiveFixture.Items, inactiveFixture.Positions, tinyBase: 100, out var inactivePlan) == LegacyTinyCombinePreparationResult.Accepted &&
+        inactivePlan is not null &&
+        inactiveFixture.Hub.TryApplyTinyCombine(1, inactivePlan, rawRoll: 0, localServer: false, out var inactiveOutcome) == LegacyTinyCombineApplicationResult.Accepted &&
+        inactiveOutcome is { Succeeded: true, GuildTaxNpcUpdate: null },
+        "An inactive treasury NPC received guild tax from a successful Tiny combine.");
+
+    var retiredFixture = CreateTinyCombineGuildTaxFixture(treasuryExperience: 0);
+    Assert(retiredFixture.Hub.TryRemoveNpc(retiredFixture.NpcId, out var removedTreasury) && removedTreasury is not null,
+        "The retired treasury fixture could not remove its original NPC.");
+    var reusedMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    Encoding.Latin1.GetBytes("REUSED_NPC").CopyTo(reusedMob, LegacyAccountSnapshot.MobNameOffset);
+    BinaryPrimitives.WriteUInt16LittleEndian(reusedMob.AsSpan(LegacyAccountSnapshot.MobGuildOffset), 77);
+    new LegacyScore(0, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(reusedMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(retiredFixture.Hub.EnterNpc(reusedMob, 2_100, 2_100, requestedConnectionId: retiredFixture.NpcId) == retiredFixture.NpcId,
+        "The retired NPC connection id could not be reused by an ordinary NPC.");
+    Assert(retiredFixture.Hub.GetGuildTreasuryNpcConnectionIds().Count == 0,
+        "Removing the treasury left its connection id registered as a guild recipient.");
+    Assert(retiredFixture.Hub.TryPrepareTinyCombine(1, retiredFixture.Items, retiredFixture.Positions, tinyBase: 100, out var reusedPlan) == LegacyTinyCombinePreparationResult.Accepted &&
+        reusedPlan is not null &&
+        retiredFixture.Hub.TryApplyTinyCombine(1, reusedPlan, rawRoll: 0, localServer: false, out var reusedOutcome) == LegacyTinyCombineApplicationResult.Accepted &&
+        reusedOutcome is { Succeeded: true, GuildTaxNpcUpdate: null },
+        "A reused ordinary NPC connection id received tax through the retired treasury registration.");
+}
+
+static void TinyCombineGuildTaxPersistence()
+{
+    var fixture = CreateTinyCombineGuildTaxFixture(treasuryExperience: 0);
+    var root = Path.Combine(Path.GetTempPath(), $"wyd-cdk-tiny-treasury-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    try
+    {
+        var store = new LegacyGuildTreasuryFileStore(root);
+        Assert(store.SaveAsync(fixture.Hub, fixture.NpcId).AsTask().GetAwaiter().GetResult() == LegacyGuildTreasurySaveResult.Saved,
+            "The treasury persistence fixture could not save the initial registered MOB.");
+
+        Assert(fixture.Hub.TryPrepareTinyCombine(1, fixture.Items, fixture.Positions, tinyBase: 100, out var plan) == LegacyTinyCombinePreparationResult.Accepted &&
+            plan is not null,
+            "The treasury persistence fixture could not prepare a combine.");
+        Assert(fixture.Hub.TryApplyTinyCombine(1, plan!, rawRoll: 0, localServer: false, out var outcome) == LegacyTinyCombineApplicationResult.Accepted &&
+            outcome is { Succeeded: true, GuildTaxNpcUpdate: not null },
+            "The treasury persistence fixture did not produce a successful tax outcome.");
+
+        var saved = File.ReadAllBytes(Path.Combine(root, "GUILD_TREASURY"));
+        Assert(saved.Length == LegacyAccountSnapshot.CharacterStride &&
+            BinaryPrimitives.ReadInt64LittleEndian(saved.AsSpan(LegacyAccountSnapshot.MobExperienceOffset)) == 0,
+            "The treasury fixture's initial save did not preserve the registered raw MOB snapshot.");
+
+        Assert(fixture.Hub.TryGetNpcSnapshot(fixture.NpcId, out var creditedTreasury) && creditedTreasury is not null,
+            "The credited treasury snapshot was unavailable for its replacement fixture.");
+        var replacementMob = creditedTreasury!.MobSnapshot.ToArray();
+        Array.Clear(replacementMob, LegacyAccountSnapshot.MobNameOffset, 16);
+        Encoding.Latin1.GetBytes("GUILD_TREASURY ").CopyTo(replacementMob, LegacyAccountSnapshot.MobNameOffset);
+        var replacementId = fixture.Hub.EnterNpc(replacementMob, 2_100, 2_100, requestedConnectionId: fixture.NpcId + 1);
+        Assert(replacementId == fixture.NpcId + 1,
+            "The replacement guild treasury was not registered.");
+        Assert(store.SaveAsync(fixture.Hub, fixture.NpcId).AsTask().GetAwaiter().GetResult() == LegacyGuildTreasurySaveResult.NpcMissing,
+            "The file store persisted a stale treasury id after the zone recipient was replaced.");
+        var afterStaleSave = File.ReadAllBytes(Path.Combine(root, "GUILD_TREASURY"));
+        Assert(afterStaleSave.AsSpan().SequenceEqual(saved),
+            "A stale treasury save overwrote the current legacy NPC file.");
+
+        Assert(store.SaveAsync(fixture.Hub, replacementId).AsTask().GetAwaiter().GetResult() == LegacyGuildTreasurySaveResult.Saved,
+            "The replacement treasury could not persist its current MOB snapshot.");
+        var replacementSaved = File.ReadAllBytes(Path.Combine(root, "GUILD_TREASURY_"));
+        Assert(BinaryPrimitives.ReadInt64LittleEndian(replacementSaved.AsSpan(LegacyAccountSnapshot.MobExperienceOffset)) == 10_000_000L,
+            "The replacement treasury snapshot or legacy trailing-space filename mapping was not preserved.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void TinyCombineGuildTaxRetry()
+{
+    var fixture = CreateTinyCombineGuildTaxFixture(treasuryExperience: 199_999_999_999L);
+    var root = Path.Combine(Path.GetTempPath(), $"wyd-cdk-tiny-treasury-retry-{Guid.NewGuid():N}");
+    try
+    {
+        Assert(fixture.Hub.TryPrepareTinyCombine(1, fixture.Items, fixture.Positions, tinyBase: 100, out var plan) == LegacyTinyCombinePreparationResult.Accepted &&
+            plan is not null &&
+            fixture.Hub.TryApplyTinyCombine(1, plan, rawRoll: 0, localServer: false, out var outcome) == LegacyTinyCombineApplicationResult.Accepted &&
+            outcome is { Succeeded: true, GuildTaxNpcUpdate: not null },
+            "The treasury retry fixture did not produce the successful over-limit credit.");
+
+        var store = new LegacyGuildTreasuryFileStore(root);
+        var firstWriteFailed = false;
+        try
+        {
+            store.SaveAsync(fixture.Hub, fixture.NpcId).AsTask().GetAwaiter().GetResult();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            firstWriteFailed = true;
+        }
+        Assert(firstWriteFailed, "The treasury fixture did not simulate the initial unavailable NPC directory.");
+
+        Directory.CreateDirectory(root);
+        Assert(fixture.Hub.GetGuildTreasuryNpcConnectionIds().SequenceEqual([fixture.NpcId]),
+            "The periodic treasury save did not enumerate the registered guild recipient.");
+        var savedResults = store.SaveRegisteredAsync(fixture.Hub).AsTask().GetAwaiter().GetResult();
+        Assert(savedResults.SequenceEqual([(fixture.NpcId, LegacyGuildTreasurySaveResult.Saved)]),
+            "The periodic treasury retry did not save the registered NPC after the initial failure.");
+        var saved = File.ReadAllBytes(Path.Combine(root, "GUILD_TREASURY"));
+        Assert(BinaryPrimitives.ReadInt64LittleEndian(saved.AsSpan(LegacyAccountSnapshot.MobExperienceOffset)) == 200_009_999_999L,
+            "The treasury retry did not persist the in-memory credit after later combines would stop generating tax updates.");
+    }
+    finally
+    {
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+    }
+}
+
+static (WorldHub Hub, int NpcId, LegacyItem[] Items, sbyte[] Positions) CreateTinyCombineGuildTaxFixture(
+    long treasuryExperience,
+    int treasuryNpcId = 1_001)
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 100, "ARCH WEAPON", unique: 0, position: 64, grade: 5, (LegacyItemEffect.MobType, 1));
+    WriteItemListRecord(body, 101, "TINY ATTRIBUTE", unique: 0, position: 64, grade: 8);
+    WriteItemListRequiredLevel(body, 101, 3);
+    WriteItemListRecord(body, 102, "TINY CATALYST", unique: 0, position: 0, grade: 0);
+    var itemData = LegacyItemDataTable.Load(body.Select(static value => (byte)(value ^ 0x5A)).ToArray());
+    LegacyItem[] items = [
+        new(100, 116, 9, 2, 3, 4, 5),
+        new(101, 116, 9, 13, 14, 15, 16),
+        new(102, 116, 9, 0, 0, 0, 0),
+        default, default, default, default, default,
+    ];
+    sbyte[] positions = [0, 1, 2, -1, -1, -1, -1, -1];
+
+    var guildZones = new LegacyGuildZoneState(
+        guildCounter: 1,
+        chargeGuilds: [77, 0, 0, 0, 0],
+        challengerGuilds: [0, 0, 0, 0, 0],
+        cityTaxes: [10, 10, 10, 10, 10],
+        clans: [0, 0, 0, 0, 0],
+        victories: [0, 0, 0, 0, 0]);
+    var hub = new WorldHub(itemData: itemData, guildZones: guildZones);
+    var playerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(50, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(playerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    foreach (var index in Enumerable.Range(0, items.Length))
+        if (items[index].Index != 0)
+            items[index].Write(playerMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (positions[index] * LegacyItem.SizeInBytes)));
+    Assert(hub.Enter(1, "TINY_GUILD_TAX", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(1, 0, 0, 0, 0, LegacyTinyCombineRules.CoinCost, 2_100, 2_100, playerMob),
+        "Tiny guild-tax fixture participant state was not initialized.");
+
+    var treasuryMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    Encoding.Latin1.GetBytes("GUILD_TREASURY").CopyTo(treasuryMob, LegacyAccountSnapshot.MobNameOffset);
+    treasuryMob[LegacyAccountSnapshot.MobMerchantOffset] = 6;
+    new LegacyScore(0, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(treasuryMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    BinaryPrimitives.WriteInt64LittleEndian(treasuryMob.AsSpan(LegacyAccountSnapshot.MobExperienceOffset), treasuryExperience);
+    var npcId = hub.EnterNpc(treasuryMob, 2_100, 2_100, requestedConnectionId: treasuryNpcId);
+    Assert(npcId == treasuryNpcId, "Tiny guild-tax fixture treasury NPC was not registered.");
+    return (hub, npcId, items, positions);
+}
+
+static void TinyCombineWire()
+{
+    var codec = LegacyFrameCodec.CreateDefault();
+    var items = Enumerable.Range(0, 8)
+        .Select(static index => new LegacyItem((short)(100 + index), (byte)index, (byte)(index + 1), (byte)(index + 2), (byte)(index + 3), (byte)(index + 4), (byte)(index + 5)))
+        .ToArray();
+    items[0] = new LegacyItem(0x1234, 1, 2, 3, 4, 5, 6);
+    sbyte[] positions = [0, 1, 2, 29, 30, 44, 59, -1];
+
+    var wire = new TinyCombineRequest(items, positions).ToFrame(codec, clientTick: 39, keywordIndex: 22, headerId: 1);
+    var frame = codec.Decode(wire);
+    Assert(frame.IsChecksumValid && frame.Header.Type == 0x03C0 && frame.Header.Size == 84 &&
+        frame.Payload.Length == 72 && frame.Payload.Span[..8].SequenceEqual(new byte[] { 0x34, 0x12, 1, 2, 3, 4, 5, 6 }) &&
+        frame.Payload.Span[64..].SequenceEqual(new byte[] { 0, 1, 2, 29, 30, 44, 59, 255 }),
+        "The 7.69 MSG_CombineItemTiny frame did not preserve type, size, item bytes, or signed positions.");
+    Assert(TinyCombineRequest.TryParse(frame, out var request) && request is not null &&
+        request.Items.SequenceEqual(items) && request.InventoryPositions.SequenceEqual(positions),
+        "The 7.69 Tiny combine parser did not recover all eight items and signed positions.");
+
+    var wrongType = codec.Decode(codec.Encode(0x03C1, 1, 39, frame.Payload.Span, 22));
+    Assert(!TinyCombineRequest.TryParse(wrongType, out _),
+        "A different combine opcode was accepted as MSG_CombineItemTiny.");
+    var shortPayload = codec.Decode(codec.Encode(TinyCombineRequest.MessageType, 1, 39, frame.Payload.Span[..^1], 22));
+    Assert(!TinyCombineRequest.TryParse(shortPayload, out _),
+        "A 83-byte MSG_CombineItemTiny frame was accepted without its final InvenPos byte.");
+    wire[3] ^= 0xFF;
+    Assert(!TinyCombineRequest.TryParse(codec.Decode(wire), out _),
+        "A Tiny combine frame with an invalid checksum was accepted.");
+}
+
+static void TinyCombineCompleteWire()
+{
+    var codec = LegacyFrameCodec.CreateDefault();
+    var decoded = codec.Decode(new TinyCombineCompleteConfirmation().ToFrame(
+        codec, clientTick: 41, keywordIndex: 17, result: 2));
+
+    Assert(decoded.IsChecksumValid && decoded.Header.Type == 0xC0A7 &&
+        decoded.Header.Id == 30_000 && decoded.Header.Size == PacketHeader.SizeInBytes + sizeof(int) &&
+        decoded.Payload.Length == sizeof(int) && BinaryPrimitives.ReadInt32LittleEndian(decoded.Payload.Span) == 2,
+        "The 7.69 MSG_CombineComplete signal did not preserve scene, completion value, and standard-parameter wire layout.");
+}
+
 static void LegacyMobAbilityAggregation()
 {
     var body = new byte[LegacyItemDataTable.BodySizeInBytes];
@@ -2556,6 +3619,41 @@ static void WorldClient18SlotEquipmentState()
     Assert(hub.TryGetCharacterSnapshot(1, out _, out _, out _, out _, out _, out var snapshotEquipment) && snapshotEquipment is not null &&
         snapshotEquipment.Count == CharacterMobV769.EquipmentCount && snapshotEquipment[16].Index == 0 && snapshotEquipment[17].Index == 701,
         "The 18-slot runtime mutation was not preserved in the authoritative snapshot.");
+
+    Assert(hub.TryTradeItems(1, LegacyItemPlace.Equip, 17, LegacyItemPlace.Carry, 1, out _) == LegacyTradingItemResult.InvalidSlot,
+        "The runtime allowed an equipment source slot rejected by the 7.69 MAX_EQUIP-1 gate.");
+    Assert(hub.TryTradeItems(1, LegacyItemPlace.Carry, 0, LegacyItemPlace.Equip, 17, out _) == LegacyTradingItemResult.InvalidSlot,
+        "The runtime allowed an equipment destination slot rejected by the 7.69 MAX_EQUIP-1 gate.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var unchangedMob, out _, out _, out _, out _, out var unchangedEquipment) &&
+        unchangedMob is not null && unchangedEquipment is not null && unchangedEquipment[17].Index == 701 &&
+        LegacyItem.Read(unchangedMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)).Index == 700,
+        "Rejected slot-17 moves changed the authoritative equipment or carry state.");
+}
+
+static void WorldClientExtensionMoveRequiresPersistedState()
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 900, "SLOT 16 ITEM", unique: 0, position: 1 << 16, grade: 0);
+    WriteItemListRequiredLevel(body, 900, requiredLevel: 0);
+    var itemData = LoadLegacyItemDataTable(body);
+    var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+    "FILE_BACKEND"u8.CopyTo(mob.AsSpan(LegacyAccountSnapshot.MobNameOffset));
+    new LegacyScore(10, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    new LegacyItem(900, 0, 0, 0, 0, 0, 0)
+        .Write(mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset));
+
+    var hub = new WorldHub(itemData: itemData);
+    Assert(hub.Enter(1, "FILE_EQUIPMENT", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(1, 0, 0, 0, 0, 0, 2000, 2000, mob),
+        "The file-backed participant without versioned client equipment did not enter.");
+
+    Assert(hub.TryTradeItems(1, LegacyItemPlace.Carry, 0, LegacyItemPlace.Equip, 16, out _) == LegacyTradingItemResult.InvalidSlot,
+        "The runtime allowed slot 16 without a persistence adapter for the versioned equipment state.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var unchangedMob, out _, out _, out _, out _, out var equipment) &&
+        unchangedMob is not null && equipment is not null && equipment[16].Index == 0 &&
+        LegacyItem.Read(unchangedMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)).Index == 900,
+        "Rejecting an unpersistable slot-16 move changed the carry or equipment state.");
 }
 
 static void LegacyCurrentScoreBaseEquipmentStage()
@@ -4087,8 +5185,19 @@ static void LegacyLoginGoldenShieldAffectStage()
 
 static LegacyGoldenShieldAffectStage CalculateW2ppGoldenShieldFixture(ReadOnlySpan<byte> affectSnapshot)
 {
-    // Type=31 is not present in the W2PP buff loop; ArmorClass addition is zero.
-    return new LegacyGoldenShieldAffectStage(0);
+    var armorClassAddition = 0;
+    for (var index = 0; index < LegacyAccountSnapshot.AffectStride / 8; index++)
+    {
+        var offset = index * 8;
+        if (affectSnapshot[offset] != 31)
+            continue;
+
+        var value = affectSnapshot[offset + 1];
+        var level = BinaryPrimitives.ReadUInt16LittleEndian(affectSnapshot.Slice(offset + 2, sizeof(ushort)));
+        armorClassAddition = unchecked(armorClassAddition + level / 2 + value);
+    }
+
+    return new LegacyGoldenShieldAffectStage(armorClassAddition);
 }
 
 static void LegacyLoginElementalProtectionArmorClassAffectStage()
@@ -4723,10 +5832,13 @@ static void LegacyLoginScoreCoordinatorStage()
     {
         var baseScore = ParseCoordinatorScore(vector.GetProperty("baseScore"));
         var currentScore = ParseCoordinatorScore(vector.GetProperty("currentScore"));
+        var sourceMagic = vector.TryGetProperty("sourceMagic", out var magicValue)
+            ? magicValue.GetInt32()
+            : 0;
         var mob = new LegacyMobCombatState(
             vector.GetProperty("characterClass").GetByte(),
             vector.GetProperty("learnedSkill").GetUInt32(),
-            0,
+            sourceMagic,
             currentScore,
             0)
         {
@@ -4826,6 +5938,31 @@ static void LegacyLoginScoreCoordinatorStage()
             Assert(actual.ArmorClassReduction.ArmorClass == expectedArmorClassReduction.GetInt32()
                 && actual.AfterArmorClassReduction.CurrentScore.Ac == expectedArmorClassReduction.GetInt32(),
                 $"Score coordinator ArmorClass reduction projection differed for '{vector.GetProperty("name").GetString()}'.");
+        }
+        if (expected.TryGetProperty("meditation", out var expectedMeditation))
+        {
+            Assert(actual.Meditation.ArmorClassReduction == expectedMeditation.GetProperty("armorClassReduction").GetInt32()
+                && actual.Meditation.DamageMultiplierAdjustment == expectedMeditation.GetProperty("damageMultiplierAdjustment").GetInt32(),
+                $"Score coordinator Meditation stage differed for '{vector.GetProperty("name").GetString()}'.");
+        }
+        if (expected.TryGetProperty("afterScoreAffects", out var expectedAfterScoreAffects))
+        {
+            Assert(actual.ScoreAffects.MaxHp == expectedAfterScoreAffects.GetProperty("maxHp").GetInt32()
+                && actual.ScoreAffects.MaxMp == expectedAfterScoreAffects.GetProperty("maxMp").GetInt32()
+                && actual.ScoreAffects.ArmorClass == expectedAfterScoreAffects.GetProperty("ac").GetInt32()
+                && actual.ScoreAffects.Damage == expectedAfterScoreAffects.GetProperty("damage").GetInt32()
+                && actual.ScoreAffects.Magic == expectedAfterScoreAffects.GetProperty("magic").GetInt32()
+                && actual.ScoreAffects.LearnedSkills == expectedAfterScoreAffects.GetProperty("learnedSkill").GetInt32()
+                && actual.ScoreAffects.RsvFlagsToAdd == expectedAfterScoreAffects.GetProperty("rsvFlagsToAdd").GetUInt16(),
+                $"Score coordinator Type=4/8/34/35/38 affect composition differed for '{vector.GetProperty("name").GetString()}'.");
+            Assert(actual.AfterScoreAffects.CurrentScore.MaxHp == expectedAfterScoreAffects.GetProperty("maxHp").GetInt32()
+                && actual.AfterScoreAffects.CurrentScore.MaxMp == expectedAfterScoreAffects.GetProperty("maxMp").GetInt32()
+                && actual.AfterScoreAffects.CurrentScore.Ac == expectedAfterScoreAffects.GetProperty("ac").GetInt32()
+                && actual.AfterScoreAffects.CurrentScore.Damage == expectedAfterScoreAffects.GetProperty("damage").GetInt32()
+                && actual.AfterScoreAffects.Magic == expectedAfterScoreAffects.GetProperty("magic").GetInt32()
+                && actual.AfterScoreAffects.LearnedSkill == expectedAfterScoreAffects.GetProperty("learnedSkill").GetUInt32()
+                && actual.AfterScoreAffects.Rsv == expectedAfterScoreAffects.GetProperty("rsv").GetUInt16(),
+                $"Score coordinator post-affect MOB projection differed for '{vector.GetProperty("name").GetString()}'.");
         }
         AssertCoordinatorScoreTail(actual.AfterSoul.CurrentScore, expected.GetProperty("afterSoul"), vector, "after Soul");
         AssertCoordinatorScoreTail(actual.AfterKibita.CurrentScore, expected.GetProperty("afterKibita"), vector, "after Kibita");
@@ -5115,6 +6252,334 @@ static void ItemRefinementBonusMath()
     Assert(refinedBoots.Effect2 == LegacyItemEffect.Damage && refinedBoots.Value2 == 0 && refinedBoots.Effect3 == 74 && refinedBoots.Value3 == 18, "SetItemBonus2 boot damage cap did not preserve BASE_GetItemAbility behavior.");
 }
 
+static void BloodHandsBookAcquisition()
+{
+    var accepted = CreateFixture(secondaryLearnedSkill: 0x402);
+    var result = accepted.World.TryApplyBloodHandsBook(1, accepted.Request, out var outcome);
+    Assert(result == LegacyUseItemResult.Accepted && outcome is not null,
+        "Eligible level-200 Celestial Trans character with base skill bit 15 could not learn item 5504.");
+    Assert(outcome!.SourceItem is { Index: 5504, Effect1: 61, Value1: 1 },
+        "Learning Mãos Sangrentas did not consume one book from a stack of two.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobExtraSnapshot.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset)) == 0x412,
+        "Learning Mãos Sangrentas did not set only SecLearnedSkill bit 0x10 while preserving unrelated Extra flags and bit 0x2.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset)) == 0x8000,
+        "Learning item 5504 changed the legacy base learned-skill word.");
+
+    AssertRejected(199, 3, 0, 0x8000, 0x400, 5504, LegacyUseItemResult.LevelRequirementNotMet, "level 199");
+    AssertRejected(200, LegacyAccountSnapshot.ClassMasterMortal, 0, 0x8000, 0, 5504, LegacyUseItemResult.ClassRestricted, "MORTAL");
+    AssertRejected(200, LegacyAccountSnapshot.ClassMasterArch, 0, 0x8000, 0, 5504, LegacyUseItemResult.ClassRestricted, "ARCH");
+    AssertRejected(200, 3, 1, 0x8000, 0, 5504, LegacyUseItemResult.ClassRestricted, "other class");
+    AssertRejected(200, 3, 0, 0, 0, 5504, LegacyUseItemResult.RequiredSkillNotLearned, "missing eighth base skill");
+    AssertRejected(200, 3, 0, 0x8000, 0x1, 5504, LegacyUseItemResult.CompetingSkillAlreadyLearned, "Proteção Divina already learned");
+    AssertRejected(200, 3, 0, 0x8000, 0x100, 5504, LegacyUseItemResult.CompetingSkillAlreadyLearned, "Espelho Mágico already learned");
+    AssertRejected(200, 3, 0, 0x8000, 0x10, 5504, LegacyUseItemResult.AlreadyCompleted, "Mãos Sangrentas already learned");
+    AssertRejected(200, 3, 0, 0x8000, 0, 5508, LegacyUseItemResult.UnsupportedItem, "different ninth-skill book");
+    AssertRejected(200, 3, 0, 0x8000, 0, 0, LegacyUseItemResult.SourceEmpty, "empty carry slot");
+    AssertRejected(200, 3, 0, 0x8000, 0, 5504, LegacyUseItemResult.InvalidPlacement, "non-carry source", sourceType: 0);
+    AssertRejected(200, 3, 0, 0x8000, 0, 5504, LegacyUseItemResult.InvalidPlacement, "negative source slot", sourceSlot: -1);
+
+    static void AssertRejected(
+        int level,
+        short classMaster,
+        byte characterClass,
+        uint learnedSkill,
+        uint secondaryLearnedSkill,
+        short itemIndex,
+        LegacyUseItemResult expected,
+        string label,
+        int sourceType = 1,
+        int sourceSlot = 0)
+    {
+        var fixture = CreateFixture(level, classMaster, characterClass, learnedSkill, secondaryLearnedSkill, itemIndex, sourceType, sourceSlot);
+        var beforeMob = fixture.Mob.ToArray();
+        var beforeMobExtra = fixture.MobExtra.ToArray();
+        var actual = fixture.World.TryApplyBloodHandsBook(1, fixture.Request, out var rejectedOutcome);
+        Assert(actual == expected, $"5504 rejection for {label} returned {actual}, expected {expected}.");
+        if (rejectedOutcome is not null)
+        {
+            Assert(rejectedOutcome.MobSnapshot.AsSpan().SequenceEqual(beforeMob) && rejectedOutcome.MobExtraSnapshot.AsSpan().SequenceEqual(beforeMobExtra),
+                $"Rejected 5504 use for {label} mutated character state.");
+        }
+    }
+
+    static (WorldHub World, byte[] Mob, byte[] MobExtra, UseItemRequest Request) CreateFixture(
+        int level = 200,
+        short classMaster = 3,
+        byte characterClass = 0,
+        uint learnedSkill = 0x8000,
+        uint secondaryLearnedSkill = 0x400,
+        short itemIndex = 5504,
+        int sourceType = 1,
+        int sourceSlot = 0)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var score = new LegacyScore(level, 0, 0, 0, 0, 0, 0, 1000, 500, 1000, 500, 0, 0, 0, 0, 0, 0, 0, 0);
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset, LegacyScore.SizeInBytes));
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset, LegacyScore.SizeInBytes));
+        mob[LegacyAccountSnapshot.MobClassOffset] = characterClass;
+        BinaryPrimitives.WriteUInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), learnedSkill);
+        if (sourceSlot is >= 0 and < LegacyAccountSnapshot.MobCarryCount)
+            new LegacyItem(itemIndex, 61, 2, 0, 0, 0, 0).Write(
+                mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (sourceSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+
+        var mobExtra = new byte[LegacyAccountSnapshot.MobExtraStride];
+        BinaryPrimitives.WriteInt16LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset), classMaster);
+        BinaryPrimitives.WriteUInt32LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset), secondaryLearnedSkill);
+        var world = new WorldHub(itemData: CreateCombatItemDataTable());
+        Assert(world.Enter(1, "TEST", static (_, _) => ValueTask.CompletedTask), "Blood Hands fixture participant was not registered.");
+        Assert(world.SetCharacterState(1, 0, 0, 0, 0, 0, 0, 0, mob, classMaster, ReadOnlyMemory<byte>.Empty, mobExtra),
+            "Blood Hands fixture state was not registered.");
+        return (world, mob, mobExtra, new UseItemRequest(sourceType, sourceSlot, 1, 0, 20, 30, 4));
+    }
+}
+
+static void MagicMirrorBookAcquisition()
+{
+    var accepted = CreateFixture(secondaryLearnedSkill: 0x402);
+    var result = accepted.World.TryApplyMagicMirrorBook(1, accepted.Request, out var outcome);
+    Assert(result == LegacyUseItemResult.Accepted && outcome is not null,
+        "Eligible level-200 Celestial Foema with base skill bit 23 could not learn item 5508.");
+    Assert(outcome!.SourceItem is { Index: 5508, Effect1: 61, Value1: 1 },
+        "Learning Espelho Mágico did not consume one book from a stack of two.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobExtraSnapshot.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset)) == 0x502,
+        "Learning item 5508 did not set only SecLearnedSkill bit 0x100 while preserving unrelated flags.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset)) == 0x800000,
+        "Learning item 5508 changed the legacy base learned-skill word.");
+
+    AssertRejected(199, 3, 0, 0x800000, 0x400, 5508, LegacyUseItemResult.LevelRequirementNotMet, "level 199");
+    AssertRejected(200, LegacyAccountSnapshot.ClassMasterMortal, 0, 0x800000, 0, 5508, LegacyUseItemResult.ClassRestricted, "MORTAL");
+    AssertRejected(200, LegacyAccountSnapshot.ClassMasterArch, 0, 0x800000, 0, 5508, LegacyUseItemResult.ClassRestricted, "ARCH");
+    AssertRejected(200, 3, 1, 0x800000, 0, 5508, LegacyUseItemResult.ClassRestricted, "other class");
+    AssertRejected(200, 3, 0, 0, 0, 5508, LegacyUseItemResult.RequiredSkillNotLearned, "missing eighth base skill");
+    AssertRejected(200, 3, 0, 0x800000, 0x1, 5508, LegacyUseItemResult.CompetingSkillAlreadyLearned, "Confiança ninth skill already learned");
+    AssertRejected(200, 3, 0, 0x800000, 0x10, 5508, LegacyUseItemResult.CompetingSkillAlreadyLearned, "Mãos Sangrentas already learned");
+    AssertRejected(200, 3, 0, 0x800000, 0x100, 5508, LegacyUseItemResult.AlreadyCompleted, "Espelho Mágico already learned");
+    AssertRejected(200, 3, 0, 0x800000, 0, 5504, LegacyUseItemResult.UnsupportedItem, "different ninth-skill book");
+    AssertRejected(200, 3, 0, 0x800000, 0, 0, LegacyUseItemResult.SourceEmpty, "empty carry slot");
+    AssertRejected(200, 3, 0, 0x800000, 0, 5508, LegacyUseItemResult.InvalidPlacement, "non-carry source", sourceType: 0);
+    AssertRejected(200, 3, 0, 0x800000, 0, 5508, LegacyUseItemResult.InvalidPlacement, "negative source slot", sourceSlot: -1);
+
+    static void AssertRejected(
+        int level,
+        short classMaster,
+        byte characterClass,
+        uint learnedSkill,
+        uint secondaryLearnedSkill,
+        short itemIndex,
+        LegacyUseItemResult expected,
+        string label,
+        int sourceType = 1,
+        int sourceSlot = 0)
+    {
+        var fixture = CreateFixture(level, classMaster, characterClass, learnedSkill, secondaryLearnedSkill, itemIndex, sourceType, sourceSlot);
+        var beforeMob = fixture.Mob.ToArray();
+        var beforeMobExtra = fixture.MobExtra.ToArray();
+        var actual = fixture.World.TryApplyMagicMirrorBook(1, fixture.Request, out var rejectedOutcome);
+        Assert(actual == expected, $"5508 rejection for {label} returned {actual}, expected {expected}.");
+        if (rejectedOutcome is not null)
+        {
+            Assert(rejectedOutcome.MobSnapshot.AsSpan().SequenceEqual(beforeMob) && rejectedOutcome.MobExtraSnapshot.AsSpan().SequenceEqual(beforeMobExtra),
+                $"Rejected 5508 use for {label} mutated character state.");
+        }
+    }
+
+    static (WorldHub World, byte[] Mob, byte[] MobExtra, UseItemRequest Request) CreateFixture(
+        int level = 200,
+        short classMaster = 3,
+        byte characterClass = 0,
+        uint learnedSkill = 0x800000,
+        uint secondaryLearnedSkill = 0x400,
+        short itemIndex = 5508,
+        int sourceType = 1,
+        int sourceSlot = 0)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var score = new LegacyScore(level, 0, 0, 0, 0, 0, 0, 1000, 500, 1000, 500, 0, 0, 0, 0, 0, 0, 0, 0);
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset, LegacyScore.SizeInBytes));
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset, LegacyScore.SizeInBytes));
+        mob[LegacyAccountSnapshot.MobClassOffset] = characterClass;
+        BinaryPrimitives.WriteUInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), learnedSkill);
+        if (sourceSlot is >= 0 and < LegacyAccountSnapshot.MobCarryCount)
+            new LegacyItem(itemIndex, 61, 2, 0, 0, 0, 0).Write(
+                mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (sourceSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+
+        var mobExtra = new byte[LegacyAccountSnapshot.MobExtraStride];
+        BinaryPrimitives.WriteInt16LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset), classMaster);
+        BinaryPrimitives.WriteUInt32LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset), secondaryLearnedSkill);
+        var world = new WorldHub(itemData: CreateCombatItemDataTable());
+        Assert(world.Enter(1, "TEST", static (_, _) => ValueTask.CompletedTask), "Magic Mirror fixture participant was not registered.");
+        Assert(world.SetCharacterState(1, 0, 0, 0, 0, 0, 0, 0, mob, classMaster, ReadOnlyMemory<byte>.Empty, mobExtra),
+            "Magic Mirror fixture state was not registered.");
+        return (world, mob, mobExtra, new UseItemRequest(sourceType, sourceSlot, 1, 0, 20, 30, 4));
+    }
+}
+
+static void DivineProtectionBookAcquisition()
+{
+    var accepted = CreateFixture(secondaryLearnedSkill: 0x402);
+    var result = accepted.World.TryApplyDivineProtectionBook(1, accepted.Request, out var outcome);
+    Assert(result == LegacyUseItemResult.Accepted && outcome is not null,
+        "Eligible level-200 Celestial Foema with base skill bit 7 could not use item 5500.");
+    Assert(outcome!.SourceItem is { Index: 5500, Effect1: 61, Value1: 1 },
+        "Using the Divine Protection book did not consume one book from a stack of two.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobExtraSnapshot.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset)) == 0x403,
+        "Using item 5500 did not set only SecLearnedSkill bit 0x1 while preserving bit 0x2 and unrelated flags.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset)) == 0x80,
+        "Using item 5500 changed the legacy base learned-skill word.");
+
+    AssertRejected(199, 3, 0, 0x80, 0x400, 5500, LegacyUseItemResult.LevelRequirementNotMet, "level 199");
+    AssertRejected(200, LegacyAccountSnapshot.ClassMasterMortal, 0, 0x80, 0, 5500, LegacyUseItemResult.ClassRestricted, "MORTAL");
+    AssertRejected(200, LegacyAccountSnapshot.ClassMasterArch, 0, 0x80, 0, 5500, LegacyUseItemResult.ClassRestricted, "ARCH");
+    AssertRejected(200, 3, 1, 0x80, 0, 5500, LegacyUseItemResult.ClassRestricted, "other class");
+    AssertRejected(200, 3, 0, 0, 0, 5500, LegacyUseItemResult.RequiredSkillNotLearned, "missing eighth base skill");
+    AssertRejected(200, 3, 0, 0x80, 0x10, 5500, LegacyUseItemResult.CompetingSkillAlreadyLearned, "Mãos Sangrentas already learned");
+    AssertRejected(200, 3, 0, 0x80, 0x100, 5500, LegacyUseItemResult.CompetingSkillAlreadyLearned, "Espelho Mágico already learned");
+    AssertRejected(200, 3, 0, 0x80, 0x1, 5500, LegacyUseItemResult.AlreadyCompleted, "book bit already learned");
+    AssertRejected(200, 3, 0, 0x80, 0, 5504, LegacyUseItemResult.UnsupportedItem, "different ninth-skill book");
+    AssertRejected(200, 3, 0, 0x80, 0, 0, LegacyUseItemResult.SourceEmpty, "empty carry slot");
+    AssertRejected(200, 3, 0, 0x80, 0, 5500, LegacyUseItemResult.InvalidPlacement, "non-carry source", sourceType: 0);
+    AssertRejected(200, 3, 0, 0x80, 0, 5500, LegacyUseItemResult.InvalidPlacement, "negative source slot", sourceSlot: -1);
+
+    static void AssertRejected(
+        int level,
+        short classMaster,
+        byte characterClass,
+        uint learnedSkill,
+        uint secondaryLearnedSkill,
+        short itemIndex,
+        LegacyUseItemResult expected,
+        string label,
+        int sourceType = 1,
+        int sourceSlot = 0)
+    {
+        var fixture = CreateFixture(level, classMaster, characterClass, learnedSkill, secondaryLearnedSkill, itemIndex, sourceType, sourceSlot);
+        var beforeMob = fixture.Mob.ToArray();
+        var beforeMobExtra = fixture.MobExtra.ToArray();
+        var actual = fixture.World.TryApplyDivineProtectionBook(1, fixture.Request, out var rejectedOutcome);
+        Assert(actual == expected, $"5500 rejection for {label} returned {actual}, expected {expected}.");
+        if (rejectedOutcome is not null)
+        {
+            Assert(rejectedOutcome.MobSnapshot.AsSpan().SequenceEqual(beforeMob) && rejectedOutcome.MobExtraSnapshot.AsSpan().SequenceEqual(beforeMobExtra),
+                $"Rejected 5500 use for {label} mutated character state.");
+        }
+    }
+
+    static (WorldHub World, byte[] Mob, byte[] MobExtra, UseItemRequest Request) CreateFixture(
+        int level = 200,
+        short classMaster = 3,
+        byte characterClass = 0,
+        uint learnedSkill = 0x80,
+        uint secondaryLearnedSkill = 0x400,
+        short itemIndex = 5500,
+        int sourceType = 1,
+        int sourceSlot = 0)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var score = new LegacyScore(level, 0, 0, 0, 0, 0, 0, 1000, 500, 1000, 500, 0, 0, 0, 0, 0, 0, 0, 0);
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset, LegacyScore.SizeInBytes));
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset, LegacyScore.SizeInBytes));
+        mob[LegacyAccountSnapshot.MobClassOffset] = characterClass;
+        BinaryPrimitives.WriteUInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), learnedSkill);
+        if (sourceSlot is >= 0 and < LegacyAccountSnapshot.MobCarryCount)
+            new LegacyItem(itemIndex, 61, 2, 0, 0, 0, 0).Write(
+                mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (sourceSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+
+        var mobExtra = new byte[LegacyAccountSnapshot.MobExtraStride];
+        BinaryPrimitives.WriteInt16LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset), classMaster);
+        BinaryPrimitives.WriteUInt32LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset), secondaryLearnedSkill);
+        var world = new WorldHub(itemData: CreateCombatItemDataTable());
+        Assert(world.Enter(1, "TEST", static (_, _) => ValueTask.CompletedTask), "Divine Protection fixture participant was not registered.");
+        Assert(world.SetCharacterState(1, 0, 0, 0, 0, 0, 0, 0, mob, classMaster, ReadOnlyMemory<byte>.Empty, mobExtra),
+            "Divine Protection fixture state was not registered.");
+        return (world, mob, mobExtra, new UseItemRequest(sourceType, sourceSlot, 1, 0, 20, 30, 4));
+    }
+}
+
+static void SephiraSkillBookAcquisition()
+{
+    var accepted = CreateFixture();
+    var beforeDamage = LegacyScore.Read(accepted.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset)).Damage;
+    var result = accepted.World.TryApplySephiraSkillBook(1, accepted.Request, out var outcome);
+    Assert(result == LegacyUseItemResult.Accepted && outcome is not null,
+        "A Volatile 32 Sephira book was not accepted.");
+    Assert(outcome!.Volatile == 32 && outcome.LearnedSkillBit == (1u << 25),
+        "Volatile 32 did not map to base LearnedSkill bit 25.");
+    Assert(BinaryPrimitives.ReadUInt32LittleEndian(outcome.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset)) == 0x02000080,
+        "The Sephira book did not set only its base-word bit while preserving unrelated learned skills.");
+    Assert(outcome.SourceItem is { Index: 5514, Effect1: 61, Value1: 1 },
+        "Using a Sephira book did not consume one item from a stack of two.");
+    Assert(outcome.AffectApplied && outcome.AffectSnapshot[0] == 9 && outcome.AffectSnapshot[1] == 90 &&
+           BinaryPrimitives.ReadUInt16LittleEndian(outcome.AffectSnapshot.AsSpan(2)) == 20 &&
+           BinaryPrimitives.ReadUInt32LittleEndian(outcome.AffectSnapshot.AsSpan(4)) == 3,
+        "The book did not apply SkillData 44's Type 9 magic-weapon affect with the 7.69 SetAffect duration.");
+    Assert(LegacyScore.Read(outcome.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset)).Damage > beforeDamage,
+        "The Type 9 magic-weapon affect did not reproject the player's current damage.");
+    Assert(accepted.World.TryGetCharacterSnapshot(1, out _, out _, out _, out var acceptedMobExtra) && acceptedMobExtra is not null &&
+           BinaryPrimitives.ReadUInt32LittleEndian(acceptedMobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset)) == 0x402,
+        "The generic Sephira book changed the separate MOBEXTRA secondary-learned word.");
+
+    var afterFirstUseMob = outcome.MobSnapshot.ToArray();
+    var afterFirstUseAffect = outcome.AffectSnapshot.ToArray();
+    var duplicateResult = accepted.World.TryApplySephiraSkillBook(1, accepted.Request, out var duplicateOutcome);
+    Assert(duplicateResult == LegacyUseItemResult.AlreadyCompleted && duplicateOutcome is not null,
+        "A duplicate Sephira skill book was not rejected.");
+    Assert(duplicateOutcome!.SourceItem is { Index: 5514, Effect1: 61, Value1: 1 } &&
+           duplicateOutcome.MobSnapshot.AsSpan().SequenceEqual(afterFirstUseMob) &&
+           duplicateOutcome.AffectSnapshot.AsSpan().SequenceEqual(afterFirstUseAffect),
+        "A duplicate Sephira book was consumed or mutated character state.");
+
+    AssertBitForVolatile(5513, 31, 1u << 24);
+    AssertBitForVolatile(5519, 38, 1u << 31);
+    AssertUnsupportedVolatile(5590, "30");
+    AssertUnsupportedVolatile(5591, "39");
+
+    static void AssertBitForVolatile(short itemIndex, int expectedVolatile, uint expectedBit)
+    {
+        var fixture = CreateFixture(itemIndex);
+        var actual = fixture.World.TryApplySephiraSkillBook(1, fixture.Request, out var bitOutcome);
+        Assert(actual == LegacyUseItemResult.Accepted && bitOutcome is not null,
+            $"Volatile {expectedVolatile} Sephira book was rejected.");
+        Assert(bitOutcome!.Volatile == expectedVolatile && bitOutcome.LearnedSkillBit == expectedBit &&
+               (BinaryPrimitives.ReadUInt32LittleEndian(bitOutcome.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset)) & expectedBit) != 0,
+            $"Volatile {expectedVolatile} did not map to skill bit 1 << {expectedVolatile - 7}.");
+    }
+
+    static void AssertUnsupportedVolatile(short itemIndex, string label)
+    {
+        var fixture = CreateFixture(itemIndex);
+        var beforeMob = fixture.Mob.ToArray();
+        var beforeAffect = fixture.Affect.ToArray();
+        var actual = fixture.World.TryApplySephiraSkillBook(1, fixture.Request, out var unsupportedOutcome);
+        Assert(actual == LegacyUseItemResult.UnsupportedItem && unsupportedOutcome is null,
+            $"Volatile {label} was treated as a Sephira skill book.");
+        Assert(fixture.Mob.AsSpan().SequenceEqual(beforeMob) && fixture.Affect.AsSpan().SequenceEqual(beforeAffect),
+            $"Unsupported Volatile {label} mutated character state.");
+    }
+
+    static (WorldHub World, byte[] Mob, byte[] Affect, UseItemRequest Request) CreateFixture(short itemIndex = 5514)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var score = new LegacyScore(100, 0, 0, 0, 0, 0, 0, 1000, 500, 1000, 500, 0, 0, 0, 0, 0, 0, 0, 0);
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset, LegacyScore.SizeInBytes));
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset, LegacyScore.SizeInBytes));
+        BinaryPrimitives.WriteUInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), 0x80);
+        new LegacyItem(itemIndex, 61, 2, 0, 0, 0, 0).Write(
+            mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes));
+
+        var mobExtra = new byte[LegacyAccountSnapshot.MobExtraStride];
+        BinaryPrimitives.WriteUInt32LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset), 0x402);
+        var affect = new byte[LegacyAccountSnapshot.AffectStride];
+        var world = new WorldHub(itemData: CreateCombatItemDataTable(), skillData: CreateSephiraSkillDataTable());
+        Assert(world.Enter(1, "TEST", static (_, _) => ValueTask.CompletedTask), "Sephira fixture participant was not registered.");
+        Assert(world.SetCharacterState(1, 0, 0, 0, 0, 0, 0, 0, mob, 3, affect, mobExtra),
+            "Sephira fixture state was not registered.");
+        return (world, mob, affect, new UseItemRequest(1, 0, 1, 0, 20, 30, 4));
+    }
+
+    static LegacySkillDataTable CreateSephiraSkillDataTable() => LegacySkillDataTable.Load(new StringReader(
+        "44,75,0,78,3,5,0,0,0,0,9,90,60,10.0.0.24.0.0.0.0,10.0.0.8.0.0.0.0,0,0,0,13,1,0,0,0,Arma_Magica"));
+}
+
 static void UseItemWireAndClassReset()
 {
     var payload = new byte[UseItemRequest.PayloadSize];
@@ -5267,6 +6732,14 @@ static void UseItemWireAndClassReset()
     var coinRequest = new UseItemRequest(1, 22, 1, 0, 20, 30, 4);
     var coinResult = world.TryApplyCoinConsumable(1, coinRequest, out var coinOutcome);
     Assert(coinResult == LegacyUseItemResult.Accepted && coinOutcome is { AddedCoin: 100_000_000, Coin: 100_000_000, SourceItem.Value1: 1 }, "Vol 185 silver bar did not add the legacy coin value or consume one unit.");
+    var tinyAfterCoinConsumable = world.TryPrepareTinyCombine(
+        1,
+        new LegacyItem[LegacyTinyCombineRules.CombineItemCount],
+        new sbyte[LegacyTinyCombineRules.CombineItemCount],
+        tinyBase: 40,
+        out _);
+    Assert(tinyAfterCoinConsumable == LegacyTinyCombinePreparationResult.InvalidRecipe,
+        "Tiny Combine treated the silver-bar-updated MOB Gold as insufficient, so the runtime Gold mirror was stale.");
 
     var donateRequest = new UseItemRequest(1, 25, 1, 0, 20, 30, 4);
     var donateResult = world.TryApplyDonateConsumable(1, donateRequest, out var donateOutcome);
@@ -5283,6 +6756,70 @@ static void UseItemWireAndClassReset()
     var pvpSapphireRequest = new UseItemRequest(1, 24, 1, 0, 20, 30, 4);
     var pvpSapphireResult = world.TryApplyPvpJewelry(1, pvpSapphireRequest, out var pvpSapphireOutcome);
     Assert(pvpSapphireResult == LegacyUseItemResult.Accepted && pvpSapphireOutcome is { AffectSlot: 1, AffectLevel: 3, AffectTime: 450, SourceItem.Value1: 1 } && BinaryPrimitives.ReadUInt16LittleEndian(pvpSapphireOutcome.AffectSnapshot.AsSpan(10)) == 3, "Vol 242 second PvP jewel did not reuse Type 8 and OR its bit into the existing mask.");
+
+    var transformationRows = new (short Item, byte Value, uint Time)[]
+    {
+        (3418, 1, 450), (3419, 2, 450), (3420, 3, 450), (3421, 4, 450),
+        (3422, 5, 450), (3423, 6, 450), (3424, 7, 450), (3425, 8, 4),
+    };
+    for (var index = 0; index < transformationRows.Length; index++)
+    {
+        var (itemIndex, affectValue, affectTime) = transformationRows[index];
+        var connectionId = 40 + index;
+        var transformWorld = CreateTransformationItemWorld(connectionId, itemIndex, 1);
+        var transformResult = transformWorld.TryApplyAffectConsumable(
+            connectionId, new UseItemRequest(1, 0, 1, 0, 20, 30, 4), out var transformOutcome);
+        Assert(transformResult == LegacyUseItemResult.Accepted && transformOutcome is not null,
+            $"Transformation item {itemIndex} was rejected.");
+        Assert(transformOutcome!.AffectSlot == 0 && transformOutcome.AffectSnapshot[0] == 33 &&
+               transformOutcome.AffectSnapshot[1] == affectValue &&
+               BinaryPrimitives.ReadUInt16LittleEndian(transformOutcome.AffectSnapshot.AsSpan(2)) == 1 &&
+               BinaryPrimitives.ReadUInt32LittleEndian(transformOutcome.AffectSnapshot.AsSpan(4)) == affectTime &&
+               transformOutcome.SourceItem.Index == 0,
+            $"Transformation item {itemIndex} did not apply its source Type 33 values or consume one unit.");
+    }
+
+    var existingTransformationAffect = new byte[LegacyAccountSnapshot.AffectStride];
+    existingTransformationAffect[0] = 33;
+    existingTransformationAffect[1] = 2;
+    BinaryPrimitives.WriteUInt32LittleEndian(existingTransformationAffect.AsSpan(4), 100);
+    var alreadyTransformedWorld = CreateTransformationItemWorld(50, 3418, 2, existingTransformationAffect);
+    var alreadyTransformed = alreadyTransformedWorld.TryApplyAffectConsumable(
+        50, new UseItemRequest(1, 0, 1, 0, 20, 30, 4), out var alreadyTransformedOutcome);
+    Assert(alreadyTransformed == LegacyUseItemResult.AlreadyCompleted && alreadyTransformedOutcome is not null &&
+           alreadyTransformedOutcome.SourceItem.Index == 3418 && alreadyTransformedOutcome.SourceItem.Value1 == 2,
+        "A second Type 33 transformation was not rejected with the source stack preserved.");
+
+    var fullAffectList = new byte[LegacyAccountSnapshot.AffectStride];
+    for (var offset = 0; offset < fullAffectList.Length; offset += 8)
+        fullAffectList[offset] = 1;
+    var fullAffectWorld = CreateTransformationItemWorld(51, 3420, 1, fullAffectList);
+    var fullAffectResult = fullAffectWorld.TryApplyAffectConsumable(
+        51, new UseItemRequest(1, 0, 1, 0, 20, 30, 4), out var fullAffectOutcome);
+    Assert(fullAffectResult == LegacyUseItemResult.InvalidPlacement && fullAffectOutcome is not null &&
+           fullAffectOutcome.SourceItem.Index == 3420,
+        "A Type 33 transformation consumed its source item when every affect slot was occupied.");
+
+    WorldHub CreateTransformationItemWorld(int connectionId, short itemIndex, byte amount, byte[]? initialAffect = null)
+    {
+        var transformMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        score.Write(transformMob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        score.Write(transformMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        BinaryPrimitives.WriteInt32LittleEndian(transformMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 100);
+        new LegacyItem(itemIndex, amount > 1 ? (byte)61 : (byte)0, amount > 1 ? amount : (byte)0, 0, 0, 0, 0)
+            .Write(transformMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes));
+        var transformExtra = new byte[LegacyAccountSnapshot.MobExtraStride];
+        BinaryPrimitives.WriteInt16LittleEndian(transformExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset), LegacyAccountSnapshot.ClassMasterMortal);
+        var transformWorld = new WorldHub(itemData: table);
+        Assert(transformWorld.Enter(connectionId, $"TRANSFORM_{connectionId}", static (_, _) => ValueTask.CompletedTask),
+            "Transformation-item fixture participant was not registered.");
+        Assert(transformWorld.SetCharacterState(
+                connectionId, 0, 0, 0, 0, 0, 0, 0, transformMob,
+                LegacyAccountSnapshot.ClassMasterMortal,
+                initialAffect ?? new byte[LegacyAccountSnapshot.AffectStride], transformExtra),
+            "Transformation-item fixture state was not registered.");
+        return transformWorld;
+    }
 }
 
 static LegacyItemDataTable CreateCombatItemDataTable()
@@ -5301,6 +6838,11 @@ static LegacyItemDataTable CreateCombatItemDataTable()
     WriteItemListRecord(decodedBody, 16, "REFLECT", unique: 0, position: 0, grade: 8, (LegacyItemEffect.PvpDefense, 50));
     WriteItemListRecord(decodedBody, 17, "REFLECT GEM", unique: 0, position: 0, grade: 8);
     WriteItemListRecord(decodedBody, 419, "BOSS DROP", unique: 0, position: 0, grade: 0);
+    WriteItemListRecord(decodedBody, 5513, "SEPHIRA 31", unique: 0, position: 0, grade: 0, (LegacyItemEffect.Volatile, 31));
+    WriteItemListRecord(decodedBody, 5514, "SEPHIRA 32", unique: 0, position: 0, grade: 0, (LegacyItemEffect.Volatile, 32));
+    WriteItemListRecord(decodedBody, 5519, "SEPHIRA 38", unique: 0, position: 0, grade: 0, (LegacyItemEffect.Volatile, 38));
+    WriteItemListRecord(decodedBody, 5590, "NOT SEPHIRA 30", unique: 0, position: 0, grade: 0, (LegacyItemEffect.Volatile, 30));
+    WriteItemListRecord(decodedBody, 5591, "NOT SEPHIRA 39", unique: 0, position: 0, grade: 0, (LegacyItemEffect.Volatile, 39));
     WriteItemListRecord(decodedBody, 7, "RESET ARMOR", unique: 0, position: 4, grade: 0, (LegacyItemEffect.MobType, 0), (LegacyItemEffect.Class, 1));
     WriteItemListRequiredLevel(decodedBody, 7, 1);
     WriteItemListRecord(decodedBody, 4016, "CLASS RESET 1", unique: 0, position: 0, grade: 0, (LegacyItemEffect.Volatile, 190));
@@ -5401,6 +6943,997 @@ static void WriteItemListExtra(byte[] body, int index, short extra)
     BinaryPrimitives.WriteInt16LittleEndian(body.AsSpan(index * LegacyItemDataTable.RecordSizeInBytes + 140), extra);
 }
 
+static void WorldPhysicalDoubleCritical()
+{
+    static LegacyPhysicalAttackOutcome Resolve(
+        bool supportsSecondaryDamageSlot,
+        int strength,
+        int special4,
+        int floorRoll = 0,
+        byte attackerClass = 3,
+        bool learnedDoubleCritical = true,
+        bool clanFourNpc = false,
+        int criticalRoll = 0,
+        byte attackRun = 0,
+        sbyte mobCritical = 0,
+        ushort progress = 0,
+        int doubleCriticalChanceRoll = -1,
+        int doubleCriticalDamageRoll = -1)
+    {
+        var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        attackerMob[LegacyAccountSnapshot.MobClassOffset] = attackerClass;
+        attackerMob[LegacyAccountSnapshot.MobCriticalOffset] = unchecked((byte)mobCritical);
+        if (learnedDoubleCritical)
+            BinaryPrimitives.WriteUInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), 0x200000);
+        var attackerScore = new LegacyScore(100, 0, 1000, 0, attackRun, 0, 0, 5000, 5000, 5000, 5000,
+            checked((short)strength), 0, 0, 0, 0, 0, 0, checked((short)special4));
+        attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+        var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        if (clanFourNpc)
+            targetMob[LegacyAccountSnapshot.MobClanOffset] = 4;
+        var targetScore = new LegacyScore(100, 10, 0, 0, 0, 0, 0, 5000, 5000, 5000, 5000, 0, 0, 0, 0, 0, 0, 0, 0);
+        targetScore.Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+        var hub = new WorldHub();
+        Assert(hub.Enter(1, "DOUBLE_CRIT_ATTACKER", (_, _) => ValueTask.CompletedTask), "DoubleCritical attacker was not registered.");
+        Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "DoubleCritical attacker state was not set.");
+        int targetId;
+        if (clanFourNpc)
+            targetId = hub.EnterNpc(targetMob, 2005, 2005, requestedConnectionId: 20_010);
+        else
+        {
+            Assert(hub.Enter(2, "DOUBLE_CRIT_TARGET", (_, _) => ValueTask.CompletedTask), "DoubleCritical target was not registered.");
+            Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "DoubleCritical target state was not set.");
+            targetId = 2;
+        }
+
+        var result = hub.TryApplyPhysicalAttack(
+            1,
+            targetId,
+            randomFactor: 99,
+            out var outcome,
+            attackMissRoll: 99,
+            supportsSecondaryDamageSlot: supportsSecondaryDamageSlot,
+            doubleCriticalRoll: criticalRoll,
+            secondaryDamageRandomFactor: 99,
+            secondaryDamageFloorRoll: floorRoll,
+            clientProgress: progress,
+            doubleCriticalChanceRoll: doubleCriticalChanceRoll,
+            doubleCriticalDamageRoll: doubleCriticalDamageRoll);
+        Assert(result == LegacyPhysicalAttackResult.Accepted && outcome is not null, "DoubleCritical physical attack was not accepted.");
+        return outcome!;
+    }
+
+    var critical = Resolve(supportsSecondaryDamageSlot: true, strength: 1000, special4: 1000);
+    Assert(critical.DoubleCritical == 4 && critical.SecondaryDamage == 987 && critical.Damage == 1477,
+        $"The class-3 passive DoubleCritical did not calculate its 7.69 second-slot damage and player penetration: flag={critical.DoubleCritical}, second={critical.SecondaryDamage}, damage={critical.Damage}.");
+
+    var oneSlot = Resolve(supportsSecondaryDamageSlot: false, strength: 1000, special4: 1000);
+    Assert(oneSlot.DoubleCritical == 0 && oneSlot.SecondaryDamage == 0 && oneSlot.Damage == 243,
+        $"The class-3 passive DoubleCritical ran without a packet second slot: flag={oneSlot.DoubleCritical}, second={oneSlot.SecondaryDamage}, damage={oneSlot.Damage}.");
+
+    var wrongClass = Resolve(supportsSecondaryDamageSlot: true, strength: 1000, special4: 1000, attackerClass: 2);
+    Assert(wrongClass.DoubleCritical == 0 && wrongClass.SecondaryDamage == 0 && wrongClass.Damage == 243, "A non-class-3 attacker triggered the class-3 passive DoubleCritical.");
+
+    var unlearned = Resolve(supportsSecondaryDamageSlot: true, strength: 1000, special4: 1000, learnedDoubleCritical: false);
+    Assert(unlearned.DoubleCritical == 0 && unlearned.SecondaryDamage == 0 && unlearned.Damage == 243, "An attacker without learned bit 0x200000 triggered the class-3 passive DoubleCritical.");
+
+    var failedChance = Resolve(supportsSecondaryDamageSlot: true, strength: 1000, special4: 1000, criticalRoll: 3);
+    Assert(failedChance.DoubleCritical == 0 && failedChance.SecondaryDamage == 0 && failedChance.Damage == 243, "The 1-in-4 DoubleCritical chance triggered for rolls 1 through 3.");
+
+    var clanFourNpc = Resolve(supportsSecondaryDamageSlot: true, strength: 1000, special4: 1000, clanFourNpc: true);
+    Assert(clanFourNpc.DoubleCritical == 4 && clanFourNpc.SecondaryDamage == 987 && clanFourNpc.Damage == 1480,
+        $"The class-3 DoubleCritical penetration formula was not applied to clan-4 NPCs: flag={clanFourNpc.DoubleCritical}, second={clanFourNpc.SecondaryDamage}, damage={clanFourNpc.Damage}.");
+
+    var lowDamage = Resolve(supportsSecondaryDamageSlot: true, strength: 0, special4: 0, floorRoll: 59);
+    Assert(lowDamage.DoubleCritical == 4 && lowDamage.SecondaryDamage == 69 && lowDamage.Damage == 330,
+        $"The 7.69 DoubleCritical random floor did not preserve rand()%60+10: flag={lowDamage.DoubleCritical}, second={lowDamage.SecondaryDamage}, damage={lowDamage.Damage}.");
+
+    var attackRunCritical = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, attackRun: 0xF0);
+    Assert(attackRunCritical.DoubleCritical == 1 && attackRunCritical.Damage == 487 && attackRunCritical.NextProgress == 1,
+        $"The authoritative AttackRun threshold did not set DoubleCritical bit 1, double player damage, and advance Progress: flag={attackRunCritical.DoubleCritical}, damage={attackRunCritical.Damage}, progress={attackRunCritical.NextProgress}.");
+
+    var attackRunBelowThreshold = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, attackRun: 0x50);
+    Assert(attackRunBelowThreshold.DoubleCritical == 0 && attackRunBelowThreshold.Damage == 243,
+        $"AttackRun at the exact zero threshold incorrectly set DoubleCritical bit 1: flag={attackRunBelowThreshold.DoubleCritical}, damage={attackRunBelowThreshold.Damage}.");
+
+    var hitRateLowerQuadrant = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, attackRun: 0x70, progress: 4);
+    Assert(hitRateLowerQuadrant.DoubleCritical == 1 && hitRateLowerQuadrant.Damage == 487 && hitRateLowerQuadrant.NextProgress == 5,
+        $"The 7.69 four-quadrant hit-rate table did not use the client progress index: flag={hitRateLowerQuadrant.DoubleCritical}, damage={hitRateLowerQuadrant.Damage}, progress={hitRateLowerQuadrant.NextProgress}.");
+
+    var normalizedProgress = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, attackRun: 0x70, progress: 1025);
+    Assert(normalizedProgress.DoubleCritical == 0 && normalizedProgress.NextProgress == 2,
+        $"Unsigned out-of-range Progress was not safely normalized before table lookup: flag={normalizedProgress.DoubleCritical}, progress={normalizedProgress.NextProgress}.");
+
+    var criticalSuccess = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, mobCritical: 100, doubleCriticalChanceRoll: 99, doubleCriticalDamageRoll: 0);
+    Assert(criticalSuccess.DoubleCritical == 2 && criticalSuccess.Damage == 318,
+        $"The signed MOB.Critical chance did not set DoubleCritical bit 2 or apply the 1.3x player damage roll: flag={criticalSuccess.DoubleCritical}, damage={criticalSuccess.Damage}.");
+
+    var criticalUpperBoundary = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, mobCritical: 100, doubleCriticalChanceRoll: 100, doubleCriticalDamageRoll: 0);
+    Assert(criticalUpperBoundary.DoubleCritical == 0 && criticalUpperBoundary.Damage == 243,
+        $"A Critical roll equal to signed MOB.Critical incorrectly proc'd bit 2: flag={criticalUpperBoundary.DoubleCritical}, damage={criticalUpperBoundary.Damage}.");
+
+    var criticalSecondMultiplier = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, mobCritical: 100, doubleCriticalChanceRoll: 99, doubleCriticalDamageRoll: 1);
+    Assert(criticalSecondMultiplier.DoubleCritical == 2 && criticalSecondMultiplier.Damage == 342,
+        $"The 1.4x player DoubleCritical damage roll was not applied: flag={criticalSecondMultiplier.DoubleCritical}, damage={criticalSecondMultiplier.Damage}.");
+
+    var criticalNpcMultiplier = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, clanFourNpc: true, mobCritical: 100, doubleCriticalChanceRoll: 99, doubleCriticalDamageRoll: 0);
+    Assert(criticalNpcMultiplier.DoubleCritical == 2 && criticalNpcMultiplier.Damage == 370,
+        $"The 1.5x NPC DoubleCritical damage roll or clan-4 penetration was not applied: flag={criticalNpcMultiplier.DoubleCritical}, damage={criticalNpcMultiplier.Damage}.");
+
+    var criticalNpcSecondMultiplier = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, clanFourNpc: true, mobCritical: 100, doubleCriticalChanceRoll: 99, doubleCriticalDamageRoll: 1);
+    Assert(criticalNpcSecondMultiplier.DoubleCritical == 2 && criticalNpcSecondMultiplier.Damage == 394,
+        $"The 1.6x NPC DoubleCritical damage roll or clan-4 penetration was not applied: flag={criticalNpcSecondMultiplier.DoubleCritical}, damage={criticalNpcSecondMultiplier.Damage}.");
+
+    var combinedBaseFlags = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, attackRun: 0xF0, mobCritical: 100, doubleCriticalChanceRoll: 99, doubleCriticalDamageRoll: 0);
+    Assert(combinedBaseFlags.DoubleCritical == 3 && combinedBaseFlags.Damage == 636,
+        $"DoubleCritical base bits 1 and 2 did not compose before player penetration: flag={combinedBaseFlags.DoubleCritical}, damage={combinedBaseFlags.Damage}.");
+
+    var signedNegativeCritical = Resolve(supportsSecondaryDamageSlot: false, strength: 0, special4: 0, mobCritical: -1, doubleCriticalChanceRoll: 0, doubleCriticalDamageRoll: 0);
+    Assert(signedNegativeCritical.DoubleCritical == 0 && signedNegativeCritical.Damage == 243,
+        $"The signed negative MOB.Critical value incorrectly passed the rand()%255 comparison: flag={signedNegativeCritical.DoubleCritical}, damage={signedNegativeCritical.Damage}.");
+}
+
+static void WorldPhysicalManaControl()
+{
+    var noAffect = LegacyManaControlMath.Resolve(30, 500, 1_000, hasAffect18: false, learnedManaSkill: false, doubleCriticalFlags: 4, secondaryDamage: 987);
+    Assert(!noAffect.Applied && noAffect.Damage == 30 && noAffect.CurrentMana == 500 && noAffect.SecondaryDamage == 987,
+        "Physical ManaControl changed damage, MP, or the second slot without target Affect.Type 18.");
+
+    var atThreshold = LegacyManaControlMath.Resolve(30, 200, 1_000, hasAffect18: true, learnedManaSkill: false, doubleCriticalFlags: 0, secondaryDamage: 0);
+    Assert(!atThreshold.Applied && atThreshold.Damage == 30 && atThreshold.CurrentMana == 200,
+        "Physical ManaControl triggered at exactly 20 percent MaxMp instead of requiring strictly greater MP.");
+
+    var fullDrain = LegacyManaControlMath.Resolve(21, 400, 1_000, hasAffect18: true, learnedManaSkill: false, doubleCriticalFlags: 4, secondaryDamage: 987);
+    Assert(fullDrain.Applied && fullDrain.Damage == 5 && fullDrain.CurrentMana == 379 && fullDrain.SecondaryDamage == 5,
+        $"Affect 18 did not drain incoming damage, apply the 60 divisor, and overwrite the DoubleCritical secondary slot: {fullDrain}.");
+
+    var learnedDivisor = LegacyManaControlMath.Resolve(21, 400, 1_000, hasAffect18: true, learnedManaSkill: true, doubleCriticalFlags: 0, secondaryDamage: 987);
+    Assert(learnedDivisor.Applied && learnedDivisor.Damage == 6 && learnedDivisor.CurrentMana == 379 && learnedDivisor.SecondaryDamage == 987,
+        $"Learned bit 23 did not select the 55 divisor or unexpectedly rewrote a non-DoubleCritical second slot: {learnedDivisor}.");
+
+    var parriedHit = LegacyManaControlMath.Resolve(-3, 400, 1_000, hasAffect18: true, learnedManaSkill: true, doubleCriticalFlags: 4, secondaryDamage: 987);
+    Assert(parriedHit.Applied && parriedHit.Damage == 0 && parriedHit.CurrentMana == 403 && parriedHit.SecondaryDamage == 0,
+        $"ManaControl did not preserve the legacy zero-damage/MP-refund result after a physical parry: {parriedHit}.");
+
+    var insufficientMana = LegacyManaControlMath.Resolve(30, 21, 100, hasAffect18: true, learnedManaSkill: false, doubleCriticalFlags: 0, secondaryDamage: 0);
+    Assert(insufficientMana.Applied && insufficientMana.Damage == 10 && insufficientMana.CurrentMana == 0,
+        $"The MP deficit was not added to the damage input before applying the 60 divisor: {insufficientMana}.");
+
+    var hub = new WorldHub();
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var attackerScore = new LegacyScore(100, 0, 100, 0, 0, 0, 0, 1_000, 1_000, 1_000, 1_000, 0, 0, 0, 0, 0, 0, 0, 0);
+    attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var targetScore = new LegacyScore(100, 10, 0, 0, 0, 0, 0, 1_000, 1_000, 1_000, 400, 0, 0, 0, 0, 0, 0, 0, 0);
+    targetScore.Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var targetAffect = new byte[LegacyAccountSnapshot.AffectStride];
+    targetAffect[0] = 18;
+    Assert(hub.Enter(1, "MANA_CONTROL_ATTACKER", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "MANA_CONTROL_TARGET", (_, _) => ValueTask.CompletedTask),
+        "Physical ManaControl participants were not registered.");
+    Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2_000, 2_000, attackerMob) &&
+        hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2_005, 2_005, targetMob, LegacyAccountSnapshot.ClassMasterMortal, targetAffect),
+        "Physical ManaControl fixture state was not set.");
+
+    var result = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var outcome, attackMissRoll: 99, doubleCriticalChanceRoll: 254);
+    Assert(result == LegacyPhysicalAttackResult.Accepted && outcome is not null && outcome.Damage == 5 && outcome.RemainingHp == 995 && outcome.TargetResourceChanged,
+        $"The physical pipeline did not apply the Type 18 reduced damage and report its target resource change: result={result}, outcome={outcome}.");
+    Assert(hub.TryGetResourceState(2, out var state, out var requestedHp, out var requestedMp) && state!.CurrentMana == 379 && state.CurrentScore.Hp == 995 && requestedHp == 995 && requestedMp == 400,
+        "Physical ManaControl did not persist CurrentScore.Mp, preserve legacy ReqMp, and synchronize target HP.");
+}
+
+static void WorldSkill46ManaControlCast()
+{
+    var casterMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 10, 0, 0, 0, 0, 0, 1_000, 1_000, 1_000, 400, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(casterMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    new LegacyScore(100, 0, 100, 0, 0, 0, 0, 1_000, 1_000, 1_000, 1_000, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+    var skill = new LegacySkillDefinition(
+        46, 81, 0, 130, 1, 0, 0, 0, 0, 0, 18, 0, 15, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Controle_de_Mana");
+    var hub = new WorldHub();
+    Assert(hub.Enter(1, "MANA_CONTROL_CASTER", (_, _) => ValueTask.CompletedTask) &&
+        hub.Enter(2, "MANA_CONTROL_PHYSICAL_ATTACKER", (_, _) => ValueTask.CompletedTask),
+        "Skill 46 ManaControl participants were not registered.");
+    Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2_005, 2_005, casterMob) &&
+        hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2_000, 2_000, attackerMob),
+        "Skill 46 ManaControl fixture state was not set.");
+
+    Assert(hub.TryConsumeSkillMana(1, skill, out var afterCast, out _, out var requestedManaAfterCast) == LegacySkillManaResult.Accepted &&
+        afterCast!.CurrentMana == 270 && requestedManaAfterCast == 270,
+        "Skill 46 did not debit its configured 130 MP before applying the affect.");
+    var castResult = hub.TryApplySkillAttack(1, 1, skill, itemData: null, weather: 0, randomFactor: 90, out var castOutcome);
+    Assert(castResult == LegacySkillAttackResult.Accepted && castOutcome?.TargetAffectSnapshot is { Length: LegacyAccountSnapshot.AffectStride } castAffect &&
+        castAffect[0] == 18 && castAffect[1] == 0,
+        $"Skill 46 did not create its generic self-target Type 18 affect: result={castResult}, affect={castOutcome?.TargetAffectSnapshot?[0]}.");
+
+    var attackResult = hub.TryApplyPhysicalAttack(2, 1, randomFactor: 99, out var attackOutcome, attackMissRoll: 99, doubleCriticalChanceRoll: 254);
+    Assert(attackResult == LegacyPhysicalAttackResult.Accepted && attackOutcome is not null && attackOutcome.Damage == 5 &&
+        attackOutcome.RemainingHp == 995 && attackOutcome.TargetResourceChanged,
+        $"A Type 18 affect created by skill 46 did not reduce the incoming physical hit: result={attackResult}, outcome={attackOutcome}.");
+    Assert(hub.TryGetResourceState(1, out var casterState, out var requestedHp, out var requestedMp) &&
+        casterState!.CurrentMana == 249 && casterState.CurrentScore.Hp == 995 && requestedHp == 995 && requestedMp == 270,
+        "Skill 46 followed by the Type 18 physical response did not preserve the 7.69 CurrentMp/ReqMp behavior.");
+}
+
+static (WorldHub Hub, int[] TargetIds) CreatePhysicalAttackBatchFixture(
+    int targetCount,
+    byte attackerClass,
+    bool learnedPassive,
+    byte attackRun,
+    sbyte mobCritical,
+    short strength,
+    short special4,
+    int attackerLevel = 100)
+{
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    attackerMob[LegacyAccountSnapshot.MobClassOffset] = attackerClass;
+    attackerMob[LegacyAccountSnapshot.MobCriticalOffset] = unchecked((byte)mobCritical);
+    if (learnedPassive)
+        BinaryPrimitives.WriteUInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), 0x200000);
+    new LegacyScore(
+        attackerLevel,
+        0,
+        1000,
+        0,
+        attackRun,
+        0,
+        0,
+        5000,
+        5000,
+        5000,
+        5000,
+        strength,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        special4).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+    var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100_000, 10, 0, 0, 0, 0, 0, 100_000, 100_000, 100_000, 100_000, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+    var hub = new WorldHub();
+    Assert(hub.Enter(1, $"BATCH_ACTION_{targetCount}_{attackerClass}", (_, _) => ValueTask.CompletedTask),
+        $"Batch-action attacker for {targetCount} targets could not be registered.");
+    Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob),
+        $"Batch-action attacker state for {targetCount} targets could not be set.");
+
+    for (var targetId = 2; targetId <= Math.Max(3, targetCount); targetId++)
+    {
+        Assert(hub.Enter(targetId, $"BATCH_ACTION_TARGET_{targetCount}_{targetId}", (_, _) => ValueTask.CompletedTask),
+            $"Batch-action target {targetId} for {targetCount} targets could not be registered.");
+        Assert(hub.SetCharacterState(targetId, 0, 0, targetId, 0, 0, 2005, 2005, targetMob),
+            $"Batch-action target state {targetId} for {targetCount} targets could not be set.");
+    }
+
+    var targetIds = Enumerable.Range(0, targetCount)
+        .Select(index => index < 2 ? 2 : index + 1)
+        .ToArray();
+    return (hub, targetIds);
+}
+
+static void WorldPhysicalAttackBatchSharedCriticalProgress()
+{
+    foreach (var slotCount in new[] { 2, 13 })
+    {
+        var (hub, targetIds) = CreatePhysicalAttackBatchFixture(
+            slotCount,
+            attackerClass: 0,
+            learnedPassive: false,
+            attackRun: 0xF0,
+            mobCritical: 100,
+            strength: 0,
+            special4: 0);
+        var expected = LegacyDoubleCriticalMath.Resolve(
+            attackRun: 0xF0,
+            critical: 100,
+            sessionProgress: 0,
+            clientProgress: 23,
+            criticalChanceRoll: 254);
+        var slots = targetIds.Select((targetId, slotIndex) => new LegacyPhysicalAttackBatchSlotRequest(
+            slotIndex,
+            targetId,
+            new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99))).ToArray();
+        var request = new LegacyPhysicalAttackBatchRequest(
+            AttackerConnectionId: 1,
+            Slots: slots,
+            ClientProgress: 23,
+            SupportsSecondaryDamageSlot: true,
+            ActionRolls: new LegacyPhysicalAttackBatchActionRolls(
+                DoubleCriticalRoll: 3,
+                DoubleCriticalChanceRoll: 254,
+                DoubleCriticalDamageRoll: 1));
+
+        Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.CompletedNormally,
+            $"The {slotCount}-slot critical/progress action did not complete normally.");
+        Assert(expected.Flags == 1 && expected.NextProgress == 24 && batch!.DoubleCritical == expected.Flags && batch!.NextProgress == expected.NextProgress,
+            $"The {slotCount}-slot action did not expose the single authoritative critical/progress result: expected={expected}, actual={batch!.DoubleCritical}/{batch.NextProgress}.");
+        Assert(batch.SlotOutcomes.Count == slotCount && batch.SlotOutcomes.All(slot =>
+                slot.Result == LegacyPhysicalAttackResult.Accepted &&
+                slot.Outcome is { } result && result.DoubleCritical == expected.Flags && result.NextProgress == expected.NextProgress),
+                $"The {slotCount}-slot action did not share its action-level critical flags and one progress advance across every physical target.");
+    }
+
+    var (sparseHub, _) = CreatePhysicalAttackBatchFixture(
+        targetCount: 2,
+        attackerClass: 0,
+        learnedPassive: false,
+        attackRun: 0xF0,
+        mobCritical: 100,
+        strength: 0,
+        special4: 0);
+    var sparseRequest = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(1, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(2, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        ClientProgress: 23,
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(
+            DoubleCriticalRoll: 3,
+            DoubleCriticalChanceRoll: 0,
+            DoubleCriticalDamageRoll: 1));
+    Assert(sparseHub.TryApplyPhysicalAttackBatch(sparseRequest, out var sparseBatch) && sparseBatch is not null && sparseBatch.CompletedNormally,
+        "The sparse physical action without wire slot 0 did not complete normally.");
+    Assert(sparseBatch!.DoubleCritical == 0 && sparseBatch.NextProgress == 23 && sparseBatch.SlotOutcomes.All(slot =>
+            slot.Outcome is { } result && result.DoubleCritical == 0 && result.NextProgress == 23),
+        "A later physical slot resolved slot-0-only DoubleCritical/Progress when original wire slot 0 never reached the physical branch.");
+}
+
+static void WorldPhysicalAttackBatchPassiveReservesSlotOne()
+{
+    var (hub, _) = CreatePhysicalAttackBatchFixture(
+        targetCount: 2,
+        attackerClass: 3,
+        learnedPassive: true,
+        attackRun: 0,
+        mobCritical: 0,
+        strength: 1000,
+        special4: 1000);
+    Assert(hub.TryGetResourceState(3, out var beforeTarget, out _, out _) && beforeTarget is not null,
+        "The original wire-slot-1 target was not initialized.");
+    var originalSlotOneHp = beforeTarget!.CurrentScore.Hp;
+    var request = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(1, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        ClientProgress: 0,
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(
+            DoubleCriticalRoll: 0,
+            SecondaryDamageRandomFactor: 99,
+            SecondaryDamageFloorRoll: 0,
+            DoubleCriticalChanceRoll: 254,
+            DoubleCriticalDamageRoll: 1));
+
+    Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.CompletedNormally,
+        "The class-3 passive batch did not complete normally.");
+    var firstTarget = batch!.SlotOutcomes.Single(slot => slot.SlotIndex == 0).Outcome;
+    Assert(firstTarget is { SecondaryDamage: > 0 } && (firstTarget.DoubleCritical & 4) != 0 && firstTarget.Damage > firstTarget.SecondaryDamage,
+        $"The proc did not add secondary damage to slot 0: {firstTarget}.");
+    Assert(batch!.WireSlotOverrides.SingleOrDefault(slot => slot.SlotIndex == 1) is
+            { TargetConnectionId: 0, Damage: > 0 } reservedSlot && reservedSlot.Damage == firstTarget!.SecondaryDamage,
+        "The class-3 passive did not reserve original wire slot 1 with target ID zero and its secondary damage.");
+    Assert(hub.TryGetResourceState(3, out var afterTarget, out _, out _) && afterTarget!.CurrentScore.Hp == originalSlotOneHp,
+        "The physical target originally assigned to reserved wire slot 1 was attacked.");
+}
+
+static void WorldPhysicalAttackBatchManaControlSharesPassiveDamage()
+{
+    var (hub, _) = CreatePhysicalAttackBatchFixture(
+        targetCount: 3,
+        attackerClass: 3,
+        learnedPassive: true,
+        attackRun: 0,
+        mobCritical: 0,
+        strength: 1000,
+        special4: 1000);
+    Assert(hub.TryGetCharacterSnapshot(1, out var attackerMob, out _, out _, out _) && attackerMob is not null,
+        "The passive ManaControl attacker snapshot was not initialized.");
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        attackerMob!.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset),
+        BinaryPrimitives.ReadUInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset)) | (1u << 23));
+    Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob),
+        "The passive ManaControl skill bit could not be enabled.");
+
+    Assert(hub.TryGetCharacterSnapshot(2, out var manaTargetMob, out _, out _, out _) && manaTargetMob is not null,
+        "The first passive target snapshot was not initialized.");
+    var manaAffect = new byte[LegacyAccountSnapshot.AffectStride];
+    manaAffect[0] = 18;
+    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, manaTargetMob!,
+        LegacyAccountSnapshot.ClassMasterMortal, manaAffect),
+        "The first passive target could not receive ManaControl affect 18.");
+
+    var request = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(2, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(
+            DoubleCriticalRoll: 0,
+            SecondaryDamageRandomFactor: 99,
+            SecondaryDamageFloorRoll: 0,
+            DoubleCriticalChanceRoll: 254,
+            DoubleCriticalDamageRoll: 1));
+
+    Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.CompletedNormally,
+        "The passive ManaControl batch did not complete normally.");
+    var first = batch!.SlotOutcomes.Single(slot => slot.SlotIndex == 0).Outcome;
+    var later = batch.SlotOutcomes.Single(slot => slot.SlotIndex == 2).Outcome;
+    var wireSlotOne = batch.WireSlotOverrides.SingleOrDefault(slot => slot.SlotIndex == 1);
+    Assert(first is { TargetResourceChanged: true, SecondaryDamage: > 0 } &&
+        (first.DoubleCritical & 4) != 0 && first.SecondaryDamage == first.Damage,
+        $"ManaControl did not replace the passive secondary damage with its adjusted damage: {first}.");
+    Assert(wireSlotOne is { TargetConnectionId: 0 } && wireSlotOne.Damage == first!.SecondaryDamage,
+        $"The reserved wire slot retained stale pre-ManaControl damage: slot={wireSlotOne}, first={first}.");
+    Assert(later is { SecondaryDamage: > 0 } && later.SecondaryDamage == first!.SecondaryDamage && later.Damage > later.SecondaryDamage,
+        $"The later physical slot did not reuse the action's ManaControl-adjusted secondary damage: first={first}, later={later}.");
+}
+
+static void WorldPhysicalAttackBatchDeathFinalizesAfterNormalCompletion()
+{
+    var (hub, _) = CreatePhysicalAttackBatchFixture(
+        targetCount: 2,
+        attackerClass: 0,
+        learnedPassive: false,
+        attackRun: 0,
+        mobCritical: 0,
+        strength: 0,
+        special4: 0,
+        attackerLevel: 50);
+    var npcMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(50, 10, 0, 0, 0, 0, 0, 100, 100, 1, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(npcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    npcMob[LegacyAccountSnapshot.MobClanOffset] = 1;
+    BinaryPrimitives.WriteInt64LittleEndian(npcMob.AsSpan(LegacyAccountSnapshot.MobExperienceOffset), 1_000);
+    new LegacyItem(500, 0, 0, 0, 0, 0, 0).Write(
+        npcMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (11 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+    var npcId = hub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_111);
+    Assert(npcId == 20_111, "The deferred-death NPC was not registered.");
+
+    var request = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, npcId, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(1, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(2, npcId, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        SupportsSecondaryDamageSlot: true,
+        ItemData: CreateCombatItemDataTable(),
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1));
+
+    Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.CompletedNormally,
+        "The lethal NPC batch with a later valid slot did not finish normally.");
+    var death = batch!.SlotOutcomes[0].Outcome;
+    Assert(death is { TargetRemoved: true, TargetDied: true, RemainingHp: 0, ExperienceAwarded: 1_000 } &&
+        death.ItemDrops is { Count: 1 } drops && drops[0].Item.Index == 500,
+        $"Normal batch completion did not attach exactly one NPC removal, XP award, and guaranteed carry drop to the lethal slot: {death}.");
+    Assert(batch.SlotOutcomes[1].Result == LegacyPhysicalAttackResult.Accepted &&
+        batch.SlotOutcomes[2].Result == LegacyPhysicalAttackResult.TargetNotAlive &&
+        !hub.TryGetNpcSnapshot(npcId, out _) &&
+        hub.TryGetCombatState(1, out var attackerState) && attackerState!.Experience == 1_000,
+        "Normal completion did not finalize the NPC once after processing the remaining slots.");
+}
+
+static void WorldPhysicalAttackBatchOutOfRangeKeepsPartialMutation()
+{
+    var (hub, _) = CreatePhysicalAttackBatchFixture(
+        targetCount: 3,
+        attackerClass: 0,
+        learnedPassive: false,
+        attackRun: 0,
+        mobCritical: 0,
+        strength: 0,
+        special4: 0,
+        attackerLevel: 50);
+    var npcMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(50, 10, 0, 0, 0, 0, 0, 100, 100, 1, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(npcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    npcMob[LegacyAccountSnapshot.MobClanOffset] = 1;
+    BinaryPrimitives.WriteInt64LittleEndian(npcMob.AsSpan(LegacyAccountSnapshot.MobExperienceOffset), 1_000);
+    new LegacyItem(500, 0, 0, 0, 0, 0, 0).Write(
+        npcMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (11 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+    var npcId = hub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_112);
+    Assert(npcId == 20_112, "The partial-mutation NPC was not registered.");
+    var farMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100_000, 10, 0, 0, 0, 0, 0, 100_000, 100_000, 100_000, 100_000, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(farMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2024, 2000, farMob), "The out-of-range batch target could not be moved away.");
+    var request = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, npcId, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(1, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(2, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        SupportsSecondaryDamageSlot: true,
+        ItemData: CreateCombatItemDataTable(),
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1));
+
+    Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && !batch.CompletedNormally && batch.AbortSlotIndex == 1,
+        "The out-of-range physical slot did not abort the batch at original index 1.");
+    var partialDeath = batch!.SlotOutcomes[0].Outcome;
+    Assert(batch.SlotOutcomes.Count == 2 && batch.SlotOutcomes[1].Result == LegacyPhysicalAttackResult.OutOfRange &&
+        partialDeath is { TargetDied: true, TargetRemoved: false, RemainingHp: 0, ExperienceAwarded: 0 } &&
+        partialDeath.ItemDrops is null or { Count: 0 },
+        "The partial batch rolled back its lethal HP mutation or finalized death rewards before abort.");
+    Assert(hub.TryGetNpcSnapshot(npcId, out var deadNpc) && deadNpc is not null &&
+        LegacyMobCombatState.Read(deadNpc.MobSnapshot).CurrentScore.Hp == 0 &&
+        hub.TryGetCombatState(1, out var attackerState) && attackerState!.Experience == 0 &&
+        hub.TryGetCharacterSnapshot(1, out var attackerSnapshot, out _, out _, out _) && attackerSnapshot is not null &&
+        LegacyItem.Read(attackerSnapshot.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)).Index != 500,
+        "The out-of-range abort removed the dead NPC, awarded XP, or delivered its deferred drop.");
+    Assert(batch.SlotOutcomes.All(slot => slot.SlotIndex != 2), "The batch processed a slot after its out-of-range abort.");
+
+    var manaHub = new WorldHub();
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 0, 100, 0, 0, 0, 0, 1000, 1000, 1000, 1000, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var manaTargetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 10, 0, 0, 0, 0, 0, 1000, 1000, 1000, 400, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(manaTargetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var manaAffect = new byte[LegacyAccountSnapshot.AffectStride];
+    manaAffect[0] = 18;
+    Assert(manaHub.Enter(1, "BATCH_MANA_ATTACKER", (_, _) => ValueTask.CompletedTask) &&
+        manaHub.Enter(2, "BATCH_MANA_TARGET", (_, _) => ValueTask.CompletedTask) &&
+        manaHub.Enter(3, "BATCH_MANA_FAR_TARGET", (_, _) => ValueTask.CompletedTask),
+        "The abort/ManaControl participants were not registered.");
+    Assert(manaHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) &&
+        manaHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, manaTargetMob, LegacyAccountSnapshot.ClassMasterMortal, manaAffect) &&
+        manaHub.SetCharacterState(3, 0, 0, 3, 0, 0, 2024, 2000, farMob),
+        "The abort/ManaControl states were not initialized.");
+    var manaRequest = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(1, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1));
+    Assert(manaHub.TryApplyPhysicalAttackBatch(manaRequest, out var manaBatch) && manaBatch is not null &&
+        manaBatch.AbortSlotIndex == 1 && manaBatch.SlotOutcomes[0].Outcome is { TargetResourceChanged: true } manaOutcome &&
+        BinaryPrimitives.ReadInt32LittleEndian(manaOutcome.TargetMobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 379 &&
+        manaHub.TryGetResourceState(2, out var manaState, out _, out var requestedMp) && manaState!.CurrentMana == 379 && requestedMp == 400,
+        "The out-of-range abort rolled back immediate ManaControl mutation or its partial slot outcome.");
+}
+
+static void WorldPhysicalAttackBatchAbortDoesNotConsumeResurrection()
+{
+    var (hub, _) = CreatePhysicalAttackBatchFixture(
+        targetCount: 2,
+        attackerClass: 0,
+        learnedPassive: false,
+        attackRun: 0,
+        mobCritical: 0,
+        strength: 0,
+        special4: 0);
+    Assert(hub.TryGetCharacterSnapshot(2, out var victimMob, out _, out _, out _) && victimMob is not null,
+        "The resurrection target snapshot was unavailable.");
+    BinaryPrimitives.WriteInt32LittleEndian(victimMob!.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 1);
+    const int scrollSlot = 7;
+    new LegacyItem(3463, 61, 2, 0, 0, 0, 0).Write(
+        victimMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (scrollSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
+    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, victimMob),
+        "The lethal target with a resurrection stack could not be installed.");
+    var farMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100_000, 10, 0, 0, 0, 0, 0, 100_000, 100_000, 100_000, 100_000, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(farMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.SetCharacterState(3, 0, 0, 3, 0, 0, 2024, 2000, farMob),
+        "The resurrection abort target could not be moved out of range.");
+    var request = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, 2, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(1, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1));
+
+    Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.AbortSlotIndex == 1 && !batch.CompletedNormally,
+        "The lethal-player action did not abort at its later out-of-range slot.");
+    var lethal = batch!.SlotOutcomes[0].Outcome;
+    Assert(lethal is { TargetDied: true, TargetRevived: false, TargetRemoved: false, RemainingHp: 0, ConsumedItemSlot: -1 } &&
+        hub.TryGetResourceState(2, out var deadState, out var requestedHp, out _) && deadState!.CurrentScore.Hp == 0 && requestedHp == 0 &&
+        hub.TryGetCharacterSnapshot(2, out var deadMob, out _, out _, out _) && deadMob is not null &&
+        LegacyItem.Read(deadMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (scrollSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) is { Index: 3463, Effect1: 61, Value1: 2 },
+        "The aborted batch consumed the resurrection stack or finalized the player's death before normal completion.");
+}
+
+static void WorldPhysicalAttackBatchAbortKeepsSummonRegistered()
+{
+    var summonRun = FindReference769TmsrvRun();
+    var catalog = LegacySummonCatalog.Load(Path.Combine(summonRun, "BaseSummon"));
+    var ownerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 10, 30, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(ownerMob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+    new LegacyScore(100, 10, 30, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 120, 0, 0, 0, 0, 40, 0)
+        .Write(ownerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var mountOffset = LegacyAccountSnapshot.MobEquipmentOffset + (14 * LegacyItem.SizeInBytes);
+    new LegacyItem(2330, 0, 0, 0, 0, 0, 0).Write(ownerMob.AsSpan(mountOffset, LegacyItem.SizeInBytes));
+    BinaryPrimitives.WriteInt16LittleEndian(ownerMob.AsSpan(mountOffset + 2), 1);
+    var skill = new LegacySkillDefinition(50, 20, 0, 20, 0, 0, 11, 8, 0, 0, 0, 0, 0, [], [], 0, 0, 1, 1, 0, 0, 0, 0, "Evocar");
+    var hub = new WorldHub(summonCatalog: catalog, itemData: CreateCombatItemDataTable());
+    Assert(hub.Enter(1, "BATCH_SUMMON_OWNER", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, ownerMob) &&
+        hub.TryConsumeSkillMana(1, skill, out _, out _, out _) == LegacySkillManaResult.Accepted,
+        "The batch summon owner could not be initialized or pay the summon cost.");
+    Assert(hub.TryApplySkillAttack(1, 1, skill, itemData: null, weather: 0, randomFactor: 90, out var summonOutcome) == LegacySkillAttackResult.Accepted &&
+        summonOutcome?.SummonedMobs is { Count: 1 }, "The batch summon fixture could not create its Clan 4 summon.");
+    var summon = summonOutcome!.SummonedMobs![0];
+    BinaryPrimitives.WriteUInt16LittleEndian(summon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset), 315);
+    BinaryPrimitives.WriteInt32LittleEndian(summon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 1);
+
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 0, 1000, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var farTargetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 10, 0, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(farTargetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.Enter(2, "BATCH_SUMMON_ATTACKER", (_, _) => ValueTask.CompletedTask) &&
+        hub.Enter(3, "BATCH_SUMMON_FAR_TARGET", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(2, 0, 0, 5, 0, 0, 2000, 2000, attackerMob) &&
+        hub.SetCharacterState(3, 0, 0, 6, 0, 0, 2024, 2000, farTargetMob),
+        "The batch summon attacker and abort target were not initialized.");
+    Assert(hub.TrySelectSummonTarget(summon.ConnectionId, out var selection) && selection?.TargetConnectionId == 2 &&
+        hub.TryGetSummonTarget(summon.ConnectionId, out var selectedTarget) && selectedTarget == 2,
+        "The summon did not retain the hostile target needed to observe deferred removal.");
+
+    var request = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 2,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(0, summon.ConnectionId, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+            new LegacyPhysicalAttackBatchSlotRequest(1, 3, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        SupportsSecondaryDamageSlot: true,
+        ActionRolls: new LegacyPhysicalAttackBatchActionRolls(DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1));
+    Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.AbortSlotIndex == 1 && !batch.CompletedNormally &&
+        batch.SlotOutcomes[0].Outcome is { TargetDied: true, TargetRemoved: false, RemainingHp: 0 } &&
+        hub.TryGetSummonTarget(summon.ConnectionId, out selectedTarget) && selectedTarget == 2 &&
+        hub.TryGetCharacterSnapshot(1, out var unchangedOwner, out _, out _, out _) && unchangedOwner is not null &&
+        BinaryPrimitives.ReadInt16LittleEndian(unchangedOwner.AsSpan(mountOffset + 2)) == 1,
+        "The out-of-range abort removed the lethal summon, cleared its target, or linked dead summon HP to the owner's mount.");
+}
+
+static void WorldAttackPrunesDeadPartySummons()
+{
+    var summonRun = FindReference769TmsrvRun();
+    var catalog = LegacySummonCatalog.Load(Path.Combine(summonRun, "BaseSummon"));
+    var hub = new WorldHub(summonCatalog: catalog, itemData: CreateCombatItemDataTable());
+    var ownerScore = new LegacyScore(100, 10, 30, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 120, 0, 0, 0, 0, 40, 0);
+    for (var connectionId = 1; connectionId <= 3; connectionId++)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        ownerScore.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        ownerScore.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        Assert(hub.Enter(connectionId, $"PARTY_SUMMON_CLEANUP_{connectionId}", (_, _) => ValueTask.CompletedTask) &&
+            hub.SetCharacterState(connectionId, 0, 0, 5, 0, 0, 2000, 2000, mob) &&
+            hub.SetCombatEligibilityState(connectionId, pkMode: false, guilty: false, mapAttribute: 0x40),
+            $"Party-summon cleanup participant {connectionId} was not initialized.");
+    }
+    Assert(hub.TrySetParty(1, [1, 2]), "The attacker party for summon cleanup was not formed.");
+
+    var skill = new LegacySkillDefinition(50, 20, 0, 20, 0, 0, 11, 8, 0, 0, 0, 0, 0, [], [], 0, 0, 1, 1, 0, 0, 0, 0, "Evocar");
+    LegacySummonedMob CreateSummon(int summonerConnectionId)
+    {
+        Assert(hub.TryConsumeSkillMana(summonerConnectionId, skill, out _, out _, out _) == LegacySkillManaResult.Accepted,
+            $"Summoner {summonerConnectionId} could not pay the summon skill cost.");
+        Assert(hub.TryApplySkillAttack(summonerConnectionId, summonerConnectionId, skill, itemData: null, weather: 0, randomFactor: 90, out var summonOutcome) ==
+            LegacySkillAttackResult.Accepted && summonOutcome?.SummonedMobs is { Count: 1 },
+            $"Summoner {summonerConnectionId} could not create its party summon.");
+        return summonOutcome!.SummonedMobs![0];
+    }
+
+    var deadAttackerPartySummon = CreateSummon(2);
+    var attackedPartySummon = CreateSummon(3);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        deadAttackerPartySummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+
+    var attackRequest = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(
+                0,
+                attackedPartySummon.ConnectionId,
+                new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        ItemData: CreateCombatItemDataTable());
+    Assert(hub.TryApplyPhysicalAttackBatch(attackRequest, out var batch) && batch is { CompletedNormally: true } &&
+        batch.SlotOutcomes.Single().Outcome is { Damage: > 0, RemainingHp: > 0 },
+        "The positive attack against a living party summon did not reach the legacy party propagation tail.");
+    Assert(!hub.TryGetSummonEnemyList(deadAttackerPartySummon.ConnectionId, out _) &&
+        hub.TryGetSummonEnemyList(attackedPartySummon.ConnectionId, out _),
+        "MSG_Attack left a dead attacker-party summon registered or removed the living attacked summon.");
+    Assert(batch!.ViewRemovalEffects.Select(static effect => effect.TargetConnectionId)
+        .SequenceEqual([deadAttackerPartySummon.ConnectionId]),
+        "The party cleanup did not return the dead-summon RemoveMob effect from the attacker-party loop.");
+    Assert(batch.ViewRemovalEffects.Single().ViewRecipientConnectionIds is { Count: 3 } recipients &&
+        recipients.SequenceEqual([1, 2, 3]),
+        "The dead-summon removal did not capture the summon tile's complete view before cleanup.");
+}
+
+static void WorldAttackPrunesDeadPartySummonsForPlayerAndNpcTargets()
+{
+    var summonRun = FindReference769TmsrvRun();
+    var catalog = LegacySummonCatalog.Load(Path.Combine(summonRun, "BaseSummon"));
+    var hub = new WorldHub(summonCatalog: catalog, itemData: CreateCombatItemDataTable());
+    var participantScore = new LegacyScore(100, 10, 30, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 120, 0, 0, 0, 0, 40, 0);
+    for (var connectionId = 1; connectionId <= 4; connectionId++)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        participantScore.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        participantScore.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        Assert(hub.Enter(connectionId, $"PARTY_TAIL_CLEANUP_{connectionId}", (_, _) => ValueTask.CompletedTask) &&
+            hub.SetCharacterState(connectionId, 0, 0, 5, 0, 0, 2000, 2000, mob) &&
+            hub.SetCombatEligibilityState(connectionId, pkMode: false, guilty: false, mapAttribute: 0x40),
+            $"Party-tail cleanup participant {connectionId} was not initialized.");
+    }
+    Assert(hub.TrySetParty(1, [1, 2]) && hub.TrySetParty(3, [3, 4]),
+        "The attacker and target parties for cleanup were not formed.");
+
+    var summonSkill = new LegacySkillDefinition(50, 20, 0, 20, 0, 0, 11, 8, 0, 0, 0, 0, 0, [], [], 0, 0, 1, 1, 0, 0, 0, 0, "Evocar");
+    LegacySummonedMob CreatePartySummon(int summonerConnectionId)
+    {
+        Assert(hub.TryConsumeSkillMana(summonerConnectionId, summonSkill, out _, out _, out _) == LegacySkillManaResult.Accepted,
+            $"Party member {summonerConnectionId} could not pay for its summon.");
+        var summonResult = hub.TryApplySkillAttack(
+            summonerConnectionId,
+            summonerConnectionId,
+            summonSkill,
+            itemData: null,
+            weather: 0,
+            randomFactor: 90,
+            out var summonOutcome);
+        Assert(summonResult == LegacySkillAttackResult.Accepted && summonOutcome?.SummonedMobs is { Count: 1 },
+            $"Party member {summonerConnectionId} could not create a summon for attack-tail cleanup.");
+        return summonOutcome!.SummonedMobs![0];
+    }
+
+    var deadAttackerPartySummon = CreatePartySummon(2);
+    var deadTargetPartySummon = CreatePartySummon(4);
+    BinaryPrimitives.WriteInt32LittleEndian(deadAttackerPartySummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    BinaryPrimitives.WriteInt32LittleEndian(deadTargetPartySummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+
+    var playerAttackRequest = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(
+                0,
+                TargetConnectionId: 3,
+                new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        ItemData: CreateCombatItemDataTable());
+    Assert(hub.TryApplyPhysicalAttackBatch(playerAttackRequest, out var playerBatch) &&
+        playerBatch is { CompletedNormally: true } &&
+        playerBatch.SlotOutcomes.Single().Outcome is { Damage: > 0, RemainingHp: > 0 },
+        "The attack against a living player did not reach its source tail.");
+    Assert(playerBatch!.ViewRemovalEffects.Select(static effect => effect.TargetConnectionId)
+        .SequenceEqual([deadAttackerPartySummon.ConnectionId, deadTargetPartySummon.ConnectionId]) &&
+        !hub.TryGetSummonEnemyList(deadAttackerPartySummon.ConnectionId, out _) &&
+        !hub.TryGetSummonEnemyList(deadTargetPartySummon.ConnectionId, out _),
+        "The player-target tail did not remove dead summons from both player parties in source order.");
+
+    var deadNpcTargetSummon = CreatePartySummon(2);
+    Assert(deadNpcTargetSummon.LeaderConnectionId == 1,
+        $"The fixture summon belongs to party leader {deadNpcTargetSummon.LeaderConnectionId}, expected attacker leader 1.");
+    BinaryPrimitives.WriteInt32LittleEndian(deadNpcTargetSummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    var npcMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    participantScore.Write(npcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var npcId = hub.EnterNpc(npcMob, 2005, 2000, requestedConnectionId: 20_101, generateIndex: 1);
+    Assert(npcId == 20_101, "The cleanup NPC target was not registered.");
+
+    var npcAttackRequest = new LegacyPhysicalAttackBatchRequest(
+        AttackerConnectionId: 1,
+        Slots:
+        [
+            new LegacyPhysicalAttackBatchSlotRequest(
+                0,
+                npcId,
+                new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99)),
+        ],
+        ItemData: CreateCombatItemDataTable());
+    Assert(hub.TryApplyPhysicalAttackBatch(npcAttackRequest, out var npcBatch) &&
+        npcBatch is { CompletedNormally: true } &&
+        npcBatch.SlotOutcomes.Single().Outcome is { Damage: > 0, RemainingHp: > 0 },
+        "The attack against a living NPC did not reach its source tail.");
+    Assert(hub.TryGetNpcCombatState(npcId, out var npcMode, out _, out _) && npcMode == LegacyNpcMode.Combat,
+        $"The positive NPC attack did not apply its existing combat aggro branch; mode={npcMode}.");
+    var npcRemovalIds = npcBatch!.ViewRemovalEffects.Select(static effect => effect.TargetConnectionId).ToArray();
+    Assert(npcRemovalIds.SequenceEqual([deadNpcTargetSummon.ConnectionId]),
+        $"The NPC-target tail returned removal IDs [{string.Join(',', npcRemovalIds)}], expected {deadNpcTargetSummon.ConnectionId}.");
+    Assert(!hub.TryGetSummonEnemyList(deadNpcTargetSummon.ConnectionId, out _),
+        "The NPC-target tail left the attacker's dead party summon registered.");
+
+    var skillDeadAttackerPartySummon = CreatePartySummon(2);
+    var skillDeadTargetPartySummon = CreatePartySummon(4);
+    BinaryPrimitives.WriteInt32LittleEndian(skillDeadAttackerPartySummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    BinaryPrimitives.WriteInt32LittleEndian(skillDeadTargetPartySummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    var damagingSkill = new LegacySkillDefinition(10, 69, 1, 20, 15, 1, 1, 40, 0, 0, 0, 0, 0, [], [], 0, 0, 1, 2, 0, 0, 1, 0, "Golpe_Mortal");
+    var playerSkillResult = hub.TryApplySkillAttack(
+        1,
+        3,
+        damagingSkill,
+        CreateCombatItemDataTable(),
+        weather: 0,
+        randomFactor: 90,
+        out var playerSkillOutcome,
+        attackMissRoll: 99);
+    Assert(playerSkillResult == LegacySkillAttackResult.Accepted && playerSkillOutcome is { Damage: > 0, RemainingHp: > 0 },
+        $"The skill attack against a living player did not reach its source tail: result={playerSkillResult}, damage={playerSkillOutcome?.Damage}, hp={playerSkillOutcome?.RemainingHp}.");
+    Assert(playerSkillOutcome!.ViewRemovalEffects?.Select(static effect => effect.TargetConnectionId)
+        .SequenceEqual([skillDeadAttackerPartySummon.ConnectionId, skillDeadTargetPartySummon.ConnectionId]) == true &&
+        !hub.TryGetSummonEnemyList(skillDeadAttackerPartySummon.ConnectionId, out _) &&
+        !hub.TryGetSummonEnemyList(skillDeadTargetPartySummon.ConnectionId, out _),
+        "The player skill tail did not remove dead summons from both player parties in source order.");
+
+    var skillDeadNpcPartySummon = CreatePartySummon(2);
+    BinaryPrimitives.WriteInt32LittleEndian(skillDeadNpcPartySummon.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    var skillNpcMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    participantScore.Write(skillNpcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var skillNpcId = hub.EnterNpc(skillNpcMob, 2005, 2000, requestedConnectionId: 20_102, generateIndex: 1);
+    Assert(skillNpcId == 20_102, "The skill cleanup NPC target was not registered.");
+    var npcSkillResult = hub.TryApplySkillAttack(
+        1,
+        skillNpcId,
+        damagingSkill,
+        CreateCombatItemDataTable(),
+        weather: 0,
+        randomFactor: 90,
+        out var npcSkillOutcome,
+        attackMissRoll: 99);
+    Assert(npcSkillResult == LegacySkillAttackResult.Accepted && npcSkillOutcome is { Damage: > 0, RemainingHp: > 0 },
+        $"The skill attack against a living NPC did not reach its source tail: result={npcSkillResult}, damage={npcSkillOutcome?.Damage}, hp={npcSkillOutcome?.RemainingHp}.");
+    Assert(npcSkillOutcome!.ViewRemovalEffects?.Select(static effect => effect.TargetConnectionId)
+        .SequenceEqual([skillDeadNpcPartySummon.ConnectionId]) == true &&
+        !hub.TryGetSummonEnemyList(skillDeadNpcPartySummon.ConnectionId, out _),
+        "The NPC skill tail did not remove the attacker's dead party summon.");
+}
+
+static void WorldPhysicalAttackBatchCardinalityAndOrder()
+{
+    foreach (var slotCount in new[] { 1, 2, 13 })
+    {
+        var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        new LegacyScore(100, 0, 100, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 40, 0, 0, 0)
+            .Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        new LegacyScore(100_000, 10, 0, 0, 0, 0, 0, 100_000, 100_000, 100_000, 100_000, 0, 0, 0, 0, 0, 0, 0, 0)
+            .Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+        var hub = new WorldHub();
+        Assert(hub.Enter(1, $"BATCH_ATTACKER_{slotCount}", (_, _) => ValueTask.CompletedTask),
+            $"Batch attacker for {slotCount} slots could not be registered.");
+        Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2_000, 2_000, attackerMob),
+            $"Batch attacker state for {slotCount} slots could not be set.");
+
+        for (var targetId = 2; targetId <= Math.Max(2, slotCount); targetId++)
+        {
+            Assert(hub.Enter(targetId, $"BATCH_TARGET_{slotCount}_{targetId}", (_, _) => ValueTask.CompletedTask),
+                $"Batch target {targetId} for {slotCount} slots could not be registered.");
+            Assert(hub.SetCharacterState(targetId, 0, 0, targetId, 0, 0, 2_005, 2_005, targetMob),
+                $"Batch target state {targetId} for {slotCount} slots could not be set.");
+        }
+
+        var targetIds = Enumerable.Range(0, slotCount)
+            .Select(index => index < 2 ? 2 : index + 1)
+            .ToArray();
+        var requests = targetIds.Select((targetId, slotIndex) => new LegacyPhysicalAttackBatchSlotRequest(
+            slotIndex,
+            targetId,
+            new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99))).ToArray();
+        var request = new LegacyPhysicalAttackBatchRequest(
+            AttackerConnectionId: 1,
+            Slots: requests,
+            ClientProgress: 0,
+            SupportsSecondaryDamageSlot: slotCount >= 2,
+            ActionRolls: new LegacyPhysicalAttackBatchActionRolls(DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1));
+
+        Assert(hub.TryApplyPhysicalAttackBatch(request, out var batch) && batch is not null && batch.CompletedNormally,
+            $"The {slotCount}-slot physical action did not complete as one batch.");
+        Assert(batch!.SlotOutcomes.Count == slotCount,
+            $"The {slotCount}-slot batch returned {batch.SlotOutcomes.Count} slot outcomes.");
+        for (var index = 0; index < slotCount; index++)
+        {
+            var slot = batch.SlotOutcomes[index];
+            Assert(slot.SlotIndex == index && slot.Result == LegacyPhysicalAttackResult.Accepted &&
+                slot.Outcome is { } outcome && outcome.TargetConnectionId == targetIds[index] && outcome.Damage > 0,
+                $"Batch slot order/target mismatch: count={slotCount}, index={index}, result={slot.Result}, target={slot.Outcome?.TargetConnectionId}, expected={targetIds[index]}.");
+        }
+
+        if (slotCount >= 2)
+        {
+            var first = batch.SlotOutcomes[0].Outcome!;
+            var second = batch.SlotOutcomes[1].Outcome!;
+            Assert(first.TargetConnectionId == second.TargetConnectionId && first.RemainingHp < 100_000 &&
+                second.RemainingHp < first.RemainingHp &&
+                hub.TryGetResourceState(2, out var repeatedTarget, out _, out _) && repeatedTarget!.CurrentScore.Hp == second.RemainingHp,
+                $"Repeated target in a {slotCount}-slot action did not observe both ordered HP mutations.");
+        }
+    }
+}
+
+static void UnifiedPhysicalBatchMatchesLegacyBatchAndSingleSlotWrapper()
+{
+    foreach (var slotCount in new[] { 1, 2, 13 })
+    {
+        var (legacyHub, targetIds) = CreatePhysicalAttackBatchFixture(
+            slotCount, attackerClass: 0, learnedPassive: false, attackRun: 0xF0, mobCritical: 100, strength: 0, special4: 0);
+        var (genericHub, genericTargetIds) = CreatePhysicalAttackBatchFixture(
+            slotCount, attackerClass: 0, learnedPassive: false, attackRun: 0xF0, mobCritical: 100, strength: 0, special4: 0);
+        var physicalSlots = targetIds.Select((targetId, index) => new LegacyPhysicalAttackBatchSlotRequest(
+            index, targetId, new LegacyPhysicalAttackBatchSlotRolls(RandomFactor: 99, AttackMissRoll: 99))).ToArray();
+        var actionRolls = new LegacyPhysicalAttackBatchActionRolls(
+            DoubleCriticalRoll: 3, DoubleCriticalChanceRoll: 254, DoubleCriticalDamageRoll: 1);
+        var legacyRequest = new LegacyPhysicalAttackBatchRequest(
+            1, physicalSlots, ClientProgress: 23, SupportsSecondaryDamageSlot: slotCount >= 2,
+            ActionRolls: actionRolls);
+        var genericRequest = new LegacyAttackActionBatchRequest(
+            1,
+            physicalSlots.Select(slot => new LegacyAttackActionBatchSlotRequest(
+                slot.SlotIndex, LegacyAttackActionSlotKind.Physical, slot.TargetConnectionId, slot.Rolls)).ToArray(),
+            ClientProgress: 23,
+            SupportsSecondaryDamageSlot: slotCount >= 2,
+            PhysicalActionRolls: actionRolls);
+
+        Assert(legacyHub.TryApplyPhysicalAttackBatch(legacyRequest, out var legacy) && legacy is { CompletedNormally: true },
+            $"The legacy physical batch did not complete for {slotCount} slots.");
+        Assert(genericHub.TryApplyAttackActionBatch(genericRequest, out var generic) && generic is { CompletedNormally: true },
+            $"The unified physical batch did not complete for {slotCount} slots.");
+        Assert(targetIds.SequenceEqual(genericTargetIds) && generic!.SlotOutcomes.Count == slotCount &&
+            generic.AbortSlotIndex == legacy!.AbortSlotIndex && generic.DoubleCritical == legacy.DoubleCritical &&
+            generic.NextProgress == legacy.NextProgress && generic.WireSlotOverrides.SequenceEqual(legacy.WireSlotOverrides) &&
+            generic.AttackerMobSnapshot!.SequenceEqual(legacy.AttackerMobSnapshot!),
+            $"The unified aggregate state differs from the legacy {slotCount}-slot wrapper.");
+
+        var verifiedGeneric = generic!;
+        var verifiedLegacy = legacy!;
+
+        for (var index = 0; index < slotCount; index++)
+        {
+            var actual = verifiedGeneric.SlotOutcomes[index];
+            var expected = verifiedLegacy.SlotOutcomes[index];
+            Assert(actual.SlotIndex == expected.SlotIndex && actual.Kind == LegacyAttackActionSlotKind.Physical &&
+                actual.PhysicalResult == expected.Result && actual.PhysicalOutcome is { } actualOutcome && expected.Outcome is { } expectedOutcome &&
+                actualOutcome.TargetConnectionId == expectedOutcome.TargetConnectionId && actualOutcome.Damage == expectedOutcome.Damage &&
+                actualOutcome.RemainingHp == expectedOutcome.RemainingHp && actualOutcome.DoubleCritical == expectedOutcome.DoubleCritical &&
+                actualOutcome.NextProgress == expectedOutcome.NextProgress && actualOutcome.TargetMobSnapshot.SequenceEqual(expectedOutcome.TargetMobSnapshot),
+                $"Unified batch slot {index} differs from its legacy physical outcome.");
+        }
+    }
+
+    var (singleHub, singleTargets) = CreatePhysicalAttackBatchFixture(
+        targetCount: 1, attackerClass: 0, learnedPassive: false, attackRun: 0xF0, mobCritical: 100, strength: 0, special4: 0);
+    var singleResult = singleHub.TryApplyPhysicalAttack(
+        1, singleTargets[0], randomFactor: 99, out var singleOutcome,
+        attackMissRoll: 99, supportsSecondaryDamageSlot: false, doubleCriticalRoll: 3,
+        clientProgress: 23, doubleCriticalChanceRoll: 254, doubleCriticalDamageRoll: 1);
+    Assert(singleResult == LegacyPhysicalAttackResult.Accepted && singleOutcome is not null &&
+        singleHub.TryGetResourceState(singleTargets[0], out var singleTarget, out _, out _) && singleTarget is not null &&
+        singleOutcome.RemainingHp == singleTarget.CurrentScore.Hp,
+        "The existing one-slot physical API stopped returning the authoritative result after batch unification.");
+}
+
 static void WorldPhysicalAttack()
 {
     var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
@@ -5414,10 +7947,21 @@ static void WorldPhysicalAttack()
     Assert(hub.Enter(1, "ATTACKER", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "TARGET", (_, _) => ValueTask.CompletedTask), "Physical-combat participants were not registered.");
     Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Physical-combat participant state was not set.");
 
-    var result = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var outcome);
+    var result = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var outcome, attackMissRoll: 99);
     Assert(result == LegacyPhysicalAttackResult.Accepted && outcome is not null && outcome.Damage == 21 && outcome.RemainingHp == 79, "Physical target damage did not match the legacy player penetration path.");
     Assert(hub.TryGetCombatState(2, out var targetState) && targetState!.CurrentScore.Hp == 79, "Physical attack did not mutate target HP atomically.");
     Assert(hub.TryGetResourceState(2, out var targetResources, out var targetRequestedHp, out _) && targetResources!.CurrentScore.Hp == 79 && targetRequestedHp == 79 && outcome!.TargetHpChanged, "Physical attack did not expose the authoritative target HP/ReqHp update for SendSetHpMp.");
+
+    var clanFourNpcMob = targetMob.ToArray();
+    (targetScore with { Hp = 1_000 }).Write(clanFourNpcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    clanFourNpcMob[LegacyAccountSnapshot.MobClanOffset] = 4;
+    var clanFourNpcHub = new WorldHub();
+    Assert(clanFourNpcHub.Enter(1, "CLAN_FOUR_ATTACKER", (_, _) => ValueTask.CompletedTask), "Clan-4 NPC attacker was not registered.");
+    Assert(clanFourNpcHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "Clan-4 NPC attacker state was not set.");
+    var clanFourNpcId = clanFourNpcHub.EnterNpc(clanFourNpcMob, 2005, 2005, requestedConnectionId: 20_001);
+    var clanFourNpcResult = clanFourNpcHub.TryApplyPhysicalAttack(1, clanFourNpcId, randomFactor: 99, out var clanFourNpcOutcome);
+    Assert(clanFourNpcResult == LegacyPhysicalAttackResult.Accepted && clanFourNpcOutcome is not null && clanFourNpcOutcome.Damage == 23 && clanFourNpcOutcome.RemainingHp == 977,
+        $"The 7.69 penetration quarter was not applied to a clan-4 NPC target: result={clanFourNpcResult}, damage={clanFourNpcOutcome?.Damage}, hp={clanFourNpcOutcome?.RemainingHp}.");
 
     var absorptionAffect = new byte[256];
     absorptionAffect[0] = 8;
@@ -5428,9 +7972,9 @@ static void WorldPhysicalAttack()
     var absorptionHub = new WorldHub();
     Assert(absorptionHub.Enter(1, "ABSORBER", (_, _) => ValueTask.CompletedTask) && absorptionHub.Enter(2, "ABSORB_TARGET", (_, _) => ValueTask.CompletedTask), "HP-absorption participants were not registered.");
     Assert(absorptionHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, absorptionAttackerMob, LegacyAccountSnapshot.ClassMasterMortal, absorptionAffect) && absorptionHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "HP-absorption fixture was not set.");
-    var absorptionResult = absorptionHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var absorptionOutcome, absorptionRoll: 0);
-    Assert(absorptionResult == LegacyPhysicalAttackResult.Accepted && absorptionOutcome is not null && absorptionOutcome.Damage == 21 && absorptionOutcome.AttackerHpAbsorbed == 4 && absorptionOutcome.AttackerRequestedHp == 4, $"HpAbs did not preserve the legacy Type 8 bit 3 calculation and ReqHp assignment: result={absorptionResult}, damage={absorptionOutcome?.Damage}, absorbed={absorptionOutcome?.AttackerHpAbsorbed}, requested={absorptionOutcome?.AttackerRequestedHp}.");
-    Assert(absorptionHub.TryGetCombatState(1, out var absorptionState) && absorptionState!.CurrentScore.Hp == 50, "HpAbs incorrectly mutated the attacker's authoritative MOB HP instead of only ReqHp.");
+    var absorptionResult = absorptionHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var absorptionOutcome, attackMissRoll: 99, absorptionRoll: 0);
+    Assert(absorptionResult == LegacyPhysicalAttackResult.Accepted && absorptionOutcome is not null && absorptionOutcome.Damage == 21 && absorptionOutcome.AttackerHpAbsorbed == 0 && absorptionOutcome.AttackerRequestedHp == 50, $"7.69 Type 8 bit 3 did not truncate 2% of final damage before recovering HP: result={absorptionResult}, damage={absorptionOutcome?.Damage}, absorbed={absorptionOutcome?.AttackerHpAbsorbed}, requested={absorptionOutcome?.AttackerRequestedHp}.");
+    Assert(absorptionHub.TryGetCombatState(1, out var absorptionState) && absorptionState!.CurrentScore.Hp == 50, "A 21-damage hit incorrectly restored Type 8 bit 3 HP.");
 
     var modifierAttackerMob = attackerMob.ToArray();
     new LegacyItem(14, 116, 231, 0, 0, 0, 0).Write(modifierAttackerMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset));
@@ -5438,7 +7982,7 @@ static void WorldPhysicalAttack()
     var modifierHub = new WorldHub();
     Assert(modifierHub.Enter(1, "MODIFIER", (_, _) => ValueTask.CompletedTask) && modifierHub.Enter(2, "MODIFIER_TARGET", (_, _) => ValueTask.CompletedTask), "Physical modifier participants were not registered.");
     Assert(modifierHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, modifierAttackerMob) && modifierHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Physical modifier fixture was not set.");
-    var modifierResult = modifierHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var modifierOutcome, parryRandomRoll: 1000, itemData: CreateCombatItemDataTable(), absorptionRoll: 1);
+    var modifierResult = modifierHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var modifierOutcome, attackMissRoll: 99, itemData: CreateCombatItemDataTable(), absorptionRoll: 1);
     Assert(modifierResult == LegacyPhysicalAttackResult.Accepted && modifierOutcome is not null && modifierOutcome.Damage == 106 && modifierOutcome.ForceDamage == 80 && modifierOutcome.PvpDamage == 5, $"ForceDamage/PvPDamage did not preserve the legacy post-penetration integer order: result={modifierResult}, damage={modifierOutcome?.Damage}, force={modifierOutcome?.ForceDamage}, pvp={modifierOutcome?.PvpDamage}.");
 
     using var secondarySkillReader = new StringReader("36,72,1,35,5,6,3,200,0,0,1,2,1,6.0.0.7.0.0.0.0,6.0.0.7.0.0.0.0,2,0,1,1,0,2,0,1,Nevasca\n40,24,1,9,2,6,4,20,20,10,0,0,1,10.0.0.9.0.0.0.0,10.0.0.9.0.0.0.0,4,0,1,1,0,0,0,1,Névoa_Venenosa");
@@ -5449,7 +7993,7 @@ static void WorldPhysicalAttack()
     var secondaryHub = new WorldHub(skillData: secondarySkills);
     Assert(secondaryHub.Enter(1, "SECONDARY_ATTACKER", (_, _) => ValueTask.CompletedTask) && secondaryHub.Enter(2, "SECONDARY_TARGET", (_, _) => ValueTask.CompletedTask), "Secondary-effect participants were not registered.");
     Assert(secondaryHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, secondaryAttackerMob) && secondaryHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Secondary-effect fixture was not set.");
-    var secondaryResult = secondaryHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var secondaryOutcome, parryRandomRoll: 1000, frostRoll: 0, drainRoll: 0);
+    var secondaryResult = secondaryHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var secondaryOutcome, attackMissRoll: 99, frostRoll: 0, drainRoll: 0);
     var secondaryAffect = secondaryOutcome?.TargetAffectSnapshot ?? [];
     Assert(secondaryResult == LegacyPhysicalAttackResult.Accepted && secondaryOutcome is not null && secondaryOutcome.Damage > 0 && secondaryAffect.Length == LegacyAccountSnapshot.AffectStride && secondaryAffect[0] == 1 && secondaryAffect[1] == 2 && BinaryPrimitives.ReadUInt16LittleEndian(secondaryAffect.AsSpan(2)) == 40 && BinaryPrimitives.ReadUInt32LittleEndian(secondaryAffect.AsSpan(4)) == 1 && secondaryAffect[8] == 20 && secondaryAffect[9] == 10, "RSV_FROST/RSV_DRAIN did not apply the legacy skill 36/40 affect values, level, and duration to the target.");
 
@@ -5463,7 +8007,7 @@ static void WorldPhysicalAttack()
     Assert(reflectingHub.Enter(1, "REFLECT_ATTACKER", (_, _) => ValueTask.CompletedTask) && reflectingHub.Enter(2, "REFLECT_TARGET", (_, _) => ValueTask.CompletedTask), "Reflection participants were not registered.");
     Assert(reflectingHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && reflectingHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, reflectingTargetMob), "Reflection fixture was not set.");
     var reflectionTable = CreateCombatItemDataTable();
-    var reflectionResult = reflectingHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var reflectionOutcome, parryRandomRoll: 1000, itemData: reflectionTable, absorptionRoll: 1);
+    var reflectionResult = reflectingHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var reflectionOutcome, attackMissRoll: 99, itemData: reflectionTable, absorptionRoll: 1);
     Assert(reflectionResult == LegacyPhysicalAttackResult.Accepted && reflectionOutcome is not null && reflectionOutcome.Damage == 1 && reflectionOutcome.RemainingHp == 99 && reflectionOutcome.ReflectDamage == 370 && reflectionOutcome.ReflectPvp == 5, $"ReflectDamage/ReflectPvP did not preserve the legacy class, grade, gem/sanctuary, minimum-one, and integer percentage order: result={reflectionResult}, damage={reflectionOutcome?.Damage}, hp={reflectionOutcome?.RemainingHp}, reflect={reflectionOutcome?.ReflectDamage}, pvp={reflectionOutcome?.ReflectPvp}.");
 
     var adultMountCatalog = LegacySummonCatalog.Load(Path.Combine(FindReference759TmsrvRun(), "BaseSummon"), LegacySummonCatalog.HistoricalLoadedSlotCount);
@@ -5474,7 +8018,7 @@ static void WorldPhysicalAttack()
     var adultMountHub = new WorldHub(summonCatalog: adultMountCatalog);
     Assert(adultMountHub.Enter(1, "ADULT_MOUNT_ATTACKER", (_, _) => ValueTask.CompletedTask) && adultMountHub.Enter(2, "ADULT_MOUNT_TARGET", (_, _) => ValueTask.CompletedTask), "Adult-mount participants were not registered.");
     Assert(adultMountHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && adultMountHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, mountedTargetMob), "Adult-mount fixture was not set.");
-    var adultMountResult = adultMountHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var adultMountOutcome, parryRandomRoll: 1000);
+    var adultMountResult = adultMountHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var adultMountOutcome, attackMissRoll: 99);
     var adultMountHp = adultMountOutcome is null ? -1 : BinaryPrimitives.ReadInt16LittleEndian(adultMountOutcome.TargetMobSnapshot.AsSpan(adultMountOffset + 2));
     Assert(adultMountResult == LegacyPhysicalAttackResult.Accepted && adultMountOutcome is not null && adultMountOutcome.Damage == 15 && adultMountOutcome.RemainingHp == 85 && adultMountOutcome.MountDurabilityLoss == 3 && adultMountOutcome.MountOwnerConnectionId == 2 && adultMountHp == 97 && adultMountOutcome.UpdatedMountItem is { Effect1: 97, Value1: 0, Effect3: 4 }, $"ProcessAdultMount did not preserve the 75/25 player split and half-loss durability update: result={adultMountResult}, damage={adultMountOutcome?.Damage}, hp={adultMountOutcome?.RemainingHp}, mountLoss={adultMountOutcome?.MountDurabilityLoss}, mountHp={adultMountHp}.");
 
@@ -5485,7 +8029,7 @@ static void WorldPhysicalAttack()
     var scrollHub = new WorldHub();
     Assert(scrollHub.Enter(1, "ATTACKER", (_, _) => ValueTask.CompletedTask) && scrollHub.Enter(2, "SCROLL_TARGET", (_, _) => ValueTask.CompletedTask), "Resurrection-scroll participants were not registered.");
     Assert(scrollHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && scrollHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, scrollTargetMob), "Resurrection-scroll fixture was not set.");
-    var scrollResult = scrollHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var scrollOutcome);
+    var scrollResult = scrollHub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var scrollOutcome, attackMissRoll: 99);
     Assert(scrollResult == LegacyPhysicalAttackResult.Accepted && scrollOutcome is not null && scrollOutcome.TargetRevived && !scrollOutcome.TargetDied && scrollOutcome.RemainingHp == 100 && scrollOutcome.ConsumedItemSlot == scrollSlot && scrollOutcome.ConsumedItem is { Index: 3463, Effect1: 61, Value1: 1 }, "A lethal attack did not consume one unit of the legacy resurrection scroll and restore maximum HP.");
     Assert(scrollHub.TryGetResourceState(2, out var scrollState, out _, out var scrollRequestedMp) && scrollState!.CurrentScore.Hp == 100 && scrollState.CurrentMana == 100 && scrollRequestedMp == 100, "Resurrection scroll did not restore authoritative HP/MP resources.");
     Assert(LegacyItem.Read(scrollOutcome!.TargetMobSnapshot.AsSpan(LegacyAccountSnapshot.MobCarryOffset + (scrollSlot * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes)) is { Index: 3463, Effect1: 61, Value1: 1 }, "Resurrection scroll stack amount was not decremented in the carry slot.");
@@ -5497,18 +8041,20 @@ static void WorldPhysicalAttack()
     Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "Physical attacker fixture could not be restored after the dead-attacker case.");
 
     targetMob[LegacyAccountSnapshot.MobEquipmentOffset + LegacyItem.SizeInBytes] = 4;
-    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Parry target fixture could not be equipped.");
-    var parryResult = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var parryOutcome, parryRandomRoll: 50, itemData: CreateCombatItemDataTable());
-    Assert(parryResult == LegacyPhysicalAttackResult.Accepted && parryOutcome is not null && parryOutcome.Damage == -3 && parryOutcome.RemainingHp == 100, "Physical parry did not emit -3 while preserving HP.");
+    (targetScore with { Dexterity = 100 }).Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Miss target fixture could not be equipped.");
+    var missResult = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var missOutcome, attackMissRoll: 0, itemData: CreateCombatItemDataTable());
+    Assert(missResult == LegacyPhysicalAttackResult.Accepted && missOutcome is not null && missOutcome.Damage == -3 && missOutcome.RemainingHp == 100, "The 7.69 physical miss did not emit -3 while preserving HP.");
     BinaryPrimitives.WriteUInt16LittleEndian(targetMob.AsSpan(LegacyAccountSnapshot.MobRsvOffset), 0x200);
-    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Special-parry target fixture could not be reset.");
-    var specialParryResult = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var specialParryOutcome, parryRandomRoll: 50, itemData: CreateCombatItemDataTable());
-    Assert(specialParryResult == LegacyPhysicalAttackResult.Accepted && specialParryOutcome is not null && specialParryOutcome.Damage == -4 && specialParryOutcome.RemainingHp == 100, "Rsv 0x200 parry did not emit the legacy -4 code.");
+    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Defender-Rsv miss fixture could not be reset.");
+    var releaseHitResult = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var releaseHitOutcome, attackMissRoll: 3, itemData: CreateCombatItemDataTable());
+    Assert(releaseHitResult == LegacyPhysicalAttackResult.Accepted && releaseHitOutcome is not null && releaseHitOutcome.Damage > 0 && releaseHitOutcome.RemainingHp < 100, "The 7.69 exclusive miss boundary or defender Rsv incorrectly emitted the W2PP -4 parry code.");
 
     Assert(hub.SetCombatEligibilityState(1, pkMode: false, guilty: false, mapAttribute: 0x40) && hub.SetCombatEligibilityState(2, pkMode: false, guilty: false, mapAttribute: 0), "Peaceful-map eligibility fixture was not set.");
     Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Peaceful-map target fixture could not be reset.");
-    Assert(hub.TryApplyPhysicalAttack(1, 2, 99, out _) == LegacyPhysicalAttackResult.PeacefulZoneBlocked, "Physical damage was accepted against a non-PK, non-guilty target in a peaceful map.");
-    Assert(hub.SetCombatEligibilityState(2, pkMode: true, guilty: false, mapAttribute: 0) && hub.TryApplyPhysicalAttack(1, 2, 99, out var pkOutcome) == LegacyPhysicalAttackResult.Accepted && pkOutcome is not null, "PK-mode target was incorrectly blocked by the peaceful-map gate.");
+    var peacefulPhysicalResult = hub.TryApplyPhysicalAttack(1, 2, 99, out var peacefulPhysicalOutcome, attackMissRoll: 99);
+    Assert(peacefulPhysicalResult == LegacyPhysicalAttackResult.Accepted && peacefulPhysicalOutcome is not null && peacefulPhysicalOutcome.Damage > 0 && peacefulPhysicalOutcome.RemainingHp < 100, "TMProject 7.69's disabled peaceful-map gate did not allow physical damage against a non-PK, non-guilty target.");
+    Assert(hub.SetCombatEligibilityState(2, pkMode: true, guilty: false, mapAttribute: 0) && hub.TryApplyPhysicalAttack(1, 2, 99, out var pkOutcome, attackMissRoll: 99) == LegacyPhysicalAttackResult.Accepted && pkOutcome is not null, "PK-mode target was incorrectly blocked after the peaceful-map gate was removed.");
 
     var killMarkOffset = LegacyAccountSnapshot.MobCarryOffset + (LegacyAccountSnapshot.LegacyKillMarkCarrySlot * LegacyItem.SizeInBytes);
     var lowPkMob = attackerMob.ToArray();
@@ -5518,21 +8064,68 @@ static void WorldPhysicalAttack()
     Assert(crimeHub.Enter(1, "LOW_PK", (_, _) => ValueTask.CompletedTask) && crimeHub.Enter(2, "HIGH_PK", (_, _) => ValueTask.CompletedTask), "PK-point participants were not registered.");
     Assert(crimeHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, lowPkMob) && crimeHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, highPkTargetMob), "PK-point fixture was not set.");
     Assert(crimeHub.SetCombatEligibilityState(1, pkMode: false, guilty: false, mapAttribute: 0x40) && crimeHub.SetCombatEligibilityState(2, pkMode: true, guilty: false, mapAttribute: 0), "PK-point protected-map fixture was not configured.");
-    var protectedPkResult = crimeHub.TryApplyPhysicalAttack(1, 2, 99, out var protectedPkOutcome);
+    var protectedPkResult = crimeHub.TryApplyPhysicalAttack(1, 2, 99, out var protectedPkOutcome, attackMissRoll: 99);
     Assert(protectedPkResult == LegacyPhysicalAttackResult.Accepted && protectedPkOutcome is not null && protectedPkOutcome.PkPointGateBlocked && protectedPkOutcome.Damage == 0 && protectedPkOutcome.RemainingHp == 100 && protectedPkOutcome.CrimeStateUpdates is { Count: 0 }, "The legacy PK-point gate did not suppress low-PK damage against a high-PK target.");
+    var protectedPkMissResult = crimeHub.TryApplyPhysicalAttack(1, 2, 99, out var protectedPkMiss, attackMissRoll: 0);
+    Assert(protectedPkMissResult == LegacyPhysicalAttackResult.Accepted && protectedPkMiss is not null && protectedPkMiss.PkPointGateBlocked && protectedPkMiss.Damage == -3 && protectedPkMiss.RemainingHp == 100, "The 7.69 miss check did not remain after the protected-PK damage reset.");
 
     var highPkAttackerMob = attackerMob.ToArray();
     highPkAttackerMob[killMarkOffset + 2] = 11;
     Assert(crimeHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, highPkAttackerMob) && crimeHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, highPkTargetMob), "PK-point damage fixture could not be reset.");
     Assert(crimeHub.SetCombatEligibilityState(1, pkMode: false, guilty: false, mapAttribute: 0x40) && crimeHub.SetCombatEligibilityState(2, pkMode: true, guilty: false, mapAttribute: 0), "PK-point damage eligibility fixture could not be reset.");
-    var guiltyPkResult = crimeHub.TryApplyPhysicalAttack(1, 2, 99, out var guiltyPkOutcome, parryRandomRoll: 1000);
+    var guiltyPkResult = crimeHub.TryApplyPhysicalAttack(1, 2, 99, out var guiltyPkOutcome, attackMissRoll: 99);
     var guiltyUpdates = guiltyPkOutcome?.CrimeStateUpdates ?? [];
     Assert(guiltyPkResult == LegacyPhysicalAttackResult.Accepted && guiltyPkOutcome is not null && !guiltyPkOutcome.PkPointGateBlocked && guiltyPkOutcome.Damage > 0 && guiltyUpdates.Count == 2 && guiltyUpdates.All(update => update.MobSnapshot[killMarkOffset + 4] == 8), "A permitted high-PK attack did not apply guilty=8 to both players and expose the visual updates.");
 
     Assert(hub.SetCharacterState(1, 0, 7, 1, 0, 0, 2000, 2000, attackerMob) && hub.SetCharacterState(2, 0, 7, 2, 0, 0, 2005, 2005, targetMob), "Friendly-fire fixture could not be reset.");
-    Assert(hub.TryApplyPhysicalAttack(1, 2, 99, out _) == LegacyPhysicalAttackResult.FriendlyFireBlocked, "Same-guild physical damage was accepted.");
-    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2100, 2100, targetMob), "Out-of-range fixture could not be reset.");
+    var sameGuildResult = hub.TryApplyPhysicalAttack(1, 2, 99, out var sameGuildOutcome, attackMissRoll: 99);
+    Assert(sameGuildResult == LegacyPhysicalAttackResult.Accepted && sameGuildOutcome is { Damage: > 0, RemainingHp: < 100 }, "The skill-only friendly-fire gate incorrectly suppressed same-guild physical damage.");
+    Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2024, 2000, targetMob), "Out-of-range fixture could not be reset.");
     Assert(hub.TryApplyPhysicalAttack(1, 2, 99, out _) == LegacyPhysicalAttackResult.OutOfRange, "Out-of-range physical damage was accepted.");
+}
+
+static void WorldPhysicalAttackType6Protection()
+{
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var attackerScore = new LegacyScore(100, 0, 100, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 40, 0, 0, 0);
+    attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+
+    LegacyPhysicalAttackOutcome Attack(byte targetClass, byte affectType, int attackMissRoll = 99)
+    {
+        var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var targetScore = new LegacyScore(100, 10, 0, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0);
+        targetScore.Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        targetMob[LegacyAccountSnapshot.MobClassOffset] = targetClass;
+        if (attackMissRoll == 0)
+        {
+            targetMob[LegacyAccountSnapshot.MobEquipmentOffset + LegacyItem.SizeInBytes] = 4;
+            (targetScore with { Dexterity = 100 }).Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        }
+
+        var targetAffect = new byte[LegacyAccountSnapshot.AffectStride];
+        targetAffect[^8] = affectType; // The gate must scan all 32 legacy affect records.
+        var hub = new WorldHub();
+        Assert(hub.Enter(1, "TYPE6_ATTACKER", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "TYPE6_TARGET", (_, _) => ValueTask.CompletedTask), "Type 6 protection participants were not registered.");
+        Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) &&
+            hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob, LegacyAccountSnapshot.ClassMasterMortal, targetAffect),
+            "Type 6 protection fixture was not installed.");
+
+        var result = hub.TryApplyPhysicalAttack(1, 2, randomFactor: 99, out var outcome, attackMissRoll: attackMissRoll, itemData: CreateCombatItemDataTable());
+        Assert(result == LegacyPhysicalAttackResult.Accepted && outcome is not null, "Type 6 protection attack was not accepted.");
+        Assert(hub.TryGetResourceState(2, out var state, out var requestedHp, out _) && state is not null,
+            "Type 6 protection target resources could not be read back.");
+        if (affectType == 6 && targetClass is 0 or 1 && attackMissRoll == 99)
+            Assert(outcome!.Damage == 0 && outcome.RemainingHp == 100 && !outcome.TargetHpChanged && state!.CurrentScore.Hp == 100 && requestedHp == 100,
+                $"Class {targetClass} with Type 6 took MSG_Attack damage: damage={outcome.Damage}, outcomeHp={outcome.RemainingHp}, currentHp={state!.CurrentScore.Hp}, requestedHp={requestedHp}.");
+        return outcome!;
+    }
+
+    Assert(Attack(targetClass: 0, affectType: 6).Damage == 0, "Class 0 did not receive Divine Protection from Type 6.");
+    Assert(Attack(targetClass: 1, affectType: 6).Damage == 0, "Class 1 did not receive Absolute Protection from Type 6.");
+    Assert(Attack(targetClass: 0, affectType: 5).Damage > 0, "An unrelated affect type suppressed MSG_Attack damage.");
+    Assert(Attack(targetClass: 2, affectType: 6).Damage > 0, "Type 6 suppressed damage for a class outside the two legacy protection branches.");
+    Assert(Attack(targetClass: 0, affectType: 6, attackMissRoll: 0).Damage == -3,
+        "Type 6 replaced the legacy -3 miss result even though the protection gate only applies to positive damage.");
 }
 
 static void WorldNpcExperience()
@@ -5656,7 +8249,7 @@ static void NpcGenerationCatalogFlow()
 
     var catalog = LegacyNpcGenerationCatalog.Parse("""
         // Pista +6 boss
-        #   [5767]
+        #   [4283]
         MinuteGenerate: -1
         MaxNumMob: 1
         MinGroup: 0
@@ -5670,53 +8263,105 @@ static void NpcGenerationCatalogFlow()
         StartRange: 2
         """, new Dictionary<string, byte[]> { ["Rei_Carbuncle"] = template });
 
-    Assert(catalog.TryGet(5767, out var definition) && definition is { MaxNumMob: 1, LeaderName: "Rei_Carbuncle", StartX: 3432, StartY: 1501, StartRange: 2 }, "The NPCGener parser did not preserve the Pista +6 boss definition.");
-    Assert(catalog.TryCreateLeader(5767, static _ => 0, out var generated) && generated is not null, "The NPC generation catalog did not create the configured leader template.");
+    Assert(catalog.TryGet(4283, out var definition) && definition is { MaxNumMob: 1, LeaderName: "Rei_Carbuncle", StartX: 3432, StartY: 1501, StartRange: 2 }, "The NPCGener parser did not preserve the 7.69 Pista +6 boss definition.");
+    Assert(catalog.TryCreateLeader(4283, static _ => 0, out var generated) && generated is not null, "The NPC generation catalog did not create the configured leader template.");
     Assert(generated!.PositionX == 3430 && generated.PositionY == 1499, "The NPC generation start-range calculation differs from GenerateMob's legacy lower-bound roll.");
     Assert(System.Text.Encoding.ASCII.GetString(generated.MobSnapshot, LegacyAccountSnapshot.MobNameOffset, 13) == "Rei Carbuncle", "The NPC name normalization did not replace the legacy underscore.");
     Assert(LegacyMobCombatState.Read(generated.MobSnapshot).CurrentScore.Hp == 321 && generated.AffectSnapshot.All(static value => value == 0), "Generated NPC HP or affects were not initialized like GenerateMob.");
 
     var hub = new WorldHub(npcGenerationCatalog: catalog);
-    Assert(hub.TrySpawnGeneratedNpc(5767, out var spawned, static _ => 0) && spawned is not null, "WorldHub did not register the generated NPC.");
-    Assert(spawned!.ConnectionId >= 20_000 && spawned.GenerateIndex == 5767 && spawned.PositionX == 3430 && spawned.PositionY == 1499, "WorldHub changed the generated NPC identity or position.");
-    Assert(!hub.TrySpawnGeneratedNpc(5767, out _, static _ => 0), "WorldHub exceeded the NPCGener MaxNumMob limit for the generated boss.");
+    Assert(hub.TrySpawnGeneratedNpc(4283, out var spawned, static _ => 0) && spawned is not null, "WorldHub did not register the generated NPC.");
+    Assert(spawned!.ConnectionId >= 20_000 && spawned.GenerateIndex == 4283 && spawned.PositionX == 3430 && spawned.PositionY == 1499, "WorldHub changed the generated NPC identity or position.");
+    Assert(!hub.TrySpawnGeneratedNpc(4283, out _, static _ => 0), "WorldHub exceeded the NPCGener MaxNumMob limit for the generated boss.");
 }
 
-static void PistaMobLeftWireAndArea()
+static void PistaLevel6V769DeathIdentifiers()
+{
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var npcMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(50, 0, 100, 0, 0, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0, 40, 0, 0, 0)
+        .Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    new LegacyScore(50, 0, 0, 0, 0, 0, 0, 100, 100, 1, 100, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(npcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    npcMob[LegacyAccountSnapshot.MobClanOffset] = 1;
+
+    var firstHub = new WorldHub();
+    Assert(firstHub.Enter(1, "PISTA_7A", (_, _) => ValueTask.CompletedTask), "First 7.69 Pista participant was not registered.");
+    Assert(firstHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "First 7.69 Pista participant state was not set.");
+    Assert(firstHub.ConfigurePistaLv6State(1, 100), "First 7.69 Pista room state was not configured.");
+    var firstNpcId = firstHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_411, generateIndex: 4291, terrainHeight: 0);
+    var firstResult = firstHub.TryApplyPhysicalAttack(1, firstNpcId, randomFactor: 99, out var firstOutcome);
+
+    var endHub = new WorldHub();
+    Assert(endHub.Enter(1, "PISTA_7B", (_, _) => ValueTask.CompletedTask), "End-range 7.69 Pista participant was not registered.");
+    Assert(endHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "End-range 7.69 Pista participant state was not set.");
+    Assert(endHub.ConfigurePistaLv6State(1, 100), "End-range 7.69 Pista room state was not configured.");
+    for (var killed = 0; killed < 99; killed++)
+    {
+        var npcId = endHub.EnterNpc(npcMob, 2005, 2005, generateIndex: 4291, terrainHeight: 0);
+        Assert(endHub.TryApplyPhysicalAttack(1, npcId, randomFactor: 99, out _) == LegacyPhysicalAttackResult.Accepted,
+            $"The 7.69 first-wave NPC {killed + 1} was not killed.");
+    }
+    var endNpcId = endHub.EnterNpc(npcMob, 2005, 2005, generateIndex: 4301, terrainHeight: 0);
+    var endResult = endHub.TryApplyPhysicalAttack(1, endNpcId, randomFactor: 99, out var endOutcome);
+
+    var w2ppHub = new WorldHub();
+    Assert(w2ppHub.Enter(1, "PISTA_W2PP", (_, _) => ValueTask.CompletedTask), "W2PP regression participant was not registered.");
+    Assert(w2ppHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "W2PP regression participant state was not set.");
+    Assert(w2ppHub.ConfigurePistaLv6State(1, 1), "W2PP regression Pista room state was not configured.");
+    var w2ppNpcId = w2ppHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_413, generateIndex: 5775, terrainHeight: 0);
+    var w2ppResult = w2ppHub.TryApplyPhysicalAttack(1, w2ppNpcId, randomFactor: 99, out var w2ppOutcome);
+
+    Assert(firstResult == LegacyPhysicalAttackResult.Accepted && firstOutcome?.PistaTransition is
+            { PistaLevel: 6, PreviousMobCount: 0, RemainingMobCount: 1, SpawnGenerateIndex: 0 } &&
+        firstHub.TryGetPistaLv6State(out var firstState) && firstState is { MobCount: 100, MobsLeft: 1 } &&
+        endResult == LegacyPhysicalAttackResult.Accepted && endOutcome?.PistaTransition is
+            { PistaLevel: 6, PreviousMobCount: 99, RemainingMobCount: 100, SpawnGenerateIndex: 4283 } &&
+        endHub.TryGetPistaLv6State(out var endState) && endState is { MobCount: 100, MobsLeft: 100 } &&
+        w2ppResult == LegacyPhysicalAttackResult.Accepted && w2ppOutcome?.PistaTransition is null,
+        "Pista Lv6 must count 7.69 wave deaths upward from MobsLeft=0, generate boss 4283 on hit 100, and ignore the W2PP-only 5775..5785 range.");
+}
+
+static void PistaMobCountWireAndArea()
 {
     var hub = new WorldHub();
     var mob = new byte[LegacyAccountSnapshot.CharacterStride];
     Assert(hub.Enter(1, "PISTA_COUNTER", (_, _) => ValueTask.CompletedTask), "Pista counter participant was not registered.");
     Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 3330, 1475, mob), "Pista counter participant state was not set.");
-    Assert(hub.ConfigurePistaLv6State(1, 7), "Pista counter state was not configured.");
+    Assert(hub.ConfigurePistaLv6State(1, mobCount: 7, mobsLeft: 37), "Pista counter state was not configured.");
+    Assert(hub.TryGetPistaLv6State(out var configuredState) && configuredState is { MobCount: 7, MobsLeft: 37 }, "Pista room MobCount and 7.69 MobsLeft were not stored independently.");
 
     var codec = LegacyFrameCodec.CreateDefault();
-    Assert(hub.TryBuildPistaLv6MobLeftFrame(1, codec, 33, 16, out var rawFrame) && rawFrame is not null, "The Pista counter frame was not built inside the legacy area.");
+    Assert(hub.TryBuildPistaLv6MobCountFrame(1, codec, 33, 16, out var rawFrame) && rawFrame is not null, "The Pista counter frame was not built inside the legacy area.");
     var frame = codec.Decode(rawFrame!);
-    Assert(frame.IsChecksumValid && frame.Header.Type == MobLeftConfirmation.MessageType && frame.Header.Id == MobLeftConfirmation.SceneId && frame.Header.Size == MobLeftConfirmation.PacketSize, "The _MSG_MobLeft header differs from MSG_STANDARDPARM.");
-    Assert(BinaryPrimitives.ReadInt32LittleEndian(frame.Payload.Span) == 7, "The _MSG_MobLeft parameter did not carry the authoritative Pista mob count.");
+    Assert(frame.IsChecksumValid && frame.Header.Type == MobCountConfirmation.MessageType && frame.Header.Id == MobCountConfirmation.SceneId && frame.Header.Size == MobCountConfirmation.PacketSize, "The _MSG_MobCount header differs from MSG_STANDARDSHORTPARM2.");
+    Assert(BinaryPrimitives.ReadInt32LittleEndian(frame.Payload.Span) == 37 && BinaryPrimitives.ReadInt32LittleEndian(frame.Payload.Span[4..]) == 100, "The _MSG_MobCount parameters did not carry MobsLeft and the 100-mob goal independently from Party.MobCount.");
 
     Assert(hub.Enter(2, "PISTA_COUNTER_2", (_, _) => ValueTask.CompletedTask), "Second Pista counter participant was not registered.");
     Assert(hub.SetCharacterState(2, 0, 0, 1, 0, 0, 3331, 1476, mob), "Second Pista counter participant state was not set.");
     var firstMobLeftAt = new DateTime(2026, 9, 16, 12, 0, 0);
-    Assert(hub.TryProcessPistaLv6MobLeft(firstMobLeftAt, codec, 33, 16, out var mobLeftFrames) && mobLeftFrames is { Count: 2 }, "The periodic Pista counter did not target both players inside the area.");
-    Assert(mobLeftFrames![0].ConnectionId == 1 && mobLeftFrames[1].ConnectionId == 2, "The periodic Pista counter targeted the wrong connections.");
-    Assert(BinaryPrimitives.ReadInt32LittleEndian(codec.Decode(mobLeftFrames[0].Frame).Payload.Span) == 7, "The periodic Pista counter did not carry the authoritative count.");
-    Assert(!hub.TryProcessPistaLv6MobLeft(firstMobLeftAt.AddMilliseconds(2399), codec, 33, 16, out _), "The periodic Pista counter fired before the legacy 2.4-second cadence.");
-    Assert(hub.TryProcessPistaLv6MobLeft(firstMobLeftAt.AddMilliseconds(2400), codec, 33, 16, out var secondMobLeftFrames) && secondMobLeftFrames is { Count: 2 }, "The periodic Pista counter did not fire at the legacy 2.4-second cadence.");
+    Assert(hub.TryProcessPistaLv6MobCount(firstMobLeftAt, codec, 33, 16, out var mobCountFrames) && mobCountFrames is { Count: 2 }, "The periodic Pista counter did not target both players inside the area.");
+    Assert(mobCountFrames![0].ConnectionId == 1 && mobCountFrames[1].ConnectionId == 2, "The periodic Pista counter targeted the wrong connections.");
+    var periodicFrame = codec.Decode(mobCountFrames[0].Frame);
+    Assert(periodicFrame.Header.Type == MobCountConfirmation.MessageType && BinaryPrimitives.ReadInt32LittleEndian(periodicFrame.Payload.Span) == 37 && BinaryPrimitives.ReadInt32LittleEndian(periodicFrame.Payload.Span[4..]) == 100, "The periodic _MSG_MobCount signal did not carry MobsLeft and 100.");
+    Assert(!hub.TryProcessPistaLv6MobCount(firstMobLeftAt.AddMilliseconds(2399), codec, 33, 16, out _), "The periodic Pista counter fired before the legacy 2.4-second cadence.");
+    Assert(hub.TryProcessPistaLv6MobCount(firstMobLeftAt.AddMilliseconds(2400), codec, 33, 16, out var secondMobCountFrames) && secondMobCountFrames is { Count: 2 }, "The periodic Pista counter did not fire at the legacy 2.4-second cadence.");
 
     Assert(hub.UpdatePosition(1, 3448, 1525), "Pista counter participant could not be moved outside the legacy area.");
-    Assert(!hub.TryBuildPistaLv6MobLeftFrame(1, codec, 33, 16, out _), "The Pista counter frame crossed the legacy exclusive upper bounds.");
+    Assert(!hub.TryBuildPistaLv6MobCountFrame(1, codec, 33, 16, out _), "The Pista counter frame crossed the legacy exclusive upper bounds.");
 
-    Assert(hub.ConfigurePistaLv6State(1, 100), "Pista counter state could not be reconfigured for cleanup coverage.");
+    Assert(hub.ConfigurePistaLv6State(1, mobCount: 100, mobsLeft: 37), "Pista counter state could not be reconfigured for cleanup coverage.");
     var pistaMob = new byte[LegacyAccountSnapshot.CharacterStride];
-    var firstPistaNpc = hub.EnterNpc(pistaMob, 3432, 1501, requestedConnectionId: 20_101, generateIndex: 5767);
-    var secondPistaNpc = hub.EnterNpc(pistaMob, 3432, 1501, requestedConnectionId: 20_102, generateIndex: 5775);
+    var firstPistaNpc = hub.EnterNpc(pistaMob, 3432, 1501, requestedConnectionId: 20_101, generateIndex: 4283);
+    var secondPistaNpc = hub.EnterNpc(pistaMob, 3432, 1501, requestedConnectionId: 20_102, generateIndex: 4291);
     var unrelatedNpc = hub.EnterNpc(pistaMob, 3432, 1501, requestedConnectionId: 20_103, generateIndex: 5000);
     Assert(firstPistaNpc == 20_101 && secondPistaNpc == 20_102 && unrelatedNpc == 20_103, "Pista cleanup fixture NPCs were not registered.");
     var removed = hub.ResetPistaLv6Room();
-    Assert(removed.Select(static npc => npc.ConnectionId).OrderBy(static id => id).SequenceEqual([20_101, 20_102]), "Pista cleanup removed the wrong generator range.");
+    Assert(removed.Select(static npc => npc.ConnectionId).OrderBy(static id => id).SequenceEqual([20_101, 20_102]), "Pista cleanup did not remove the 7.69 Lv6 boss and wave ranges.");
     Assert(!hub.TryGetPistaLv6State(out _) && hub.TryGetNpcCombatState(unrelatedNpc, out _, out _, out _), "Pista cleanup did not reset the room state or preserve an unrelated NPC.");
+    Assert(hub.TryBuildPistaLv6MobCountFrame(2, codec, 33, 16, out var afterResetFrame) && afterResetFrame is not null &&
+        BinaryPrimitives.ReadInt32LittleEndian(codec.Decode(afterResetFrame).Payload.Span) == 37,
+        "The global 7.69 MobsLeft value did not remain available after the room-only Party.MobCount state was reset.");
 }
 
 static void QuestRequestParser()
@@ -6216,7 +8861,7 @@ static void WorldNpcBossDrop()
     Assert(runeHub.Enter(1, "RUNE_LEADER", (_, _) => ValueTask.CompletedTask) && runeHub.Enter(2, "RUNE_MEMBER", (_, _) => ValueTask.CompletedTask), "Rune-party participants were not registered.");
     Assert(runeHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && runeHub.SetCharacterState(2, 0, 0, 1, 0, 0, 2006, 2006, attackerMob), "Rune-party participant state was not set.");
     Assert(runeHub.TrySetParty(1, [1, 2]), "Rune-party fixture was not formed.");
-    var runeNpcId = runeHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_007, generateIndex: 5767, terrainHeight: 0);
+    var runeNpcId = runeHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_007, generateIndex: 4283, terrainHeight: 0);
     var runeResult = runeHub.TryApplyPhysicalAttack(1, runeNpcId, randomFactor: 99, out var runeOutcome, runeRoll: 0);
     Assert(runeResult == LegacyPhysicalAttackResult.Accepted && runeOutcome?.ItemDrops is { Count: 2 } runeDrops && runeDrops.All(drop => drop.Item.Index == 5130) && runeDrops.Select(drop => drop.ConnectionId).OrderBy(id => id).SequenceEqual([1, 2]), "The Pista +6 boss did not distribute one selected rune to every connected party member.");
     Assert(runeHub.TryGetCharacterSnapshot(2, out var runeMemberMob, out _, out _) && runeMemberMob is not null && LegacyItem.Read(runeMemberMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset)).Index == 5130, "The Pista rune was not persisted in the non-leader member carry.");
@@ -6224,28 +8869,39 @@ static void WorldNpcBossDrop()
     var pistaHub = new WorldHub();
     Assert(pistaHub.Enter(1, "PISTA_LEADER", (_, _) => ValueTask.CompletedTask), "Pista leader was not registered.");
     Assert(pistaHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "Pista leader state was not set.");
-    Assert(pistaHub.ConfigurePistaLv6State(1, 1), "Pista level 6 state was not configured.");
-    var pistaNpcId = pistaHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_008, generateIndex: 5775, terrainHeight: 0);
+    Assert(pistaHub.ConfigurePistaLv6State(1, mobCount: 100, mobsLeft: 99), "Pista level 6 state was not configured.");
+    var pistaNpcId = pistaHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_008, generateIndex: 4291, terrainHeight: 0);
     var pistaResult = pistaHub.TryApplyPhysicalAttack(1, pistaNpcId, randomFactor: 99, out var pistaOutcome);
     Assert(pistaResult == LegacyPhysicalAttackResult.Accepted && pistaOutcome?.TargetRemoved == true && pistaOutcome.PistaTransition is
-        { PistaLevel: 6, LeaderConnectionId: 1, PreviousMobCount: 1, RemainingMobCount: 0, SpawnGenerateIndex: 5767 }, "The final Pista level 6 room mob did not decrement the counter and request boss 5767.");
-    Assert(pistaHub.TryGetPistaLv6State(out var pistaState) && pistaState?.MobCount == 0, "The Pista level 6 mob counter was not persisted after the lethal attack.");
+        { PistaLevel: 6, LeaderConnectionId: 1, PreviousMobCount: 99, RemainingMobCount: 100, SpawnGenerateIndex: 4283 }, "The 100th 7.69 Pista level 6 mob did not increment MobsLeft and request boss 4283.");
+    Assert(pistaHub.TryGetPistaLv6State(out var pistaState) && pistaState is { MobCount: 100, MobsLeft: 100 }, "The Pista level 6 state did not preserve Party.MobCount independently from MobsLeft.");
 
     var pendingPistaHub = new WorldHub();
     Assert(pendingPistaHub.Enter(1, "PISTA_PENDING", (_, _) => ValueTask.CompletedTask), "Second Pista leader was not registered.");
     Assert(pendingPistaHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "Second Pista leader state was not set.");
-    Assert(pendingPistaHub.ConfigurePistaLv6State(1, 2), "Second Pista level 6 state was not configured.");
-    var pendingNpcId = pendingPistaHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_009, generateIndex: 5785, terrainHeight: 0);
+    Assert(pendingPistaHub.ConfigurePistaLv6State(1, mobCount: 100), "Second Pista level 6 state was not configured.");
+    var pendingNpcId = pendingPistaHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_009, generateIndex: 4301, terrainHeight: 0);
     var pendingResult = pendingPistaHub.TryApplyPhysicalAttack(1, pendingNpcId, randomFactor: 99, out var pendingOutcome);
     Assert(pendingResult == LegacyPhysicalAttackResult.Accepted && pendingOutcome?.PistaTransition is
-        { PistaLevel: 6, PreviousMobCount: 2, RemainingMobCount: 1, SpawnGenerateIndex: 0 }, "A non-final Pista level 6 mob incorrectly requested the boss spawn.");
+        { PistaLevel: 6, PreviousMobCount: 0, RemainingMobCount: 1, SpawnGenerateIndex: 0 }, "A non-final Pista level 6 mob incorrectly requested the boss spawn.");
+
+    Assert(LegacyNpcDropMath.SelectRuneReward(4283, 0, roll: static _ => 0) is { ItemIndex: 5130, ProgressionValue: 0 }, "The 7.69 Pista +6 boss did not retain its eight-rune reward table.");
+    Assert(LegacyNpcDropMath.SelectRuneReward(5767, 0, roll: static _ => 0) is null, "The W2PP-only Pista boss ID still receives the 7.69 +6 rune reward.");
+
+    var w2ppPistaHub = new WorldHub();
+    Assert(w2ppPistaHub.Enter(1, "PISTA_W2PP_ID", (_, _) => ValueTask.CompletedTask), "W2PP ID regression participant was not registered.");
+    Assert(w2ppPistaHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "W2PP ID regression participant state was not set.");
+    Assert(w2ppPistaHub.ConfigurePistaLv6State(1, 1), "W2PP ID regression room state was not configured.");
+    var w2ppNpcId = w2ppPistaHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_010, generateIndex: 5775, terrainHeight: 0);
+    var w2ppResult = w2ppPistaHub.TryApplyPhysicalAttack(1, w2ppNpcId, randomFactor: 99, out var w2ppOutcome);
+    Assert(w2ppResult == LegacyPhysicalAttackResult.Accepted && w2ppOutcome?.PistaTransition is null, "The W2PP-only Pista wave ID still triggers the 7.69 transition.");
 }
 
 static void WorldNpcSkill()
 {
     var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
     var npcMob = new byte[LegacyAccountSnapshot.CharacterStride];
-    new LegacyScore(50, 0, 0, 0, 0, 0, 0, 5000, 500, 5000, 500, 300, 0, 0, 0, 100, 20, 0, 0)
+    new LegacyScore(50, 0, 0, 0, 0, 0, 0, 5000, 500, 5000, 500, 300, 0, 0, 0, 0, 100, 20, 0)
         .Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     attackerMob[LegacyAccountSnapshot.MobClassOffset] = 0;
     BinaryPrimitives.WriteInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobMagicOffset), 50);
@@ -6266,9 +8922,11 @@ static void WorldNpcSkill()
     Assert(outcome!.ExperienceAwarded == 1_000 && outcome.AttackerMobSnapshot is not null, "NPC skill death did not award solo experience or return the updated attacker snapshot.");
     Assert(hub.TryGetCombatState(1, out var attackerState) && attackerState!.Experience == 1_000, "NPC skill experience did not mutate the attacker's authoritative MOB state.");
 
-    var lightningNpcId = hub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_002);
+    var lightningMob = npcMob.ToArray();
+    BinaryPrimitives.WriteInt32LittleEndian(lightningMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 8), 3); // target Damage
+    var lightningNpcId = hub.EnterNpc(lightningMob, 2005, 2005, requestedConnectionId: 20_002);
     var lightningResult = hub.TryApplySkillAttack(1, lightningNpcId, skill with { Id = 79 }, CreateCombatItemDataTable(), weather: 0, randomFactor: 99, out var lightningOutcome);
-    Assert(lightningResult == LegacySkillAttackResult.Accepted && lightningOutcome is not null && lightningOutcome.TargetRemoved, "Skill 79 did not use the NPC physical-damage branch.");
+    Assert(lightningResult == LegacySkillAttackResult.Accepted && lightningOutcome is not null && lightningOutcome.TargetRemoved, "7.69 skill 79 did not deal the NPC target CurrentScore.Damage.");
 
     var npcEffectSkill = new LegacySkillDefinition(8, 0, 0, 0, 0, 0, 0, 0, 4, 7, 4, 9, 20, [], [], 0, 0, 1, 1, 0, 0, 0, 0, "NPC_EFEITO");
     var npcEffectId = hub.EnterNpc(npcMob, 2005, 2005, new byte[LegacyAccountSnapshot.AffectStride], requestedConnectionId: 20_003);
@@ -6280,7 +8938,7 @@ static void WorldNpcSkill()
     var npcHealingId = hub.EnterNpc(npcHealingMob, 2005, 2005, requestedConnectionId: 20_005);
     var npcHealingSkill = new LegacySkillDefinition(28, 0, 0, 0, 0, 0, 6, 20, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Cura_NPC");
     var npcHealingResult = hub.TryApplySkillAttack(1, npcHealingId, npcHealingSkill, itemData: null, weather: 0, randomFactor: 90, out var npcHealingOutcome);
-    Assert(npcHealingResult == LegacySkillAttackResult.Accepted && npcHealingOutcome is not null && npcHealingOutcome.Damage == -170 && npcHealingOutcome.RemainingHp == 420 && npcHealingOutcome.TargetHpChanged && LegacyMobCombatState.Read(npcHealingOutcome.TargetMobSnapshot).CurrentScore.Hp == 420, "The legacy InstanceType 6 NPC-healing path did not apply the authoritative heal or HP cap.");
+    Assert(npcHealingResult == LegacySkillAttackResult.Accepted && npcHealingOutcome is not null && npcHealingOutcome.Damage == -320 && npcHealingOutcome.RemainingHp == 500 && npcHealingOutcome.TargetHpChanged && LegacyMobCombatState.Read(npcHealingOutcome.TargetMobSnapshot).CurrentScore.Hp == 500, "The legacy InstanceType 6 NPC-healing path did not apply the authoritative heal or HP cap.");
 
     var npcDetoxAffect = new byte[LegacyAccountSnapshot.AffectStride];
     npcDetoxAffect[0] = 1;
@@ -6322,8 +8980,10 @@ static void WorldNpcSkill()
     npcFlameAffect[16] = 7;
     var npcFlameId = hub.EnterNpc(npcMob, 2005, 2005, npcFlameAffect, requestedConnectionId: 20_004);
     var npcFlameSkill = new LegacySkillDefinition(12, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "CHAMAS_NPC");
-    var npcFlameResult = hub.TryApplySkillAttack(1, npcFlameId, npcFlameSkill, itemData: null, weather: 0, randomFactor: 90, out var npcFlameOutcome);
-    Assert(npcFlameResult == LegacySkillAttackResult.Accepted && npcFlameOutcome?.TargetAffectSnapshot is { Length: LegacyAccountSnapshot.AffectStride } npcFlameSnapshot && npcFlameSnapshot[0] == 0 && npcFlameSnapshot[8] == 0 && npcFlameSnapshot[16] == 7, "InstanceType 12 did not clear the legacy elemental affects on an NPC without applying the player-only MP burn.");
+    // 7.69/W2PP/7.59 never cleanse NPC affects with InstanceType 12; a failed capture roll leaves the mob untouched.
+    var npcFlameResult = hub.TryApplySkillAttack(1, npcFlameId, npcFlameSkill, itemData: null, weather: 0, randomFactor: 90, out var npcFlameOutcome, instanceRandomFactor: 100);
+    Assert(npcFlameResult == LegacySkillAttackResult.Accepted && npcFlameOutcome is { TargetAffectSnapshot: null, CapturedSummon: null, PreserveSkillMarkerOnWire: true } &&
+        hub.TryGetNpcSnapshot(npcFlameId, out var npcFlameAfter) && npcFlameAfter!.AffectSnapshot[0] == 18 && npcFlameAfter.AffectSnapshot[8] == 16, "InstanceType 12 changed an NPC without a successful capture.");
 
     Assert(hub.SetNpcCombatState(npcFlameId, mode: 1, currentTarget: 99, enemyList: [1, 2]), "NPC combat state fixture could not be prepared for the flash skill.");
     var flashSkill = new LegacySkillDefinition(7, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "FLASH_NPC");
@@ -6421,7 +9081,7 @@ static void PartyExperienceModifiers()
     var eligibility = new LegacyExperienceEligibility(LegacyAccountSnapshot.ClassMasterMortal);
     Assert(LegacyPartyExperienceMath.GetGenericMemberExperience(eligibility, 1_000, 50, 1_000, 50) == 850, "Ordinary party XP did not keep the legacy 15 percent reduction.");
     Assert(LegacyPartyExperienceMath.GetGenericMemberExperience(eligibility, 1_000, 50, 1_000, 50, newbieEventServer: true) == 1_250, "Newbie event XP did not apply the legacy 25 percent increase.");
-    Assert(LegacyPartyExperienceMath.GetGenericMemberExperience(eligibility, 1_000, 50, 1_000, 50, doubleMode: true) == 1_700, "Double XP mode did not apply before the ordinary-server reduction.");
+    Assert(LegacyPartyExperienceMath.GetGenericMemberExperience(eligibility, 1_000, 50, 1_000, 50, doubleModeMultiplier: 2) == 1_700, "Double XP mode did not apply before the ordinary-server reduction.");
     Assert(LegacyPartyExperienceMath.GetGenericMemberExperience(eligibility, 1_000, 50, 1_000, 50, kefraLive: false) == 425, "Kefra offline mode did not halve XP before the ordinary-server reduction.");
 }
 
@@ -6458,7 +9118,7 @@ static void WorldSkillAttack()
     var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
     var secondTargetMob = new byte[LegacyAccountSnapshot.CharacterStride];
     var targetAffect = new byte[LegacyAccountSnapshot.AffectStride];
-    var attackerScore = new LegacyScore(50, 0, 0, 0, 0, 0, 0, 5000, 500, 5000, 500, 300, 0, 0, 0, 100, 20, 0, 0);
+    var attackerScore = new LegacyScore(50, 0, 0, 0, 0, 0, 0, 5000, 500, 5000, 500, 300, 0, 0, 0, 0, 100, 20, 0);
     var targetScore = new LegacyScore(50, 40, 0, 0, 0, 0, 0, 5000, 500, 5000, 500, 0, 0, 0, 0, 0, 0, 0, 0);
     attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     targetScore.Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
@@ -6483,32 +9143,34 @@ static void WorldSkillAttack()
     var secondWeapon = LegacyItem.Read(attackerMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + (7 * LegacyItem.SizeInBytes), LegacyItem.SizeInBytes));
     Assert(LegacySkillCombatMath.GetWeaponDamage(attackerState, itemData, firstWeapon, secondWeapon) == 140, $"Skill fixture weapon damage was not 140: {LegacySkillCombatMath.GetWeaponDamage(attackerState, itemData, firstWeapon, secondWeapon)}.");
     var directBaseDamage = LegacySkillCombatMath.GetSkillBaseDamage(skill, attackerState, weather: 0, weaponDamage: 140, magic: 50);
-    Assert(directBaseDamage == 1787, $"Skill fixture base damage was not 1787: {directBaseDamage}; class={attackerState.CharacterClass}, level={attackerState.CurrentScore.Level}, strength={attackerState.CurrentScore.Strength}, special2={attackerState.CurrentScore.Special2}, special3={attackerState.CurrentScore.Special3}, type={skill.InstanceType}, id={skill.Id}.");
+    Assert(directBaseDamage == 195, $"Skill fixture base damage was not 195 ((40+21+25+0+70)*5>>2): {directBaseDamage}; class={attackerState.CharacterClass}, level={attackerState.CurrentScore.Level}, strength={attackerState.CurrentScore.Strength}, special2={attackerState.CurrentScore.Special2}, special3={attackerState.CurrentScore.Special3}, type={skill.InstanceType}, id={skill.Id}.");
     Assert(hub.Enter(1, "ATTACKER", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "TARGET", (_, _) => ValueTask.CompletedTask) && hub.Enter(3, "TARGET_TWO", (_, _) => ValueTask.CompletedTask), "Skill-combat participants were not registered.");
     Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob, LegacyAccountSnapshot.ClassMasterMortal, targetAffect) && hub.SetCharacterState(3, 0, 0, 2, 0, 0, 2006, 2006, secondTargetMob), "Skill-combat participant state was not set.");
 
-    var result = hub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var outcome);
-    Assert(result == LegacySkillAttackResult.Accepted && outcome is not null && outcome.BaseDamage == 1787 && outcome.Damage == 2358 && outcome.RemainingHp == 2642, $"Elemental skill damage did not match the legacy base, defense, and resistance path: result={result}, base={outcome?.BaseDamage}, damage={outcome?.Damage}, hp={outcome?.RemainingHp}, resistance={outcome?.Resistance}.");
-    Assert(hub.TryGetCombatState(2, out var targetState) && targetState!.CurrentScore.Hp == 2642, "Elemental skill damage did not mutate target HP atomically.");
-    Assert(hub.TryGetResourceState(2, out var targetResources, out var targetRequestedHp, out _) && targetResources!.CurrentScore.Hp == 2642 && targetRequestedHp == 2642 && outcome!.TargetHpChanged, "Elemental skill did not synchronize the target ReqHp state used by SendSetHpMp.");
+    var result = hub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var outcome, attackMissRoll: 99);
+    Assert(result == LegacySkillAttackResult.Accepted && outcome is not null && outcome.BaseDamage == 195 && outcome.Damage == 125 && outcome.RemainingHp == 4875, $"Elemental skill damage did not match the legacy base, defense, and resistance path: result={result}, base={outcome?.BaseDamage}, damage={outcome?.Damage}, hp={outcome?.RemainingHp}, resistance={outcome?.Resistance}.");
+    Assert(hub.TryGetCombatState(2, out var targetState) && targetState!.CurrentScore.Hp == 4875, "Elemental skill damage did not mutate target HP atomically.");
+    Assert(hub.TryGetResourceState(2, out var targetResources, out var targetRequestedHp, out _) && targetResources!.CurrentScore.Hp == 4875 && targetRequestedHp == 4875 && outcome!.TargetHpChanged, "Elemental skill did not synchronize the target ReqHp state used by SendSetHpMp.");
     var skillScrollTargetMob = new byte[LegacyAccountSnapshot.CharacterStride];
     (targetScore with { Hp = 1 }).Write(skillScrollTargetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     new LegacyItem(3463, 61, 1, 0, 0, 0, 0).Write(skillScrollTargetMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset));
     var skillScrollHub = new WorldHub();
     Assert(skillScrollHub.Enter(1, "SKILL_ATTACKER", (_, _) => ValueTask.CompletedTask) && skillScrollHub.Enter(2, "SKILL_SCROLL_TARGET", (_, _) => ValueTask.CompletedTask), "Skill resurrection-scroll participants were not registered.");
     Assert(skillScrollHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && skillScrollHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, skillScrollTargetMob), "Skill resurrection-scroll fixture was not set.");
-    var skillScrollResult = skillScrollHub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var skillScrollOutcome);
+    var skillScrollResult = skillScrollHub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var skillScrollOutcome, attackMissRoll: 99);
     Assert(skillScrollResult == LegacySkillAttackResult.Accepted && skillScrollOutcome is not null && skillScrollOutcome.TargetRevived && skillScrollOutcome.TargetResourceChanged && skillScrollOutcome.RemainingHp == 5000 && skillScrollOutcome.ConsumedItemSlot == 0 && skillScrollOutcome.ConsumedItem is { Index: 0, Effect1: 0, Value1: 0, Effect2: 0, Value2: 0, Effect3: 0, Value3: 0 }, "A lethal skill did not consume the legacy resurrection scroll and restore maximum HP/MP.");
 
     var skillParryTarget = targetMob.ToArray();
     skillParryTarget[LegacyAccountSnapshot.MobEquipmentOffset + LegacyItem.SizeInBytes] = 4;
+    (LegacyScore.Read(skillParryTarget.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset)) with { Dexterity = 100 }).Write(skillParryTarget.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, skillParryTarget, LegacyAccountSnapshot.ClassMasterMortal, targetAffect), "Skill parry target fixture could not be equipped.");
-    var skillParryResult = hub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var skillParryOutcome, parryRandomRoll: 50);
+    var skillParryResult = hub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var skillParryOutcome, attackMissRoll: 0);
     Assert(skillParryResult == LegacySkillAttackResult.Accepted && skillParryOutcome is not null && skillParryOutcome.Damage == -3 && skillParryOutcome.RemainingHp == 5000, "Elemental parry did not emit -3 while preserving HP.");
-    var secondResult = hub.TryApplySkillAttack(1, 3, skill, itemData, weather: 0, randomFactor: 90, out var secondOutcome);
-    Assert(secondResult == LegacySkillAttackResult.Accepted && secondOutcome is not null && secondOutcome.Damage == 2358 && hub.TryGetCombatState(3, out var secondTargetState) && secondTargetState!.CurrentScore.Hp == 2642, "The same elemental resolver did not apply independently to a second target.");
+    var secondResult = hub.TryApplySkillAttack(1, 3, skill, itemData, weather: 0, randomFactor: 90, out var secondOutcome, attackMissRoll: 99);
+    Assert(secondResult == LegacySkillAttackResult.Accepted && secondOutcome is not null && secondOutcome.Damage == 125 && hub.TryGetCombatState(3, out var secondTargetState) && secondTargetState!.CurrentScore.Hp == 4875, "The same elemental resolver did not apply independently to a second target.");
     Assert(hub.SetCombatEligibilityState(1, pkMode: false, guilty: false, mapAttribute: 0x40) && hub.SetCombatEligibilityState(3, pkMode: false, guilty: false, mapAttribute: 0), "Skill peaceful-map eligibility fixture was not set.");
-    Assert(hub.TryApplySkillAttack(1, 3, skill, itemData, weather: 0, randomFactor: 90, out _) == LegacySkillAttackResult.PeacefulZoneBlocked, "Aggressive skill damage was accepted against a non-PK, non-guilty target in a peaceful map.");
+    var peacefulSkillResult = hub.TryApplySkillAttack(1, 3, skill, itemData, weather: 0, randomFactor: 90, out var peacefulSkillOutcome, attackMissRoll: 99);
+    Assert(peacefulSkillResult == LegacySkillAttackResult.Accepted && peacefulSkillOutcome is not null && peacefulSkillOutcome.Damage == 125 && peacefulSkillOutcome.RemainingHp == 4750, "TMProject 7.69's disabled peaceful-map gate did not allow aggressive skill damage against a non-PK, non-guilty target.");
     hub.SetCombatWorldState(new LegacyCombatWorldState(CastleState: 1));
     Assert(hub.TryApplySkillAttack(1, 3, skill, itemData, weather: 0, randomFactor: 90, out _) == LegacySkillAttackResult.Accepted, "Active castle-war state did not disable the peaceful-map gate.");
     hub.SetCombatWorldState(new LegacyCombatWorldState());
@@ -6519,16 +9181,16 @@ static void WorldSkillAttack()
     Assert(hub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, healTarget, LegacyAccountSnapshot.ClassMasterMortal, targetAffect), "Healing target fixture could not be restored after the parry case.");
     var healSkill = new LegacySkillDefinition(28, 0, 0, 0, 0, 0, 6, 20, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Cura");
     var healResult = hub.TryApplySkillAttack(1, 2, healSkill, itemData: null, weather: 0, randomFactor: 90, out var healOutcome);
-    Assert(healResult == LegacySkillAttackResult.Accepted && healOutcome is not null && healOutcome.Damage == -170 && healOutcome.RemainingHp == 2812, $"Healing did not match the legacy InstanceType 6 path: result={healResult}, damage={healOutcome?.Damage}, hp={healOutcome?.RemainingHp}.");
-    Assert(hub.TryGetCombatState(2, out var healedTargetState) && healedTargetState!.CurrentScore.Hp == 2812, "Healing did not mutate target HP atomically.");
-    Assert(hub.TryGetResourceState(2, out var healedResources, out var healedRequestedHp, out _) && healedResources!.CurrentScore.Hp == 2812 && healedRequestedHp == 2812 && healOutcome!.TargetHpChanged, "Healing did not synchronize the target ReqHp state used by SendSetHpMp.");
+    Assert(healResult == LegacySkillAttackResult.Accepted && healOutcome is not null && healOutcome.Damage == -320 && healOutcome.RemainingHp == 2962, $"Healing did not match the legacy InstanceType 6 path: result={healResult}, damage={healOutcome?.Damage}, hp={healOutcome?.RemainingHp}.");
+    Assert(hub.TryGetCombatState(2, out var healedTargetState) && healedTargetState!.CurrentScore.Hp == 2962, "Healing did not mutate target HP atomically.");
+    Assert(hub.TryGetResourceState(2, out var healedResources, out var healedRequestedHp, out _) && healedResources!.CurrentScore.Hp == 2962 && healedRequestedHp == 2962 && healOutcome!.TargetHpChanged, "Healing did not synchronize the target ReqHp state used by SendSetHpMp.");
 
     var detoxSkill = new LegacySkillDefinition(30, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Desintoxicar");
     var detoxResult = hub.TryApplySkillAttack(1, 2, detoxSkill, itemData: null, weather: 0, randomFactor: 90, out var detoxOutcome);
-    Assert(detoxResult == LegacySkillAttackResult.Accepted && detoxOutcome is not null && detoxOutcome.Damage == 0 && detoxOutcome.RemainingHp == 2812 && detoxOutcome.TargetAffectSnapshot is not null, "Detox did not accept the legacy InstanceType 8 route and produce an affect snapshot.");
+    Assert(detoxResult == LegacySkillAttackResult.Accepted && detoxOutcome is not null && detoxOutcome.Damage == 0 && detoxOutcome.RemainingHp == 2962 && detoxOutcome.TargetAffectSnapshot is not null, "Detox did not accept the legacy InstanceType 8 route and produce an affect snapshot.");
     Assert(detoxOutcome!.TargetAffectSnapshot![0] == 0 && detoxOutcome.TargetAffectSnapshot[8] == 0 && detoxOutcome.TargetAffectSnapshot[16] == 99, "Detox cleared the wrong affect types or missed the learned type-32 exception.");
     var detoxScore = LegacyFrameCodec.CreateDefault().Decode(new UpdateScoreConfirmation(detoxOutcome.TargetMobSnapshot, detoxOutcome.TargetAffectSnapshot).ToFrame(LegacyFrameCodec.CreateDefault(), 33, 16, 2));
-    Assert(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(detoxScore.Payload.Span[50..]) == 0 && System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(detoxScore.Payload.Span[124..]) == 2812, "Detox score relay did not encode the cleared affect and authoritative HP.");
+    Assert(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(detoxScore.Payload.Span[50..]) == 0 && System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(detoxScore.Payload.Span[124..]) == 2962, "Detox score relay did not encode the cleared affect and authoritative HP.");
 
     var buffSkill = new LegacySkillDefinition(8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 7, 20, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Buff");
     var buffResult = hub.TryApplySkillAttack(1, 2, buffSkill, itemData: null, weather: 0, randomFactor: 90, out var buffOutcome);
@@ -6548,28 +9210,162 @@ static void WorldSkillAttack()
     var resurrectionHub = new WorldHub();
     var deadResurrectionMob = attackerMob.ToArray();
     BinaryPrimitives.WriteInt32LittleEndian(deadResurrectionMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 0);
+    BinaryPrimitives.WriteInt32LittleEndian(deadResurrectionMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28), 321);
     var resurrectionSkill = new LegacySkillDefinition(99, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], 0, 0, 0, 1, 0, 0, 0, 0, "Ressureicao");
     Assert(resurrectionHub.Enter(1, "DEAD", (_, _) => ValueTask.CompletedTask) && resurrectionHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, deadResurrectionMob), "Resurrection fixture was not registered.");
-    var resurrectionResult = resurrectionHub.TryApplySkillAttack(1, 1, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var resurrectionOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, resurrectionMpRoll: 19, recallCityRandomX: 3, recallCityRandomY: 7);
-    Assert(resurrectionResult == LegacySkillAttackResult.Accepted && resurrectionOutcome is not null && resurrectionOutcome.UpdatesAttackerState && resurrectionOutcome.HasRecallPosition && resurrectionOutcome.RecallPositionX == 2089 && resurrectionOutcome.RecallPositionY == 2100 && resurrectionOutcome.RemainingHp == 500 && BinaryPrimitives.ReadInt32LittleEndian(resurrectionOutcome.TargetMobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 100, "Skill 99 did not reproduce the deterministic recall and final HP/MP resurrection rolls.");
-    Assert(resurrectionHub.TryGetResourceState(1, out var revivedState, out var requestedHp, out var requestedMp) && revivedState!.CurrentScore.Hp == 500 && revivedState.CurrentMana == 100 && requestedHp == 500 && requestedMp == 100, "Skill 99 did not update authoritative HP/MP and requested mana state.");
+    Assert(resurrectionHub.TryConsumeSkillMana(1, resurrectionSkill, out var beforeResurrectionState, out _, out var requestedManaAfterCost) == LegacySkillManaResult.Accepted && beforeResurrectionState!.CurrentMana == 321 && requestedManaAfterCost == 321, "The configured mana debit did not leave the expected post-cost MP before skill 99.");
+    var resurrectionResult = resurrectionHub.TryApplySkillAttack(1, 1, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var resurrectionOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, recallCityRandomX: 3, recallCityRandomY: 7);
+    Assert(resurrectionResult == LegacySkillAttackResult.Accepted && resurrectionOutcome is not null && resurrectionOutcome.UpdatesAttackerState && resurrectionOutcome.HasRecallPosition && resurrectionOutcome.RecallPositionX == 2089 && resurrectionOutcome.RecallPositionY == 2100 && resurrectionOutcome.RemainingHp == 500 && BinaryPrimitives.ReadInt32LittleEndian(resurrectionOutcome.TargetMobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 321, "Skill 99 did not preserve existing MP while applying the deterministic recall and final HP roll.");
+    Assert(resurrectionHub.TryGetResourceState(1, out var revivedState, out var requestedHp, out var requestedMp) && revivedState!.CurrentScore.Hp == 500 && revivedState.CurrentMana == 321 && requestedHp == 500 && requestedMp == 321, "Skill 99 changed authoritative MP or requested mana during resurrection.");
 
     var deathFlowHub = new WorldHub();
     var deathFlowVictim = targetMob.ToArray();
     BinaryPrimitives.WriteInt32LittleEndian(deathFlowVictim.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 1);
+    BinaryPrimitives.WriteInt32LittleEndian(deathFlowVictim.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28), 0);
     Assert(deathFlowHub.Enter(1, "KILLER", (_, _) => ValueTask.CompletedTask) && deathFlowHub.Enter(2, "VICTIM", (_, _) => ValueTask.CompletedTask), "Death/resurrection flow participants were not registered.");
     Assert(deathFlowHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && deathFlowHub.SetCharacterState(2, 0, 0, 1, 0, 0, 2005, 2005, deathFlowVictim), "Death/resurrection flow fixture was not registered.");
-    Assert(deathFlowHub.TryApplyPhysicalAttack(1, 2, 99, out var lethalOutcome) == LegacyPhysicalAttackResult.Accepted && lethalOutcome is not null && lethalOutcome.TargetDied && lethalOutcome.RemainingHp == 0, "A lethal physical attack did not transition the victim to HP zero.");
-    var flowReviveResult = deathFlowHub.TryApplySkillAttack(2, 2, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var flowReviveOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, resurrectionMpRoll: 19, recallCityRandomX: 3, recallCityRandomY: 7);
-    Assert(flowReviveResult == LegacySkillAttackResult.Accepted && flowReviveOutcome is not null && flowReviveOutcome.UpdatesAttackerState && flowReviveOutcome.RemainingHp == 500 && flowReviveOutcome.HasRecallPosition && flowReviveOutcome.RecallPositionX == 2089 && flowReviveOutcome.RecallPositionY == 2100, "The integrated lethal-attack to skill-99 resurrection flow did not restore the legacy HP/MP and recall state.");
-    Assert(deathFlowHub.TryGetResourceState(2, out var flowRevivedState, out var flowRequestedHp, out var flowRequestedMp) && flowRevivedState!.CurrentScore.Hp == 500 && flowRevivedState.CurrentMana == 100 && flowRequestedHp == 500 && flowRequestedMp == 100, "The integrated resurrection flow did not update authoritative resources.");
+    Assert(deathFlowHub.TryApplyPhysicalAttack(1, 2, 99, out var lethalOutcome, attackMissRoll: 99) == LegacyPhysicalAttackResult.Accepted && lethalOutcome is not null && lethalOutcome.TargetDied && lethalOutcome.RemainingHp == 0, "A lethal physical attack did not transition the victim to HP zero.");
+    Assert(deathFlowHub.TryConsumeSkillMana(2, resurrectionSkill, out var beforeFlowResurrectionState, out _, out var flowManaAfterCost) == LegacySkillManaResult.Accepted && beforeFlowResurrectionState!.CurrentMana == 0 && flowManaAfterCost == 0, "The skill attack mana stage did not preserve zero MP entering skill 99.");
+    var flowReviveResult = deathFlowHub.TryApplySkillAttack(2, 2, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var flowReviveOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, recallCityRandomX: 3, recallCityRandomY: 7);
+    Assert(flowReviveResult == LegacySkillAttackResult.Accepted && flowReviveOutcome is not null && flowReviveOutcome.UpdatesAttackerState && flowReviveOutcome.RemainingHp == 500 && flowReviveOutcome.HasRecallPosition && flowReviveOutcome.RecallPositionX == 2089 && flowReviveOutcome.RecallPositionY == 2100 && BinaryPrimitives.ReadInt32LittleEndian(flowReviveOutcome.TargetMobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 0, "The integrated lethal-attack to skill-99 resurrection flow did not preserve zero MP and restore HP/recall.");
+    Assert(deathFlowHub.TryGetResourceState(2, out var flowRevivedState, out var flowRequestedHp, out var flowRequestedMp) && flowRevivedState!.CurrentScore.Hp == 500 && flowRevivedState.CurrentMana == 0 && flowRequestedHp == 500 && flowRequestedMp == 0, "The integrated resurrection flow changed authoritative zero MP.");
+
+    var fullyChargedFlowHub = new WorldHub();
+    var fullyChargedVictim = deathFlowVictim.ToArray();
+    BinaryPrimitives.WriteInt32LittleEndian(fullyChargedVictim.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28), 1);
+    Assert(fullyChargedFlowHub.Enter(1, "FULL_COST_KILLER", (_, _) => ValueTask.CompletedTask) && fullyChargedFlowHub.Enter(2, "FULL_COST_VICTIM", (_, _) => ValueTask.CompletedTask), "Full-cost resurrection flow participants were not registered.");
+    Assert(fullyChargedFlowHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && fullyChargedFlowHub.SetCharacterState(2, 0, 0, 1, 0, 0, 2005, 2005, fullyChargedVictim), "Full-cost resurrection flow fixture was not registered.");
+    Assert(fullyChargedFlowHub.TryApplyPhysicalAttack(1, 2, 99, out var fullCostLethalOutcome, attackMissRoll: 99) == LegacyPhysicalAttackResult.Accepted && fullCostLethalOutcome is not null && fullCostLethalOutcome.TargetDied, "Full-cost fixture victim was not killed.");
+    var fullCostResurrectionSkill = resurrectionSkill with { ManaSpent = 1 };
+    Assert(fullyChargedFlowHub.TryConsumeSkillMana(2, fullCostResurrectionSkill, out var afterFullCostState, out _, out var fullCostRequestedMana) == LegacySkillManaResult.Accepted && afterFullCostState!.CurrentMana == 0 && fullCostRequestedMana == 0, "The common skill-attack mana debit did not consume all available MP before skill 99.");
+    var fullCostReviveResult = fullyChargedFlowHub.TryApplySkillAttack(2, 2, fullCostResurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var fullCostReviveOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, recallCityRandomX: 3, recallCityRandomY: 7);
+    Assert(fullCostReviveResult == LegacySkillAttackResult.Accepted && fullCostReviveOutcome is not null && fullCostReviveOutcome.RemainingHp == 500 && BinaryPrimitives.ReadInt32LittleEndian(fullCostReviveOutcome.TargetMobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 0, "Skill 99 restored MP after the common mana debit had consumed the full balance.");
 
     var occupiedRecallMob = new byte[LegacyAccountSnapshot.CharacterStride];
     Assert(resurrectionHub.Enter(2, "OCCUPIED", (_, _) => ValueTask.CompletedTask) && resurrectionHub.SetCharacterState(2, 0, 0, 0, 0, 0, 2089, 2100, occupiedRecallMob), "Occupied recall cell fixture was not registered.");
     Assert(resurrectionHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, deadResurrectionMob), "Dead resurrection state could not be restored for the occupied-cell check.");
-    var occupiedRecallResult = resurrectionHub.TryApplySkillAttack(1, 1, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var occupiedRecallOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, resurrectionMpRoll: 19, recallCityRandomX: 3, recallCityRandomY: 7);
+    var occupiedRecallResult = resurrectionHub.TryApplySkillAttack(1, 1, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var occupiedRecallOutcome, resurrectionRoll: 40, resurrectionHpRoll: 9, recallCityRandomX: 3, recallCityRandomY: 7);
     Assert(occupiedRecallResult == LegacySkillAttackResult.Accepted && occupiedRecallOutcome?.RecallPositionX == 2088 && occupiedRecallOutcome.RecallPositionY == 2099, "Skill 99 recall did not move to the first free cell in the legacy radius-1 scan.");
-    Assert(resurrectionHub.TryApplySkillAttack(1, 1, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var aliveResurrectionOutcome, resurrectionRoll: 114, resurrectionHpRoll: 49, resurrectionMpRoll: 49) == LegacySkillAttackResult.Accepted && aliveResurrectionOutcome?.RemainingHp == 500, "Skill 99 changed a living attacker instead of following the legacy dead-only branch.");
+    Assert(resurrectionHub.TryApplySkillAttack(1, 1, resurrectionSkill, itemData: null, weather: 0, randomFactor: 90, out var aliveResurrectionOutcome, resurrectionRoll: 114, resurrectionHpRoll: 49) == LegacySkillAttackResult.Accepted && aliveResurrectionOutcome?.RemainingHp == 500, "Skill 99 changed a living attacker instead of following the legacy dead-only branch.");
+}
+
+static void WorldSkillPostDamageModifiers()
+{
+    var itemData = CreateCombatItemDataTable();
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var attackerScore = new LegacyScore(50, 0, 0, 0, 0, 0, 0, 5000, 500, 5000, 500, 300, 0, 0, 0, 0, 100, 20, 0);
+    attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    attackerMob[LegacyAccountSnapshot.MobClassOffset] = 0;
+    BinaryPrimitives.WriteInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobMagicOffset), 50);
+    new LegacyItem(14, 116, 231, 0, 0, 0, 0).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset));
+    new LegacyItem(15, 0, 0, 0, 0, 0, 0).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + LegacyItem.SizeInBytes));
+
+    var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var targetScore = new LegacyScore(50, 40, 59, 0, 0, 0, 0, 5000, 500, 5000, 500, 0, 0, 0, 0, 0, 0, 0, 0);
+    targetScore.Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    targetMob[LegacyAccountSnapshot.MobClassOffset] = 0;
+
+    var skill = new LegacySkillDefinition(79, 69, 1, 20, 15, 1, 1, 40, 0, 0, 0, 0, 0, [], [], 0, 0, 1, 2, 0, 0, 1, 0, "Tempestade");
+    var playerHub = new WorldHub();
+    Assert(playerHub.Enter(1, "MODIFIER_ATTACKER", (_, _) => ValueTask.CompletedTask) && playerHub.Enter(2, "MODIFIER_PLAYER", (_, _) => ValueTask.CompletedTask), "Skill modifier player participants were not registered.");
+    Assert(playerHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && playerHub.SetCharacterState(2, 0, 0, 2, 0, 0, 2005, 2005, targetMob), "Skill modifier player fixture was not set.");
+    var playerResult = playerHub.TryApplySkillAttack(1, 2, skill, itemData, weather: 0, randomFactor: 90, out var playerOutcome, attackMissRoll: 99);
+    Assert(playerResult == LegacySkillAttackResult.Accepted && playerOutcome is not null && playerOutcome.Damage == 144 && playerOutcome.RemainingHp == 4856,
+        $"Skill ForceDamage/PvPDamage did not follow the legacy integer order against a player: result={playerResult}, damage={playerOutcome?.Damage}, hp={playerOutcome?.RemainingHp}.");
+
+    var npcMob = targetMob.ToArray();
+    npcMob[LegacyAccountSnapshot.MobClanOffset] = 1;
+    var npcHub = new WorldHub();
+    Assert(npcHub.Enter(1, "MODIFIER_NPC_ATTACKER", (_, _) => ValueTask.CompletedTask) && npcHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob), "Skill modifier NPC attacker was not registered.");
+    var npcId = npcHub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_101);
+    var npcResult = npcHub.TryApplySkillAttack(1, npcId, skill, itemData, weather: 0, randomFactor: 90, out var npcOutcome);
+    Assert(npcResult == LegacySkillAttackResult.Accepted && npcOutcome is not null && npcOutcome.Damage == 139 && npcOutcome.RemainingHp == 4861,
+        $"Skill ForceDamage/PvPDamage did not apply ForceDamage alone against an NPC: result={npcResult}, damage={npcOutcome?.Damage}, hp={npcOutcome?.RemainingHp}.");
+}
+
+static void WorldEquipmentCombatGradeBonuses()
+{
+    var body = new byte[LegacyItemDataTable.BodySizeInBytes];
+    WriteItemListRecord(body, 1, "ANCT PERFU", unique: 0, position: 0, grade: 6);
+    WriteItemListRecord(body, 2, "PERFU E", unique: 0, position: 0, grade: 9);
+    WriteItemListRecord(body, 3, "PERFU F", unique: 0, position: 0, grade: 20);
+    WriteItemListRecord(body, 4, "ABS PERFU", unique: 0, position: 0, grade: 22);
+    WriteItemListRecord(body, 5, "PRATEADA", unique: 0, position: 0, grade: 24);
+    WriteItemListRecord(body, 6, "DOURADA", unique: 0, position: 0, grade: 25);
+    WriteItemListRecord(body, 7, "MISTICA", unique: 0, position: 0, grade: 26);
+    WriteItemListRecord(body, 8, "ANCT ABS", unique: 0, position: 0, grade: 8);
+    WriteItemListRecord(body, 9, "ABS E", unique: 0, position: 0, grade: 10);
+    WriteItemListRecord(body, 10, "ABS F", unique: 0, position: 0, grade: 21);
+    var itemData = LoadLegacyItemDataTable(body);
+
+    byte[] CreateMob(string name, int hp, int damage)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        System.Text.Encoding.ASCII.GetBytes(name).CopyTo(mob.AsSpan(LegacyAccountSnapshot.MobNameOffset));
+        var score = new LegacyScore(
+            Level: 50, Ac: 0, Damage: damage, Merchant: 0, AttackRun: 0, Direction: 0,
+            ChaosRate: 0, MaxHp: 50_000, MaxMp: 5_000, Hp: hp, Mp: 5_000,
+            Strength: 100, Intelligence: 50, Dexterity: 10, Constitution: 0,
+            Special1: 0, Special2: 0, Special3: 0, Special4: 0);
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        return mob;
+    }
+
+    var forceEquipment = new LegacyItem[CharacterMobV769.EquipmentCount];
+    forceEquipment[0] = new LegacyItem(1, 0, 0, 0, 0, 0, 0); // grade 6's source slot == 20 branch remains unreachable.
+    forceEquipment[1] = new LegacyItem(2, LegacyItemEffect.Sanctuary, 230, 0, 0, 0, 0); // grade 9: 20 + 10 * 2.
+    forceEquipment[2] = new LegacyItem(3, LegacyItemEffect.Sanctuary, 234, 0, 0, 0, 0); // grade 20: 30 + 12 * 2.
+    forceEquipment[3] = new LegacyItem(4, LegacyItemEffect.Sanctuary, 238, 0, 0, 0, 0); // grade 22: 30 + 15 * 2.
+    forceEquipment[4] = new LegacyItem(5, LegacyItemEffect.Sanctuary, 242, 0, 0, 0, 0); // grade 24: 60 + 18 * 2.
+    forceEquipment[5] = new LegacyItem(6, LegacyItemEffect.Sanctuary, 246, 0, 0, 0, 0); // grade 25: 60 + 22 * 2.
+    forceEquipment[6] = new LegacyItem(7, LegacyItemEffect.Sanctuary, 250, 0, 0, 0, 0); // grade 26: 80 + 27 * 2.
+    forceEquipment[7] = new LegacyItem(1, LegacyItemEffect.Sanctuary, 235, 0, 0, 0, 0); // grade 6 gem: 80 * REF_11 level 2.
+
+    var forceWorld = new WorldHub();
+    var forceAttacker = CreateMob("GRADE_FORCE", 50_000, 1_000);
+    Assert(forceWorld.Enter(1, "GRADE_FORCE", static (_, _) => ValueTask.CompletedTask) &&
+           forceWorld.SetCharacterState(
+               1, 0, 0, 1, 0, 0, 2_000, 2_000, forceAttacker,
+               LegacyAccountSnapshot.ClassMasterMortal,
+               new byte[LegacyAccountSnapshot.AffectStride],
+               new byte[LegacyAccountSnapshot.MobExtraStride],
+               forceEquipment),
+        "The equipment ForceDamage attacker fixture was not registered.");
+    var forceNpc = CreateMob("GRADE_FORCE_NPC", 50_000, 0);
+    forceNpc[LegacyAccountSnapshot.MobClanOffset] = 1;
+    var forceNpcId = forceWorld.EnterNpc(forceNpc, 2_005, 2_000, requestedConnectionId: 30_001);
+    var forceResult = forceWorld.TryApplyPhysicalAttack(
+        1, forceNpcId, randomFactor: 99, out var forceOutcome,
+        attackMissRoll: 99, itemData: itemData);
+    Assert(forceResult == LegacyPhysicalAttackResult.Accepted && forceOutcome is { ForceDamage: 648 },
+        $"The 7.69 equipment grade/gem ForceDamage stage was wrong; result={forceResult}, force={forceOutcome?.ForceDamage}.");
+
+    var reflectEquipment = new LegacyItem[CharacterMobV769.EquipmentCount];
+    reflectEquipment[0] = new LegacyItem(8, 0, 0, 0, 0, 0, 0); // grade 8: +20.
+    reflectEquipment[1] = new LegacyItem(9, LegacyItemEffect.Sanctuary, 230, 0, 0, 0, 0); // grade 10: 20 + 10 * 2.
+    reflectEquipment[2] = new LegacyItem(10, LegacyItemEffect.Sanctuary, 234, 0, 0, 0, 0); // grade 21: 30 + 12 * 2.
+    reflectEquipment[3] = new LegacyItem(4, LegacyItemEffect.Sanctuary, 238, 0, 0, 0, 0); // grade 22: 30 + 15 * 2.
+    reflectEquipment[4] = new LegacyItem(6, LegacyItemEffect.Sanctuary, 242, 0, 0, 0, 0); // grade 25: 60 + 18 * 2.
+    reflectEquipment[5] = new LegacyItem(7, LegacyItemEffect.Sanctuary, 246, 0, 0, 0, 0); // grade 26: 80 + 22 * 2.
+    reflectEquipment[6] = new LegacyItem(1, 0, 0, 0, 0, 0, 0); // grade 6 is perforation, not ancient absorption.
+
+    var reflectWorld = new WorldHub();
+    Assert(reflectWorld.Enter(1, "GRADE_REFLECT_ATTACKER", static (_, _) => ValueTask.CompletedTask) &&
+           reflectWorld.Enter(2, "GRADE_REFLECT_TARGET", static (_, _) => ValueTask.CompletedTask) &&
+           reflectWorld.SetCharacterState(1, 0, 0, 1, 0, 0, 2_000, 2_000, CreateMob("REFLECT_ATTACKER", 50_000, 1_000)) &&
+           reflectWorld.SetCharacterState(
+               2, 0, 0, 2, 0, 0, 2_005, 2_000, CreateMob("REFLECT_TARGET", 50_000, 0),
+               LegacyAccountSnapshot.ClassMasterMortal,
+               new byte[LegacyAccountSnapshot.AffectStride],
+               new byte[LegacyAccountSnapshot.MobExtraStride],
+               reflectEquipment),
+        "The equipment ReflectDamage player fixtures were not registered.");
+    var reflectResult = reflectWorld.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out var reflectOutcome,
+        attackMissRoll: 99, itemData: itemData);
+    Assert(reflectResult == LegacyPhysicalAttackResult.Accepted && reflectOutcome is { ReflectDamage: 394 },
+        $"The 7.69 equipment grade ReflectDamage stage was wrong; result={reflectResult}, reflect={reflectOutcome?.ReflectDamage}.");
 }
 
 static void WorldSummonSkill()
@@ -6585,6 +9381,7 @@ static void WorldSummonSkill()
     var hub = new WorldHub();
     Assert(hub.Enter(1, "CASTER", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "TARGET", (_, _) => ValueTask.CompletedTask), "Teleport-skill participants were not registered.");
     Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && hub.SetCharacterState(2, 0, 0, 1, 0, 0, 2005, 2005, targetMob), "Teleport-skill participant state was not set.");
+    Assert(hub.TrySetParty(1, [1, 2]), "Teleport-skill party fixture was not formed.");
 
     var result = hub.TryApplySkillAttack(1, 2, teleport, itemData: null, weather: 0, randomFactor: 90, out var outcome);
     Assert(result == LegacySkillAttackResult.Accepted && outcome is not null && outcome.HasTargetPosition && outcome.TargetPositionX == 1999 && outcome.TargetPositionY == 1999, $"InstanceType 9 did not reproduce DoSummon's first free-cell movement: result={result}, position=({outcome?.TargetPositionX},{outcome?.TargetPositionY}).");
@@ -6593,7 +9390,27 @@ static void WorldSummonSkill()
     var blockedHub = new WorldHub();
     Assert(blockedHub.Enter(1, "CASTER", (_, _) => ValueTask.CompletedTask) && blockedHub.Enter(2, "TARGET", (_, _) => ValueTask.CompletedTask), "Teleport map-gate participants were not registered.");
     Assert(blockedHub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && blockedHub.SetCharacterState(2, 0, 0, 1, 0, 0, 2005, 2005, targetMob) && blockedHub.SetCombatEligibilityState(1, false, false, 0x04), "Teleport map-gate fixture was not set.");
+    Assert(blockedHub.TrySetParty(1, [1, 2]), "Teleport map-gate party fixture was not formed.");
     Assert(blockedHub.TryApplySkillAttack(1, 2, teleport, itemData: null, weather: 0, randomFactor: 90, out _) == LegacySkillAttackResult.SummonNotAllowedHere, "InstanceType 9 ignored the legacy map attribute summon restriction.");
+
+    // 7.69 gates: the W2PP `Hp > Hp + Special + 30` check is commented out; level, caster sector and target zones apply.
+    LegacySkillAttackResult Summon(byte[] target, short attackerX, short attackerY, short targetX, short targetY)
+    {
+        var gateHub = new WorldHub();
+        Assert(gateHub.Enter(1, "CASTER", (_, _) => ValueTask.CompletedTask) && gateHub.Enter(2, "TARGET", (_, _) => ValueTask.CompletedTask) &&
+            gateHub.SetCharacterState(1, 0, 0, 1, 0, 0, attackerX, attackerY, attackerMob) && gateHub.SetCharacterState(2, 0, 0, 1, 0, 0, targetX, targetY, target),
+            "Summon gate fixture was not set.");
+        Assert(gateHub.TrySetParty(1, [1, 2]), "Summon gate party fixture was not formed.");
+        return gateHub.TryApplySkillAttack(1, 2, teleport, itemData: null, weather: 0, randomFactor: 90, out _);
+    }
+    var highHpTarget = targetMob.ToArray();
+    new LegacyScore(100, 0, 0, 0, 0, 0, 0, 90_000, 1000, 90_000, 100, 0, 0, 0, 0, 0, 0, 0, 0).Write(highHpTarget.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(Summon(highHpTarget, 2000, 2000, 2005, 2005) == LegacySkillAttackResult.Accepted, "The W2PP HP+Special+30 summon check commented out in 7.69 still rejected.");
+    var higherLevelTarget = targetMob.ToArray();
+    new LegacyScore(101, 0, 0, 0, 0, 0, 0, 1000, 1000, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0).Write(higherLevelTarget.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(Summon(higherLevelTarget, 2000, 2000, 2005, 2005) == LegacySkillAttackResult.TargetTooHighToSummon, "A higher-level target was summoned.");
+    Assert(Summon(targetMob, 13 * 128, 15 * 128, 13 * 128 + 5, 15 * 128 + 5) == LegacySkillAttackResult.SummonNotAllowedHere, "A caster in RvR sector (13,15) summoned.");
+    Assert(Summon(targetMob, 2000, 2040, 2000, 16 * 128) == LegacySkillAttackResult.SummonZoneBlocked, "A target on the Zumbi row (y/128==16) was summoned.");
 }
 
 static void WorldEtherealFlames()
@@ -6611,15 +9428,28 @@ static void WorldEtherealFlames()
     Assert(hub.Enter(1, "CASTER", (_, _) => ValueTask.CompletedTask) && hub.Enter(2, "TARGET", (_, _) => ValueTask.CompletedTask), "Ethereal-flame participants were not registered.");
     Assert(hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob) && hub.SetCharacterState(2, 0, 0, 1, 0, 0, 2005, 2005, targetMob, LegacyAccountSnapshot.ClassMasterMortal, targetAffect), "Ethereal-flame participant state was not set.");
 
+    Assert(hub.TryGetResourceState(2, out _, out _, out var requestedMpBeforeBurn), "Ethereal-flame target resources were not readable before the burn.");
     var burnResult = hub.TryApplySkillAttack(1, 2, skill, itemData: null, weather: 0, randomFactor: 90, out var burnOutcome, instanceRandomFactor: 11, burnRandomFactor: 0);
     Assert(burnResult == LegacySkillAttackResult.Accepted && burnOutcome?.TargetResourceChanged == true, "InstanceType 12 did not accept the deterministic burn branch.");
-    Assert(hub.TryGetResourceState(2, out var burnedTarget, out var requestedHp, out var requestedMp) && burnedTarget!.CurrentMana == 90 && requestedHp == 100 && requestedMp == 90, "Ethereal Flames did not apply the legacy 10 percent MP burn and requested resource update.");
+    // TMProject 7.69 lowers only CurrentScore.Mp; the W2PP ReqMp overwrite is not ported.
+    Assert(hub.TryGetResourceState(2, out var burnedTarget, out var requestedHp, out var requestedMp) && burnedTarget!.CurrentMana == 90 && requestedHp == 100 && requestedMp == requestedMpBeforeBurn, "Ethereal Flames did not apply the 7.69 10 percent MP burn while preserving RequestedMana.");
 
     BinaryPrimitives.WriteInt32LittleEndian(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentMpOffset), 100);
     targetAffect[0] = 18;
+    targetAffect[8] = 32;
+    targetAffect[16] = 2;
+    targetAffect[17] = 5;
     Assert(hub.SetCharacterState(2, 0, 0, 1, 0, 0, 2005, 2005, targetMob, LegacyAccountSnapshot.ClassMasterMortal, targetAffect), "Ethereal-flame target could not be reset for the cleanse branch.");
-    var cleanseResult = hub.TryApplySkillAttack(1, 2, skill, itemData: null, weather: 0, randomFactor: 90, out var cleanseOutcome, instanceRandomFactor: 0, burnRandomFactor: 0);
-    Assert(cleanseResult == LegacySkillAttackResult.Accepted && cleanseOutcome?.TargetAffectSnapshot is not null && cleanseOutcome.TargetAffectSnapshot[0] == 0, "InstanceType 12 did not clear the legacy elemental affects when the burn roll failed.");
+    var noItemDataResult = hub.TryApplySkillAttack(1, 2, skill, itemData: null, weather: 0, randomFactor: 90, out var noItemDataOutcome, instanceRandomFactor: 0, burnRandomFactor: 0);
+    Assert(noItemDataResult == LegacySkillAttackResult.CombatStateUnavailable && noItemDataOutcome is null, "InstanceType 12 cleanse did not fail closed without the ItemList needed to rebuild the score.");
+    Assert(hub.TryGetCharacterSnapshot(2, out _, out _, out _, out _, out var untouchedAffect) && untouchedAffect![0] == 18 && untouchedAffect[8] == 32, "Failed InstanceType 12 cleanse mutated the target affects.");
+
+    var cleanseResult = hub.TryApplySkillAttack(1, 2, skill, itemData: CreateCombatItemDataTable(), weather: 0, randomFactor: 90, out var cleanseOutcome, instanceRandomFactor: 0, burnRandomFactor: 0);
+    Assert(cleanseResult == LegacySkillAttackResult.Accepted && cleanseOutcome?.TargetAffectSnapshot is { } cleansed &&
+        cleansed.AsSpan(0, 8).IndexOfAnyExcept((byte)0) < 0 && cleansed.AsSpan(8, 8).IndexOfAnyExcept((byte)0) < 0,
+        "InstanceType 12 did not clear the whole 7.69 Type 18/32 affect records when the burn roll failed.");
+    Assert(cleanseOutcome!.TargetAffectSnapshot![16] == 2 && cleanseOutcome.TargetAffectSnapshot[17] == 5, "InstanceType 12 cleared an affect type outside 18/16/14/19/32.");
+    Assert(cleanseOutcome.TargetEquipmentChanged, "InstanceType 12 cleanse did not request the 7.69 SendEquip/SendScore view relay.");
 }
 
 static void WorldNpcSummon()
@@ -6710,10 +9540,33 @@ static void WorldNpcSummon()
 
     var removeFrame = codec.Decode(new RemoveMobConfirmation((ushort)summoned.ConnectionId).ToFrame(codec, 1, 0));
     Assert(removeFrame.Header.Type == RemoveMobConfirmation.MessageType && removeFrame.Header.Id == summoned.ConnectionId && BinaryPrimitives.ReadInt32LittleEndian(removeFrame.Payload.Span) == 3, "NPC summon removal wire differs from MSG_RemoveMob.");
-    BinaryPrimitives.WriteUInt16LittleEndian(summoned.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset), 315);
-    BinaryPrimitives.WriteInt32LittleEndian(summoned.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24), 1);
     Assert(hub.UpdatePosition(2, 2029, 2029), "NPC-summon attacker could not be moved into range.");
-    var summonDeathResult = hub.TryApplyPhysicalAttack(2, summoned.ConnectionId, randomFactor: 99, out var summonDeath, parryRandomRoll: 1000, itemData: CreateCombatItemDataTable());
+    BinaryPrimitives.WriteUInt16LittleEndian(summoned.MobSnapshot.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset), 315);
+
+    var nonlethalMountHitResult = hub.TryApplyPhysicalAttack(
+        2,
+        summoned.ConnectionId,
+        randomFactor: 99,
+        out var nonlethalMountHit,
+        attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    var nonlethalMountHp = nonlethalMountHit?.UpdatedMountItem is { } nonlethalMountItem
+        ? (short)(nonlethalMountItem.Effect1 | (nonlethalMountItem.Value1 << 8))
+        : -1;
+    var ownerMountHp = hub.TryGetCharacterSnapshot(1, out var ownerAfterMountHit, out _, out _, out _) && ownerAfterMountHit is not null
+        ? BinaryPrimitives.ReadInt16LittleEndian(ownerAfterMountHit.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + (14 * LegacyItem.SizeInBytes) + 2, sizeof(short)))
+        : (short)-1;
+    Assert(nonlethalMountHitResult == LegacyPhysicalAttackResult.Accepted && nonlethalMountHit is not null &&
+        nonlethalMountHit.RemainingHp > 0 && !nonlethalMountHit.TargetRemoved &&
+        nonlethalMountHit.MountOwnerConnectionId == 1 && nonlethalMountHp == nonlethalMountHit.RemainingHp &&
+        hub.TryGetSummonTarget(summoned.ConnectionId, out _) && ownerMountHp == nonlethalMountHp,
+        $"A nonlethal hit did not keep the summoned mount alive and synchronize its HP to the owner's equipment: result={nonlethalMountHitResult}, outcome={nonlethalMountHit}, ownerMountHp={ownerMountHp}.");
+
+    var lethalAttackerMob = enemyMob.ToArray();
+    var lethalAttackerScore = LegacyScore.Read(lethalAttackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset)) with { Damage = 10_000_000 };
+    lethalAttackerScore.Write(lethalAttackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(hub.SetCharacterState(2, 0, 0, 5, 0, 0, 2029, 2029, lethalAttackerMob), "NPC-summon attacker could not be strengthened for the lethal mount-link regression.");
+    var summonDeathResult = hub.TryApplyPhysicalAttack(2, summoned.ConnectionId, randomFactor: 99, out var summonDeath, attackMissRoll: 99, itemData: CreateCombatItemDataTable());
     var linkedMountHp = summonDeath?.UpdatedMountItem is { } linkedMount
         ? (short)(linkedMount.Effect1 | (linkedMount.Value1 << 8))
         : -1;
@@ -6730,23 +9583,67 @@ static void ShortSkillWireAndPersistence()
     var frame = codec.Decode(codec.Encode(SetShortSkillRequest.MessageType, 4, 123456, payload, 16));
     Assert(SetShortSkillRequest.TryParse(frame, out var request) && request!.SkillBar.SequenceEqual(payload[..4]) && request.ShortSkills.SequenceEqual(payload[4..]), "Set-short-skill wire differs from the legacy layout.");
     var parsed = request ?? throw new InvalidOperationException("Set-short-skill parser returned no request after a successful parse.");
+    var secondPayload = Enumerable.Range(101, 20).Select(value => (byte)value).ToArray();
+    var secondFrame = codec.Decode(codec.Encode(SetShortSkillRequest.MessageType, 4, 123456, secondPayload, 16));
+    Assert(SetShortSkillRequest.TryParse(secondFrame, out var secondRequest) && secondRequest!.SkillBar.SequenceEqual(secondPayload[..4]) && secondRequest.ShortSkills.SequenceEqual(secondPayload[4..]), "Second character's set-short-skill wire differed from its own 20-byte payload.");
+    var parsedSecond = secondRequest ?? throw new InvalidOperationException("Second set-short-skill parser returned no request after a successful parse.");
+    var otherPayload = Enumerable.Range(201, 20).Select(value => (byte)value).ToArray();
+    var otherFrame = codec.Decode(codec.Encode(SetShortSkillRequest.MessageType, 4, 123456, otherPayload, 16));
+    Assert(SetShortSkillRequest.TryParse(otherFrame, out var otherRequest) && otherRequest!.SkillBar.SequenceEqual(otherPayload[..4]) && otherRequest.ShortSkills.SequenceEqual(otherPayload[4..]), "Other account's set-short-skill wire differed from its own 20-byte payload.");
+    var parsedOther = otherRequest ?? throw new InvalidOperationException("Other account's set-short-skill parser returned no request after a successful parse.");
 
     var root = Path.Combine(Path.GetTempPath(), $"wyd-cdk-short-skill-test-{Guid.NewGuid():N}");
     var accountRoot = Path.Combine(root, "account");
     try
     {
         Directory.CreateDirectory(Path.Combine(accountRoot, "S"));
+        Directory.CreateDirectory(Path.Combine(accountRoot, "O"));
         var file = new byte[LegacyAccountSnapshot.RequiredFileLength];
-        file[LegacyAccountSnapshot.CharactersOffset] = (byte)'H';
+        var staleMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        staleMob[LegacyAccountSnapshot.MobNameOffset] = (byte)'H';
+        new byte[] { 0xA0, 0xA1, 0xA2, 0xA3 }.CopyTo(staleMob, LegacyAccountSnapshot.MobSkillBarOffset);
+        staleMob.CopyTo(file, LegacyAccountSnapshot.CharactersOffset);
+        var secondStaleMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        secondStaleMob[LegacyAccountSnapshot.MobNameOffset] = (byte)'T';
+        new byte[] { 0xB0, 0xB1, 0xB2, 0xB3 }.CopyTo(secondStaleMob, LegacyAccountSnapshot.MobSkillBarOffset);
+        secondStaleMob.CopyTo(file, LegacyAccountSnapshot.CharactersOffset + LegacyAccountSnapshot.CharacterStride);
         File.WriteAllBytes(Path.Combine(accountRoot, "S", "SANDBOX"), file);
+
+        var otherFile = new byte[LegacyAccountSnapshot.RequiredFileLength];
+        var otherMob = new byte[LegacyAccountSnapshot.CharacterStride];
+        otherMob[LegacyAccountSnapshot.MobNameOffset] = (byte)'O';
+        new byte[] { 0xC0, 0xC1, 0xC2, 0xC3 }.CopyTo(otherMob, LegacyAccountSnapshot.MobSkillBarOffset);
+        otherMob.CopyTo(otherFile, LegacyAccountSnapshot.CharactersOffset);
+        File.WriteAllBytes(Path.Combine(accountRoot, "O", "OTHER"), otherFile);
+
         var store = new LegacyFileAccountStore(accountRoot);
         Assert(store.TrySaveCharacterShortSkillsAsync("SANDBOX", 0, parsed.SkillBar, parsed.ShortSkills).GetAwaiter().GetResult() == CharacterShortSkillSaveResult.Success, "Set-short-skill persistence failed.");
-        var stored = File.ReadAllBytes(Path.Combine(accountRoot, "S", "SANDBOX"));
-        Assert(stored.AsSpan(LegacyAccountSnapshot.CharactersOffset + LegacyAccountSnapshot.MobSkillBarOffset, 4).SequenceEqual(payload[..4]) && stored.AsSpan(LegacyAccountSnapshot.ShortSkillOffset, 16).SequenceEqual(payload[4..]), "Set-short-skill values were not persisted at the legacy offsets.");
+        Assert(store.TrySaveCharacterShortSkillsAsync("SANDBOX", 1, parsedSecond.SkillBar, parsedSecond.ShortSkills).GetAwaiter().GetResult() == CharacterShortSkillSaveResult.Success, "Second character's set-short-skill persistence failed.");
+        Assert(store.TrySaveCharacterShortSkillsAsync("OTHER", 0, parsedOther.SkillBar, parsedOther.ShortSkills).GetAwaiter().GetResult() == CharacterShortSkillSaveResult.Success, "Other account's set-short-skill persistence failed.");
+        Assert(store.TrySaveCharacterStateAsync("SANDBOX", 0, staleMob, 2_000, 2_001).GetAwaiter().GetResult() == CharacterStateSaveResult.Success, "Stale logout snapshot could not be saved.");
+        Assert(store.TrySaveCharacterStateAsync("SANDBOX", 1, secondStaleMob, 2_010, 2_011).GetAwaiter().GetResult() == CharacterStateSaveResult.Success, "Second character's stale logout snapshot could not be saved.");
+        AssertStoredShortSkills(store, "SANDBOX", 0, payload, "First character's stale full save changed its 20 shortcuts.");
+        AssertStoredShortSkills(store, "SANDBOX", 1, secondPayload, "Second character's stale full save changed or shared its 20 shortcuts.");
+
+        var atomicSave = store.TrySaveCharacterStatesAtomicallyAsync(
+            new LegacyCharacterStateSaveRequest("SANDBOX", 0, staleMob, 2_002, 2_003, new byte[LegacyAccountSnapshot.MobExtraStride]),
+            new LegacyCharacterStateSaveRequest("OTHER", 0, otherMob, 2_004, 2_005, new byte[LegacyAccountSnapshot.MobExtraStride])).GetAwaiter().GetResult();
+        Assert(atomicSave == AtomicCharacterStateSaveResult.Success, "Atomic stale character snapshots could not be saved.");
+        AssertStoredShortSkills(store, "SANDBOX", 0, payload, "Atomic stale save changed the first character's 20 shortcuts.");
+        AssertStoredShortSkills(store, "SANDBOX", 1, secondPayload, "Atomic stale save changed the second character's 20 shortcuts.");
+        AssertStoredShortSkills(store, "OTHER", 0, otherPayload, "Atomic stale save changed the other account's 20 shortcuts.");
     }
     finally
     {
         if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+
+    static void AssertStoredShortSkills(LegacyFileAccountStore store, string accountName, int slot, byte[] expected, string message)
+    {
+        var login = store.ReadCharacterLoginDataAsync(accountName, slot).GetAwaiter().GetResult();
+        Assert(login is not null &&
+            login.Mob.AsSpan(LegacyAccountSnapshot.MobSkillBarOffset, 4).SequenceEqual(expected[..4]) &&
+            login.ShortSkill.SequenceEqual(expected[4..]), message);
     }
 }
 
@@ -6774,7 +9671,7 @@ static void WorldHubBroadcast()
 static void WorldSkillManaMutation()
 {
     var mob = new byte[LegacyAccountSnapshot.CharacterStride];
-    var score = new LegacyScore(100, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 100, 0, 0, 0, 0, 0, 40, 0, 0);
+    var score = new LegacyScore(100, 0, 0, 0, 0, 0, 0, 1000, 1000, 1000, 100, 0, 0, 0, 0, 0, 0, 40, 0);
     score.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
     mob[LegacyAccountSnapshot.MobClassOffset] = 0;
     mob[LegacyAccountSnapshot.MobSaveManaOffset] = 10;
@@ -6793,6 +9690,25 @@ static void WorldSkillManaMutation()
     Assert(lowHub.Enter(2, "LOWMANA", (_, _) => ValueTask.CompletedTask) && lowHub.SetCharacterState(2, 0, 0, 0, 0, 0, 0, 0, lowManaMob), "Low-mana participant state was not set.");
     Assert(lowHub.TryConsumeSkillMana(2, skill, out var unchanged, out _) == LegacySkillManaResult.InsufficientMana && unchanged is null, "Insufficient mana was accepted or mutated.");
     Assert(lowHub.TryGetCombatState(2, out var lowState) && lowState!.CurrentMana == 10, "Insufficient-mana attempt changed current MP.");
+
+    // 7.69 common Basedef.h: SaveMana is signed char. Base cost here is 20 * (40/2 + 100) / 100 = 24.
+    int? Consume(byte saveMana, int mp, int maxMp)
+    {
+        var signedMob = mob.ToArray();
+        (score with { Mp = mp, MaxMp = maxMp }).Write(signedMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        signedMob[LegacyAccountSnapshot.MobSaveManaOffset] = saveMana;
+        var signedHub = new WorldHub();
+        Assert(signedHub.Enter(3, "SIGNED", (_, _) => ValueTask.CompletedTask) && signedHub.SetCharacterState(3, 0, 0, 0, 0, 0, 0, 0, signedMob), "Signed SaveMana participant state was not set.");
+        return signedHub.TryConsumeSkillMana(3, skill, out var signedAfter, out _) == LegacySkillManaResult.Accepted ? signedAfter!.CurrentMana : null;
+    }
+    Assert(LegacyMobCombatState.Read(mob) is { SaveMana: 10 }, "Positive SaveMana was not preserved.");
+    Assert(Consume(0xFF, 100, 1000) == 76, "SaveMana 0xFF was not read as -1 (101% of 24 = 24).");
+    Assert(Consume(0x80, 100, 1000) == 46, "SaveMana 0x80 was not read as -128 (228% of 24 = 54).");
+    Assert(Consume(120, 100, 1000) == 104, "Negative ManaSpent (-20% of 24 = -4) was not accepted as an MP gain.");
+    Assert(Consume(120, 0, 1000) == 4, "Negative ManaSpent was rejected at MP zero.");
+    Assert(Consume(120, 100, 102) == 102, "MP gain was not capped at MaxMp by SetReqMp.");
+    Assert(Consume(10, 100, 50) == 50, "SetReqMp did not cap an MP already above MaxMp after a normal debit.");
+    Assert(Consume(10, 20, 1000) is null, "Mp - ManaSpent < 0 was accepted.");
 }
 
 static void WorldIllusionFixedManaMutation()
@@ -6832,8 +9748,8 @@ static void WorldGuildInvite()
     var hub = new WorldHub();
     Assert(hub.Enter(1, "LEADER", (_, _) => ValueTask.CompletedTask), "Guild leader was not registered.");
     Assert(hub.Enter(2, "MEMBER", (_, _) => ValueTask.CompletedTask), "Guild target was not registered.");
-    Assert(hub.SetCharacterState(1, 0, 77, 1, 9, 100_000_000), "Guild leader state was not set.");
-    Assert(hub.SetCharacterState(2, 0, 0, 1, 0, 0), "Guild target state was not set.");
+    Assert(hub.SetCharacterState(1, 0, 77, 1, 9, 100_000_000, 0, 0, new byte[LegacyAccountSnapshot.CharacterStride]), "Guild leader state was not set.");
+    Assert(hub.SetCharacterState(2, 0, 0, 1, 0, 0, 0, 0, new byte[LegacyAccountSnapshot.CharacterStride]), "Guild target state was not set.");
     var check = hub.TryPrepareGuildInvite(1, 2, 1, out var plan);
     if (DateTime.Now.DayOfWeek == DayOfWeek.Sunday)
     {
@@ -6842,6 +9758,10 @@ static void WorldGuildInvite()
     }
     Assert(check == GuildInviteCheckResult.Accepted && plan is not null && plan.Cost == 100_000_000, "Valid guild invite was rejected or cost differs.");
     Assert(hub.ApplyGuildInvite(plan!), "Prepared guild invite was not applied.");
+    Assert(hub.ApplyGuildInvite(plan!), "Already committed guild invite was not recognized during post-store reconciliation.");
+    Assert(hub.TryGetCharacterSnapshot(1, out var sourceMob, out _, out _) && sourceMob is not null &&
+        BinaryPrimitives.ReadInt32LittleEndian(sourceMob.AsSpan(LegacyAccountSnapshot.MobCoinOffset)) == 0,
+        "Idempotent guild-invite reconciliation debited the source twice.");
     Assert(hub.TryPrepareGuildInvite(1, 2, 0, out _) == GuildInviteCheckResult.TargetAlreadyHasGuild, "A second guild invite was accepted for a member already in a guild.");
 }
 
@@ -7358,6 +10278,263 @@ static void WorldTradingItemCarryCompatibility()
         "The faithful date helper failed to roll a 30-day item into January of the next year.");
 }
 
+static void ApplyBonusScoreWire()
+{
+    var codec = LegacyFrameCodec.CreateDefault();
+    var payload = new byte[ApplyBonusRequest.PayloadSize];
+    BinaryPrimitives.WriteInt16LittleEndian(payload, 0);
+    BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(sizeof(short)), 3);
+    BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(sizeof(short) * 2), 42);
+    var encoded = codec.Encode(ApplyBonusRequest.MessageType, 1, 40, payload, 23);
+    var frame = codec.Decode(encoded);
+
+    Assert(ApplyBonusRequest.TryParse(frame, out var request) && request is { BonusType: 0, Detail: 3, TargetId: 42 },
+        "MSG_ApplyBonus did not parse BonusType, Detail, and TargetID from the 7.69 payload.");
+    Assert(frame.Header.Type == 0x0119 && frame.Header.Size == 20 && frame.Payload.Length == ApplyBonusRequest.PayloadSize,
+        "MSG_ApplyBonus did not preserve the 20-byte legacy packet contract.");
+
+    BinaryPrimitives.WriteInt16LittleEndian(payload, 2);
+    BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(sizeof(short)), 5025);
+    BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(sizeof(short) * 2), 20_000);
+    var skillFrame = codec.Decode(codec.Encode(ApplyBonusRequest.MessageType, 1, 40, payload, 23));
+    Assert(ApplyBonusRequest.TryParse(skillFrame, out var skillRequest) &&
+        skillRequest is { BonusType: 2, Detail: 5025, TargetId: 20_000 },
+        "MSG_ApplyBonus did not preserve the BonusType=2 skill detail and skill-master TargetID.");
+
+    Assert(!ApplyBonusRequest.TryParse(codec.Decode(codec.Encode(0x0118, 1, 40, payload, 23)), out _),
+        "MSG_ApplyBonus accepted a different message type.");
+    encoded[3] ^= 0x40;
+    Assert(!ApplyBonusRequest.TryParse(codec.Decode(encoded), out _),
+        "MSG_ApplyBonus accepted a frame with an invalid checksum.");
+}
+
+static void ApplyBonusScoreAllocation()
+{
+    var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(10, 0, 0, 0, 0, 0, 0, 1000, 500, 700, 300, 10, 20, 30, 40, 0, 0, 0, 0)
+        .Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+    new LegacyScore(10, 0, 0, 0, 0, 0, 0, 1000, 500, 700, 300, 10, 20, 30, 40, 0, 0, 0, 0)
+        .Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset), 300);
+    var itemData = LoadLegacyItemDataTable(new byte[LegacyItemDataTable.BodySizeInBytes]);
+    var world = new WorldHub(itemData: itemData);
+    Assert(world.Enter(1, "APPLY_BONUS", (_, _) => ValueTask.CompletedTask) &&
+        world.SetCharacterState(1, 0, 0, 0, 0, 0, 1000, 1000, mob),
+        "Apply-bonus participant was not initialized.");
+
+    var result = world.TryApplyBaseScoreBonus(1, detail: 1, out var outcome);
+
+    Assert(result == LegacyBaseScoreBonusResult.Applied && outcome is not null,
+        "The player could not allocate base-score bonus points while alive in USER_PLAY.");
+    var updatedMob = outcome!.Mob;
+    var baseScore = LegacyScore.Read(updatedMob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+    var currentScore = LegacyScore.Read(updatedMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(BinaryPrimitives.ReadUInt16LittleEndian(updatedMob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset)) == 200 &&
+        baseScore.Intelligence == 120 && baseScore.MaxMp == 700 && currentScore.Intelligence == 120 && currentScore.MaxMp == 700,
+        "A 300-point Int allocation did not spend 100 points and add 100 Int / 200 MaxMp.");
+    Assert(currentScore.Hp == 700 && currentScore.Mp == 300,
+        "Allocating a base score bonus changed current HP or MP.");
+    Assert(outcome.SendEtc && outcome.SendScore,
+        "A successful base score allocation did not request UpdateEtc before UpdateScore.");
+
+    foreach (var (detail, expectedStrength, expectedDexterity) in new[]
+             {
+                 (0, (short)11, (short)30),
+                 (2, (short)10, (short)31),
+             })
+    {
+        var physicalMob = mob.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(physicalMob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset), 1);
+        var physicalWorld = new WorldHub(itemData: itemData);
+        var connectionId = detail + 10;
+        Assert(physicalWorld.Enter(connectionId, $"APPLY_BONUS_{detail}", (_, _) => ValueTask.CompletedTask) &&
+            physicalWorld.SetCharacterState(connectionId, 0, 0, 0, 0, 0, 1000, 1000, physicalMob),
+            "Strength/dexterity apply-bonus participant was not initialized.");
+        Assert(physicalWorld.TryApplyBaseScoreBonus(connectionId, detail, out var physicalOutcome) == LegacyBaseScoreBonusResult.Applied &&
+            physicalOutcome is { SendEtc: true, SendScore: true },
+            $"Base score detail {detail} was not applied.");
+        var physicalBase = LegacyScore.Read(physicalOutcome!.Mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        var physicalScore = LegacyScore.Read(physicalOutcome.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        Assert(physicalBase.Strength == expectedStrength && physicalBase.Dexterity == expectedDexterity &&
+            physicalScore.Strength == expectedStrength && physicalScore.Dexterity == expectedDexterity,
+            $"Base score detail {detail} changed the wrong physical attribute.");
+    }
+
+    var singlePointMob = mob.ToArray();
+    BinaryPrimitives.WriteUInt16LittleEndian(singlePointMob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset), 299);
+    var singlePointWorld = new WorldHub(itemData: itemData);
+    Assert(singlePointWorld.Enter(2, "APPLY_BONUS_SINGLE", (_, _) => ValueTask.CompletedTask) &&
+        singlePointWorld.SetCharacterState(2, 0, 0, 0, 0, 0, 1000, 1000, singlePointMob),
+        "Single-point apply-bonus participant was not initialized.");
+    Assert(singlePointWorld.TryApplyBaseScoreBonus(2, detail: 3, out var singlePointOutcome) == LegacyBaseScoreBonusResult.Applied &&
+        singlePointOutcome is { SendEtc: true, SendScore: true },
+        "A score-bonus balance below 300 did not apply one point.");
+    var singleBaseScore = LegacyScore.Read(singlePointOutcome!.Mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+    var singleCurrentScore = LegacyScore.Read(singlePointOutcome.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(BinaryPrimitives.ReadUInt16LittleEndian(singlePointOutcome.Mob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset)) == 298 &&
+        singleBaseScore.Constitution == 41 && singleBaseScore.MaxHp == 1002 &&
+        singleCurrentScore.Constitution == 41 && singleCurrentScore.MaxHp == 1002 &&
+        singleCurrentScore.Hp == 700 && singleCurrentScore.Mp == 300,
+        "A one-point Con allocation did not add 1 Con / 2 MaxHp while preserving current HP/MP.");
+
+    var emptyMob = mob.ToArray();
+    BinaryPrimitives.WriteUInt16LittleEndian(emptyMob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset), 0);
+    var emptyWorld = new WorldHub(itemData: itemData);
+    Assert(emptyWorld.Enter(3, "APPLY_BONUS_EMPTY", (_, _) => ValueTask.CompletedTask) &&
+        emptyWorld.SetCharacterState(3, 0, 0, 0, 0, 0, 1000, 1000, emptyMob),
+        "No-points apply-bonus participant was not initialized.");
+    Assert(emptyWorld.TryApplyBaseScoreBonus(3, detail: 99, out var emptyOutcome) == LegacyBaseScoreBonusResult.NoPoints &&
+        emptyOutcome is { SendEtc: false, SendScore: true } &&
+        emptyOutcome.Mob.AsSpan().SequenceEqual(emptyMob),
+        "A request with no score points did not send only the unchanged score, regardless of Detail.");
+
+    var negativeBonusMob = mob.ToArray();
+    BinaryPrimitives.WriteInt16LittleEndian(negativeBonusMob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset), -1);
+    var negativeBonusWorld = new WorldHub(itemData: itemData);
+    Assert(negativeBonusWorld.Enter(6, "APPLY_BONUS_NEGATIVE", (_, _) => ValueTask.CompletedTask) &&
+        negativeBonusWorld.SetCharacterState(6, 0, 0, 0, 0, 0, 1000, 1000, negativeBonusMob),
+        "Negative score-bonus participant was not initialized.");
+    Assert(negativeBonusWorld.TryApplyBaseScoreBonus(6, detail: 99, out var negativeBonusOutcome) == LegacyBaseScoreBonusResult.NoPoints &&
+        negativeBonusOutcome is { SendEtc: false, SendScore: true } &&
+        negativeBonusOutcome.Mob.AsSpan().SequenceEqual(negativeBonusMob),
+        "A negative signed ScoreBonus did not follow the 7.69 no-points branch.");
+
+    var invalidMob = mob.ToArray();
+    BinaryPrimitives.WriteUInt16LittleEndian(invalidMob.AsSpan(LegacyAccountSnapshot.MobScoreBonusOffset), 1);
+    var invalidWorld = new WorldHub(itemData: itemData);
+    Assert(invalidWorld.Enter(4, "APPLY_BONUS_INVALID", (_, _) => ValueTask.CompletedTask) &&
+        invalidWorld.SetCharacterState(4, 0, 0, 0, 0, 0, 1000, 1000, invalidMob),
+        "Invalid-detail apply-bonus participant was not initialized.");
+    Assert(invalidWorld.TryApplyBaseScoreBonus(4, detail: 4, out var invalidOutcome) == LegacyBaseScoreBonusResult.InvalidDetail &&
+        invalidOutcome is null && invalidWorld.TryGetCharacterSnapshot(4, out var invalidAfter, out _, out _) &&
+        invalidAfter is not null && invalidAfter.AsSpan().SequenceEqual(invalidMob),
+        "An invalid score detail changed the character or emitted an outcome.");
+
+    var deadMob = mob.ToArray();
+    new LegacyScore(10, 0, 0, 0, 0, 0, 0, 1000, 500, 0, 300, 10, 20, 30, 40, 0, 0, 0, 0)
+        .Write(deadMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    var deadWorld = new WorldHub(itemData: itemData);
+    Assert(deadWorld.Enter(5, "APPLY_BONUS_DEAD", (_, _) => ValueTask.CompletedTask) &&
+        deadWorld.SetCharacterState(5, 0, 0, 0, 0, 0, 1000, 1000, deadMob),
+        "Dead apply-bonus participant was not initialized.");
+    Assert(deadWorld.TryApplyBaseScoreBonus(5, detail: 0, out var deadOutcome) == LegacyBaseScoreBonusResult.NotAlive &&
+        deadOutcome is null && deadWorld.TryGetCharacterSnapshot(5, out var deadAfter, out _, out _) &&
+        deadAfter is not null && deadAfter.AsSpan().SequenceEqual(deadMob),
+        "A dead character spent score bonus points or returned an update outcome.");
+}
+
+static void ApplyBonusSpecialAllocation()
+{
+    var itemData = LoadLegacyItemDataTable(new byte[LegacyItemDataTable.BodySizeInBytes]);
+
+    (WorldHub World, byte[] Mob) CreateWorld(
+        int connectionId,
+        int level,
+        short specialBonus,
+        short special1 = 10,
+        short special2 = 20,
+        short special3 = 30,
+        short special4 = 40,
+        short classMaster = LegacyAccountSnapshot.ClassMasterMortal,
+        uint learnedSkills = 0,
+        uint secondarySkills = 0,
+        int hp = 700,
+        int mp = 300)
+    {
+        var mob = new byte[LegacyAccountSnapshot.CharacterStride];
+        var baseScore = new LegacyScore(level, 0, 0, 0, 0, 0, 0, 1000, 600, hp, mp,
+            10, 20, 30, 40, special1, special2, special3, special4);
+        baseScore.Write(mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        baseScore.Write(mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+        BinaryPrimitives.WriteInt16LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobSpecialBonusOffset), specialBonus);
+        BinaryPrimitives.WriteUInt32LittleEndian(mob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), learnedSkills);
+        var mobExtra = new byte[LegacyAccountSnapshot.MobExtraStride];
+        BinaryPrimitives.WriteInt16LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraClassMasterOffset), classMaster);
+        BinaryPrimitives.WriteUInt32LittleEndian(mobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset), secondarySkills);
+
+        var world = new WorldHub(itemData: itemData);
+        Assert(world.Enter(connectionId, $"APPLY_SPECIAL_{connectionId}", (_, _) => ValueTask.CompletedTask) &&
+            world.SetCharacterState(connectionId, 0, 0, 0, 0, 0, 1000, 1000, mob, classMaster,
+                ReadOnlyMemory<byte>.Empty, mobExtra),
+            "Special apply-bonus participant was not initialized.");
+        return (world, mob);
+    }
+
+    var (successWorld, successMob) = CreateWorld(30, level: 100, specialBonus: 1, secondarySkills: 0x111);
+    Assert(successWorld.TryApplySpecialScoreBonus(30, detail: 0, out var success) == LegacySpecialScoreBonusResult.Applied &&
+        success is { SendScore: true, SendEtc: true },
+        "A valid Special allocation did not return the UpdateScore/UpdateEtc outcome.");
+    var successBase = LegacyScore.Read(success!.Mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+    var successCurrent = LegacyScore.Read(success.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    Assert(successBase.Special1 == 11 && successCurrent.Special1 == 11 &&
+        BinaryPrimitives.ReadUInt16LittleEndian(success.Mob.AsSpan(LegacyAccountSnapshot.MobSpecialBonusOffset)) == 0 &&
+        successCurrent.Hp == 700 && successCurrent.Mp == 300 &&
+        BinaryPrimitives.ReadUInt32LittleEndian(success.MobExtra.AsSpan(LegacyAccountSnapshot.MobExtraSecondaryLearnedSkillOffset)) == 0x111,
+        "A Special allocation did not add exactly one point, spend one SpecialBonus, preserve Extra, and keep current HP/MP.");
+
+    foreach (var (detail, learnedBit, startingValue, expectedValue) in new[]
+             {
+                 (1, 7, (short)254, (short)255),
+                 (2, 15, (short)254, (short)255),
+                 (3, 23, (short)254, (short)255),
+             })
+    {
+        var specials = new short[] { 10, 20, 30, 40 };
+        specials[detail] = startingValue;
+        var (world, _) = CreateWorld(40 + detail, level: 399, specialBonus: 1,
+            special1: specials[0], special2: specials[1], special3: specials[2], special4: specials[3],
+            learnedSkills: 1u << learnedBit);
+        Assert(world.TryApplySpecialScoreBonus(40 + detail, detail, out var outcome) == LegacySpecialScoreBonusResult.Applied &&
+            outcome is { SendScore: true, SendEtc: true },
+            $"The final base-skill bit {learnedBit} did not permit Special {detail} through its 255 cap.");
+        var updatedBase = LegacyScore.Read(outcome!.Mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+        Assert((detail switch { 1 => updatedBase.Special2, 2 => updatedBase.Special3, _ => updatedBase.Special4 }) == expectedValue,
+            $"Detail {detail} did not increment the matching Special field to 255.");
+    }
+
+    var (classLevelWorld, _) = CreateWorld(50, level: 1, specialBonus: 1,
+        special2: 3, classMaster: LegacyExperienceMath.ClassMasterCelestial, learnedSkills: 1u << 7);
+    Assert(classLevelWorld.TryApplySpecialScoreBonus(50, detail: 1, out var classLevelOutcome) == LegacySpecialScoreBonusResult.Applied &&
+        LegacyScore.Read(classLevelOutcome!.Mob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset)).Special2 == 4,
+        "The 7.69 Celestial class-master extension was not applied to the level-derived Special cap.");
+
+    var (levelCapWorld, _) = CreateWorld(51, level: 10, specialBonus: 1, special1: 16);
+    Assert(levelCapWorld.TryApplySpecialScoreBonus(51, detail: 0, out var levelCapOutcome) == LegacySpecialScoreBonusResult.LevelCapReached &&
+        levelCapOutcome is null &&
+        LegacyApplyBonusMessages.ForSpecialScoreBonus(LegacySpecialScoreBonusResult.LevelCapReached) == "Não pode colocar mais pontos.",
+        "The level-derived Special cap did not reject the allocation before the hard cap.");
+
+    var (hardCapWorld, _) = CreateWorld(52, level: 399, specialBonus: 1, special1: 200,
+        classMaster: LegacyExperienceMath.ClassMasterCelestial, secondarySkills: 0x111);
+    Assert(hardCapWorld.TryApplySpecialScoreBonus(52, detail: 0, out var hardCapOutcome) == LegacySpecialScoreBonusResult.AttributeCapReached &&
+        hardCapOutcome is null &&
+        LegacyApplyBonusMessages.ForSpecialScoreBonus(LegacySpecialScoreBonusResult.AttributeCapReached) == "Não pode passar do nível 200.",
+        "The W2PP-only SecLearnedSkill cap-320 extension leaked into the 7.69 Special allocation.");
+
+    var (emptyWorld, emptyMob) = CreateWorld(53, level: 50, specialBonus: 0);
+    Assert(emptyWorld.TryApplySpecialScoreBonus(53, detail: 99, out var emptyOutcome) == LegacySpecialScoreBonusResult.NoPoints &&
+        emptyOutcome is { SendScore: false, SendEtc: true } && emptyOutcome.Mob.AsSpan().SequenceEqual(emptyMob),
+        "A player with no SpecialBonus did not receive only the unchanged UpdateEtc, regardless of Detail.");
+
+    var (negativeBonusWorld, negativeBonusMob) = CreateWorld(56, level: 50, specialBonus: -1);
+    Assert(negativeBonusWorld.TryApplySpecialScoreBonus(56, detail: 99, out var negativeBonusOutcome) == LegacySpecialScoreBonusResult.NoPoints &&
+        negativeBonusOutcome is { SendScore: false, SendEtc: true } &&
+        negativeBonusOutcome.Mob.AsSpan().SequenceEqual(negativeBonusMob),
+        "A negative signed SpecialBonus did not follow the 7.69 no-points branch.");
+
+    var (invalidWorld, invalidMob) = CreateWorld(54, level: 50, specialBonus: 1);
+    Assert(invalidWorld.TryApplySpecialScoreBonus(54, detail: 4, out var invalidOutcome) == LegacySpecialScoreBonusResult.InvalidDetail &&
+        invalidOutcome is null && invalidWorld.TryGetCharacterSnapshot(54, out var invalidAfter, out _, out _) &&
+        invalidAfter is not null && invalidAfter.AsSpan().SequenceEqual(invalidMob),
+        "An out-of-range Special Detail changed the MOB or produced a response.");
+
+    var (deadWorld, deadMob) = CreateWorld(55, level: 50, specialBonus: 1, hp: 0);
+    Assert(deadWorld.TryApplySpecialScoreBonus(55, detail: 0, out var deadOutcome) == LegacySpecialScoreBonusResult.NotAlive &&
+        deadOutcome is null && deadWorld.TryGetCharacterSnapshot(55, out var deadAfter, out _, out _) &&
+        deadAfter is not null && deadAfter.AsSpan().SequenceEqual(deadMob),
+        "A dead player spent SpecialBonus or produced a score-update outcome.");
+}
+
 static void DeleteItemWire()
 {
     var codec = LegacyFrameCodec.CreateDefault();
@@ -7763,6 +10940,48 @@ static void DonateShopWire()
     Assert(shop!.Items[14].Index == 114 && shop.Items[14].Effect3 == 5 && shop.Items[14].Value3 == 6, "Donate shop-open item payload differs from the legacy 15-item page.");
 }
 
+static void ShopBuyWire()
+{
+    var message = new ShopBuyMessage(0x1234, 0x2345, -2, 0x12345678, 0xA55A);
+    byte[] expectedPayload = [0x34, 0x12, 0x45, 0x23, 0xFE, 0xFF, 0x5A, 0xA5, 0x78, 0x56, 0x34, 0x12];
+    Assert(message.ToPayload().SequenceEqual(expectedPayload), "MSG_Buy did not preserve the 7.69 field offsets, signed carry position, ABI padding, and Coin bytes.");
+
+    var codec = LegacyFrameCodec.CreateDefault();
+    var frame = codec.Decode(message.ToFrame(codec, 0x10203040, 16, 0xBEEF));
+    Assert(frame.IsChecksumValid && frame.Header.Type == ShopBuyMessage.MessageType && frame.Header.Size == 24 && frame.Header.Id == 0xBEEF,
+        "MSG_Buy did not encode the 24-byte 0x0379 frame.");
+    Assert(ShopBuyMessage.TryParse(frame, out var parsed) && parsed == message,
+        "MSG_Buy did not round-trip its client request/server confirmation fields.");
+    Assert(!ShopBuyMessage.TryParse(frame with { IsChecksumValid = false }, out _),
+        "MSG_Buy accepted an invalid checksum.");
+
+    var wrongType = codec.Decode(codec.Encode(ShopBuyMessage.MessageType ^ 1, 0, 1, expectedPayload, 16));
+    Assert(!ShopBuyMessage.TryParse(wrongType, out _), "MSG_Buy accepted a different opcode.");
+    var shortPayload = codec.Decode(codec.Encode(ShopBuyMessage.MessageType, 0, 1, expectedPayload.AsSpan(0, expectedPayload.Length - 1), 16));
+    Assert(!ShopBuyMessage.TryParse(shortPayload, out _), "MSG_Buy accepted a truncated frame.");
+}
+
+static void ShopSellWire()
+{
+    var message = new ShopSellMessage(0x1234, -2, -3, 0xA55A);
+    byte[] expectedPayload = [0x34, 0x12, 0xFE, 0xFF, 0xFD, 0xFF, 0x5A, 0xA5];
+    Assert(message.ToPayload().SequenceEqual(expectedPayload), "MSG_Sell did not preserve the 7.69 field offsets, signed item source, and ABI tail padding.");
+
+    var codec = LegacyFrameCodec.CreateDefault();
+    var frame = codec.Decode(message.ToFrame(codec, 0x10203040, 16, 0xBEEF));
+    Assert(frame.IsChecksumValid && frame.Header.Type == ShopSellMessage.MessageType && frame.Header.Size == 20 && frame.Header.Id == 0xBEEF,
+        "MSG_Sell did not encode the 20-byte 0x037A frame.");
+    Assert(ShopSellMessage.TryParse(frame, out var parsed) && parsed == message,
+        "MSG_Sell did not round-trip its client request/server echo fields.");
+    Assert(!ShopSellMessage.TryParse(frame with { IsChecksumValid = false }, out _),
+        "MSG_Sell accepted an invalid checksum.");
+
+    var wrongType = codec.Decode(codec.Encode(ShopSellMessage.MessageType ^ 1, 0, 1, expectedPayload, 16));
+    Assert(!ShopSellMessage.TryParse(wrongType, out _), "MSG_Sell accepted a different opcode.");
+    var shortPayload = codec.Decode(codec.Encode(ShopSellMessage.MessageType, 0, 1, expectedPayload.AsSpan(0, expectedPayload.Length - 1), 16));
+    Assert(!ShopSellMessage.TryParse(shortPayload, out _), "MSG_Sell accepted a truncated frame.");
+}
+
 static void DonateShopClientStateFlow()
 {
     var entries = new List<DonateStoreEntry>();
@@ -8064,7 +11283,7 @@ static void AccountLoginParser()
     System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(otherClientVersionPayload.AsSpan(80), 1758);
     var otherClientVersionFrame = LegacyFrameCodec.CreateDefault().Decode(LegacyFrameCodec.CreateDefault().Encode(AccountLoginRequest.MessageType, 4, 33, otherClientVersionPayload, 16));
     Assert(AccountLoginRequest.TryParse(otherClientVersionFrame, out var otherVersionLogin) && otherVersionLogin!.ClientVersion == 1758, "A different client version using the same supported login wire was rejected.");
-    Assert(ClientReleasePolicy.IsSupported(7670), "The required 7.670 client version was rejected by admission policy.");
+    Assert(ClientReleasePolicy.RequiredClientVersion == 7670 && ClientReleasePolicy.IsSupported(ClientReleasePolicy.RequiredClientVersion), "The required 7.670 client version was rejected by admission policy.");
     Assert(!ClientReleasePolicy.IsSupported(login.ClientVersion) && !ClientReleasePolicy.IsSupported(1758), "Admission policy accepted a non-7.670 client version.");
 
     Array.Clear(payload, 0, 12); // The legacy server defers an empty password to account storage.
@@ -8918,7 +12137,7 @@ static void AutoTradeFilePurchaseCommit()
             File.WriteAllBytes(Path.Combine(directory, accountName), file);
         }
 
-        WriteAccount("BUYER", buyerMob, 0, 150, null);
+        WriteAccount("BUYER", buyerMob, 0, 5_000, null);
         WriteAccount("SELLER", sellerMob, 1, 10, item);
         var stateStore = new LegacyAutoTradeFileStore(statePath, "UP", accountRoot);
         Assert(stateStore.SaveAsync("SELLER", 1, listing).GetAwaiter().GetResult() == LegacyAutoTradeStateResult.Saved,
@@ -8939,7 +12158,9 @@ static void AutoTradeFilePurchaseCommit()
         var sellerPath = Path.Combine(accountRoot, "S", "SELLER");
         var committedBuyer = File.ReadAllBytes(buyerPath);
         var committedSeller = File.ReadAllBytes(sellerPath);
-        Assert(BinaryPrimitives.ReadInt32LittleEndian(committedBuyer.AsSpan(LegacyAccountSnapshot.AccountCoinOffset)) == 50 &&
+        Assert(BinaryPrimitives.ReadInt32LittleEndian(committedBuyer.AsSpan(LegacyAccountSnapshot.AccountCoinOffset)) == 5_000 &&
+            BinaryPrimitives.ReadInt32LittleEndian(committedBuyer.AsSpan(
+                LegacyAccountSnapshot.CharactersOffset + LegacyAccountSnapshot.MobCoinOffset)) == plan.BuyerCoin &&
             LegacyItem.Read(committedBuyer.AsSpan(
                 LegacyAccountSnapshot.CharactersOffset + LegacyAccountSnapshot.MobCarryOffset,
                 LegacyItem.SizeInBytes)) == item &&
@@ -9304,6 +12525,13 @@ static void UpdateScoreV769Golden()
         projected.Resist.SequenceEqual(new byte[] { 0x78, 0x89, 0x9A, 0xAB }),
         "The W2PP-to-7.69 UpdateScore adapter did not map the shared fields or clear target-only fields.");
 
+    var projectedWithRsv = W2ppUpdateScoreV1Adapter.AdaptPayload(
+        sourcePayload, LegacyCurrentScoreMath.FrostRsvFlag);
+    Assert(projectedWithRsv.Rsv == LegacyCurrentScoreMath.FrostRsvFlag &&
+        BinaryPrimitives.ReadUInt16LittleEndian(projectedWithRsv.ToPayload().AsSpan(UpdateScoreConfirmationV769.RsvOffset)) ==
+            LegacyCurrentScoreMath.FrostRsvFlag,
+        "The W2PP-to-7.69 UpdateScore adapter did not preserve RSV from the MOB state.");
+
     BinaryPrimitives.WriteInt32LittleEndian(sourcePayload.AsSpan(0), short.MaxValue + 1);
     var levelOverflowRejected = false;
     try { W2ppUpdateScoreV1Adapter.AdaptPayload(sourcePayload); }
@@ -9559,6 +12787,83 @@ static void ClientEquipmentStateV769Wire()
     try { ClientEquipmentStateV769.FromBytes(bytes.AsSpan(1)); }
     catch (ArgumentException) { rejected = true; }
     Assert(rejected, "The versioned 7.69 equipment state accepted a truncated 143-byte payload.");
+}
+
+static void LegacyFileClientEquipmentSidecarPersistence()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"wyd-cdk-client-equipment-file-test-{Guid.NewGuid():N}");
+    var accountPath = Path.Combine(root, "S", "SANDBOX");
+    try
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(accountPath)!);
+        var account = new byte[LegacyAccountSnapshot.RequiredFileLength];
+        System.Text.Encoding.ASCII.GetBytes("SANDBOX").CopyTo(account, 0);
+        System.Text.Encoding.ASCII.GetBytes("PASS").CopyTo(account, 16);
+        var mobOffset = LegacyAccountSnapshot.CharactersOffset;
+        System.Text.Encoding.ASCII.GetBytes("HERO").CopyTo(account, mobOffset + LegacyAccountSnapshot.MobNameOffset);
+        File.WriteAllBytes(accountPath, account);
+        var originalAccount = File.ReadAllBytes(accountPath);
+
+        var store = new LegacyFileAccountStore(root);
+        if ((object)store is not IClientEquipmentStateStore equipmentStore)
+            throw new InvalidOperationException("LegacyFileAccountStore does not expose the versioned client equipment state contract.");
+
+        var equipment = Enumerable.Range(0, ClientEquipmentStateV769.EquipmentCount)
+            .Select(index => new LegacyItem((short)(900 + index), 1, (byte)index, 2, (byte)(index + 1), 3, (byte)(index + 2)))
+            .ToArray();
+        Assert(equipmentStore.ReadClientEquipmentAsync("sandbox", 0).GetAwaiter().GetResult() is null,
+            "A missing file sidecar should preserve the legacy sixteen-slot login default.");
+        Assert(equipmentStore.TrySaveClientEquipmentAsync("sandbox", 0, equipment).GetAwaiter().GetResult() == ClientEquipmentStateSaveResult.Success,
+            "The file store did not save a valid eighteen-item client equipment state.");
+        Assert(File.ReadAllBytes(accountPath).SequenceEqual(originalAccount),
+            "Saving the client equipment extension changed the canonical W2PP account blob.");
+        var sidecarPath = Path.Combine(root, ".wyd-client-equipment-v1", "S", "SANDBOX", "0.bin");
+        var sidecar = File.ReadAllBytes(sidecarPath);
+        Assert(sidecar.Length == 12 + ClientEquipmentStateV769.SizeInBytes &&
+            System.Text.Encoding.ASCII.GetString(sidecar, 0, 8) == "WYDEQ769" &&
+            BinaryPrimitives.ReadInt32LittleEndian(sidecar.AsSpan(8)) == 1,
+            "The file sidecar did not carry the expected magic, version, and 18-item payload.");
+
+        var unsupportedVersion = sidecar.ToArray();
+        BinaryPrimitives.WriteInt32LittleEndian(unsupportedVersion.AsSpan(8), 2);
+        File.WriteAllBytes(sidecarPath, unsupportedVersion);
+        var unknownVersionRejected = false;
+        try { equipmentStore.ReadClientEquipmentAsync("sandbox", 0).GetAwaiter().GetResult(); }
+        catch (InvalidDataException) { unknownVersionRejected = true; }
+        finally { File.WriteAllBytes(sidecarPath, sidecar); }
+        Assert(unknownVersionRejected, "The file store accepted an unknown client equipment sidecar version.");
+
+        var reopenedStore = new LegacyFileAccountStore(root);
+        if ((object)reopenedStore is not IClientEquipmentStateStore reopenedEquipmentStore)
+            throw new InvalidOperationException("A reopened LegacyFileAccountStore lost the versioned client equipment state contract.");
+        var saved = reopenedEquipmentStore.ReadClientEquipmentAsync("SANDBOX", 0).GetAwaiter().GetResult();
+        Assert(saved is not null && saved.SequenceEqual(equipment),
+            "A new file-store instance did not reload all eighteen equipment entries.");
+        var login = reopenedStore.ReadCharacterLoginDataAsync("SANDBOX", 0).GetAwaiter().GetResult();
+        Assert(login?.ClientEquipment is not null && login.ClientEquipment.SequenceEqual(equipment),
+            "Character login did not include the persisted client equipment sidecar.");
+
+        Assert(equipmentStore.TrySaveClientEquipmentAsync("sandbox", LegacyAccountSnapshot.CharacterCount, equipment).GetAwaiter().GetResult() == ClientEquipmentStateSaveResult.SlotOutOfRange,
+            "The file sidecar accepted a character slot outside the account file.");
+        Assert(equipmentStore.TrySaveClientEquipmentAsync("sandbox", 1, equipment).GetAwaiter().GetResult() == ClientEquipmentStateSaveResult.CharacterNotAvailable,
+            "The file sidecar accepted equipment for an empty character slot.");
+
+        Assert(store.TryDeleteCharacterAsync("sandbox", 0, "PASS").GetAwaiter().GetResult() == DeleteCharacterStoreResult.Success,
+            "The file-store fixture character could not be deleted.");
+        var template = new byte[LegacyAccountSnapshot.CharacterStride];
+        System.Text.Encoding.ASCII.GetBytes("TEMPLATE").CopyTo(template, LegacyAccountSnapshot.MobNameOffset);
+        Assert(store.TryWriteNewCharacterAsync("sandbox", 0, "RECREATED", template).GetAwaiter().GetResult(),
+            "The file-store fixture character could not be recreated in its cleared slot.");
+        var recreated = new LegacyFileAccountStore(root).ReadCharacterLoginDataAsync("SANDBOX", 0).GetAwaiter().GetResult();
+        Assert(recreated?.ClientEquipment is null,
+            "A replacement character inherited the deleted character's versioned equipment extension.");
+        Assert(new FileInfo(accountPath).Length == LegacyAccountSnapshot.RequiredFileLength,
+            "The file store expanded the confirmed legacy account blob to hold the client extension.");
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
 }
 
 static void W2ppCharacterMobProjection()
@@ -9824,7 +13129,7 @@ static void LegacyAccountSnapshotReadsFixture()
     Assert(snapshot.Characters.Slots[1].Equipment[0].Index == 21, "Mortal face substitution (ClassMaster == MORTAL) was not applied.");
     Assert(snapshot.Characters.Slots[2].Equipment[0].Index == 12, "Non-mortal face substitution (MortalFace + 7) was not applied.");
     Assert(snapshot.Characters.Slots[3].SavedPositionX == LegacyCharacterStorageDefaults.EmptyCharacterPosition && snapshot.Characters.Slots[3].SavedPositionY == LegacyCharacterStorageDefaults.EmptyCharacterPosition, "A zeroed empty slot was not projected with BASE_ClearMob's default position.");
-    Assert(snapshot.Cargo[0].Index == 99 && snapshot.Coin == 12345, "Cargo or account coin offset differs from fixture.");
+    Assert(snapshot.Cargo[0].Index == 99 && snapshot.BankCoin == 12345, "Cargo or account bank coin offset differs from fixture.");
     Assert(snapshot.WelcomeItemReceived && snapshot.IsBlocked && snapshot.BlockPassword == "SECRET", "ReceivedItem, IsBlocked, or BlockPass offset differs from fixture.");
     Assert(snapshot.DailyQuest.IndexQuest == 7 && snapshot.DailyQuest.LastTimeQuest == unchecked((int)1_700_000_000L) && snapshot.DailyQuest.Mob1Count == 3, "QuestDiaria offset or 64-bit-to-wire truncation differs from fixture.");
 
@@ -10075,11 +13380,19 @@ static void CharacterLoginCoordinatorReadsPersistedCharacter()
         new LegacyItem(3463, 61, 1, 0, 0, 0, 0).Write(mutableMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset));
         var mutableExtra = reloginData.MobExtra.ToArray();
         BinaryPrimitives.WriteUInt32LittleEndian(mutableExtra.AsSpan(LegacyAccountSnapshot.MobExtraHoldOffset), 1234);
-        Assert(accounts.TrySaveCharacterStateAsync("SANDBOX", 2, mutableMob, 2230, 2240, mobExtra: mutableExtra).GetAwaiter().GetResult() == CharacterStateSaveResult.Success, "Full character state and MOBEXTRA were not persisted.");
+        var mutableAffect = reloginData.Affect.ToArray();
+        mutableAffect[0] = 16;
+        mutableAffect[1] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(mutableAffect.AsSpan(2), 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(mutableAffect.AsSpan(4), 62);
+        Assert(accounts.TrySaveCharacterStateAsync("SANDBOX", 2, mutableMob, 2230, 2240, mobExtra: mutableExtra, affect: mutableAffect).GetAwaiter().GetResult() == CharacterStateSaveResult.Success, "Full character state, MOBEXTRA, and active affects were not persisted.");
+        Assert(accounts.TrySaveCharacterStateAsync("SANDBOX", 2, mutableMob, 2230, 2240, affect: new byte[1]).GetAwaiter().GetResult() == CharacterStateSaveResult.InvalidLength, "Affect state with an invalid length was accepted.");
         var stateRelogin = new CharacterLoginCoordinator(accounts).HandleAsync("SANDBOX", new CharacterLoginRequest(2, 0), secureVerified: true).GetAwaiter().GetResult();
-        Assert(stateRelogin.IsSuccess && stateRelogin.Data!.SavedPositionX == 2230 && stateRelogin.Data.SavedPositionY == 2240 && BinaryPrimitives.ReadInt32LittleEndian(stateRelogin.Data.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24)) == 17 && BinaryPrimitives.ReadInt32LittleEndian(stateRelogin.Data.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 19 && LegacyItem.Read(stateRelogin.Data.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)).Index == 3463 && BinaryPrimitives.ReadUInt32LittleEndian(stateRelogin.Data.MobExtra.AsSpan(LegacyAccountSnapshot.MobExtraHoldOffset)) == 1234, "Full character state did not restore position, HP/MP, Carry, and MOBEXTRA hold on the next login.");
+        Assert(stateRelogin.IsSuccess && stateRelogin.Data!.SavedPositionX == 2230 && stateRelogin.Data.SavedPositionY == 2240 && BinaryPrimitives.ReadInt32LittleEndian(stateRelogin.Data.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 24)) == 17 && BinaryPrimitives.ReadInt32LittleEndian(stateRelogin.Data.Mob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset + 28)) == 19 && LegacyItem.Read(stateRelogin.Data.Mob.AsSpan(LegacyAccountSnapshot.MobCarryOffset, LegacyItem.SizeInBytes)).Index == 3463 && BinaryPrimitives.ReadUInt32LittleEndian(stateRelogin.Data.MobExtra.AsSpan(LegacyAccountSnapshot.MobExtraHoldOffset)) == 1234 && stateRelogin.Data.Affect.AsSpan().SequenceEqual(mutableAffect), "Full character state did not restore position, HP/MP, Carry, MOBEXTRA hold, and affects on the next login.");
         var persistedSnapshot = accounts.ReadSnapshotAsync("SANDBOX").GetAwaiter().GetResult();
-        Assert(persistedSnapshot is not null && persistedSnapshot.Coin == 4321, "Full character state did not mirror the MOB Coin into the account-wide selection Coin field.");
+        Assert(persistedSnapshot is not null && persistedSnapshot.BankCoin == 0 &&
+               BinaryPrimitives.ReadInt32LittleEndian(stateRelogin.Data!.Mob.AsSpan(LegacyAccountSnapshot.MobCarriedGoldOffset)) == 4321,
+            "Full character state did not preserve the account bank balance separately from the character's carried Gold.");
 
         var unverified = new CharacterLoginCoordinator(accounts).HandleAsync("SANDBOX", new CharacterLoginRequest(2, 0), secureVerified: false).GetAwaiter().GetResult();
         Assert(unverified.Status == CharacterLoginStatus.SecureNotVerified, "Character login was accepted without a verified PIN.");
@@ -10232,6 +13545,213 @@ static void AccountSecureCoordinatorRejectsWrongPinAndUnverifiedChange()
     }
 }
 
+static void WorldPvpJewelParryStatefulIntegration()
+{
+    var physical = CreatePvpParryFixture(affectCount: 1, includeCarryEquipmentItem: true);
+    var oneAffectRoll = GetPvpParryTransitionRoll(physical, reduction: 30);
+    Assert(ApplyPvpParrySummonAttack(physical, oneAffectRoll).Damage == -3,
+        "The equipped target did not parry before a Type 8 bit 6 PvP hit.");
+
+    var physicalHit = physical.Hub.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out var physicalOutcome, attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    Assert(physicalHit == LegacyPhysicalAttackResult.Accepted && physicalOutcome is { Damage: > 0 },
+        $"The deterministic physical PvP hit failed: result={physicalHit}, damage={physicalOutcome?.Damage}.");
+    Assert(ApplyPvpParrySummonAttack(physical, oneAffectRoll).Damage > 0,
+        "A positive physical PvP hit did not lower the target's Parry for the later summon attack.");
+
+    Assert(physical.Hub.SetCharacterState(
+        2, 0, 0, 5, 0, 0, 2005, 2005, physical.TargetMob,
+        LegacyAccountSnapshot.ClassMasterMortal),
+        "Replacing the target character state failed.");
+    Assert(ApplyPvpParrySummonAttack(physical, oneAffectRoll).Damage == -3,
+        "Replacing character state did not reset the accumulated Parry adjustment.");
+
+    physicalHit = physical.Hub.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out physicalOutcome, attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    Assert(physicalHit == LegacyPhysicalAttackResult.Accepted && physicalOutcome is { Damage: > 0 } &&
+        ApplyPvpParrySummonAttack(physical, oneAffectRoll).Damage > 0,
+        "The physical Parry penalty could not be reapplied after character replacement.");
+    var equipmentSwap = physical.Hub.TryTradeItems(
+        2, LegacyItemPlace.Carry, 0, LegacyItemPlace.Equip, 2, out var equipmentSwapOutcome);
+    Assert(equipmentSwap == LegacyTradingItemResult.Accepted && equipmentSwapOutcome is not null,
+        $"The equivalent equipped-item swap failed: {equipmentSwap}.");
+    Assert(ApplyPvpParrySummonAttack(physical, oneAffectRoll).Damage == -3,
+        "Changing equipped gear did not reset the accumulated Parry adjustment.");
+
+    var skill = CreatePvpParryFixture(affectCount: 1);
+    var skillRoll = GetPvpParryTransitionRoll(skill, reduction: 30);
+    var skillDefinition = new LegacySkillDefinition(
+        10, 69, 1, 20, 15, 1, 1, 40, 0, 0, 0, 0, 0,
+        [], [], 0, 0, 1, 2, 0, 0, 1, 0, "PVP_PARRY_SKILL");
+    var skillResult = skill.Hub.TryApplySkillAttack(
+        1, 2, skillDefinition, CreateCombatItemDataTable(), weather: 0,
+        randomFactor: 90, out var skillOutcome, attackMissRoll: 99);
+    Assert(skillResult == LegacySkillAttackResult.Accepted && skillOutcome is { Damage: > 0 },
+        $"The deterministic skill PvP hit failed: result={skillResult}, damage={skillOutcome?.Damage}.");
+    Assert(ApplyPvpParrySummonAttack(skill, skillRoll).Damage > 0,
+        "A positive skill PvP hit did not lower the target's Parry for the later summon attack.");
+
+    var multiple = CreatePvpParryFixture(affectCount: 2);
+    var twoAffectRoll = GetPvpParryTransitionRoll(multiple, reduction: 60);
+    Assert(ApplyPvpParrySummonAttack(multiple, twoAffectRoll).Damage == -3,
+        "The equipped target did not parry before the multiple-affect PvP hit.");
+    var multipleHit = multiple.Hub.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out var multipleOutcome, attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    Assert(multipleHit == LegacyPhysicalAttackResult.Accepted && multipleOutcome is { Damage: > 0 } &&
+        ApplyPvpParrySummonAttack(multiple, twoAffectRoll).Damage > 0,
+        "A positive PvP hit did not accumulate one 30-point Parry reduction per active Type 8 bit 6 affect.");
+
+    var missed = CreatePvpParryFixture(affectCount: 1);
+    var missResult = missed.Hub.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out var missOutcome, attackMissRoll: 0,
+        itemData: CreateCombatItemDataTable());
+    Assert(missResult == LegacyPhysicalAttackResult.Accepted && missOutcome is { Damage: -3 } &&
+        ApplyPvpParrySummonAttack(missed, GetPvpParryTransitionRoll(missed, reduction: 30)).Damage == -3,
+        "A missed PvP attack changed the target Parry adjustment.");
+
+    var protectedTarget = CreatePvpParryFixture(affectCount: 1, targetType6: true);
+    var protectedHit = protectedTarget.Hub.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out var protectedOutcome, attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    Assert(protectedHit == LegacyPhysicalAttackResult.Accepted && protectedOutcome is { Damage: 0 } &&
+        ApplyPvpParrySummonAttack(protectedTarget, GetPvpParryTransitionRoll(protectedTarget, reduction: 30)).Damage == -3,
+        "Type 6 protection did not prevent the Parry adjustment for a zero-damage hit.");
+
+    var npcTarget = CreatePvpParryFixture(affectCount: 1);
+    var npcMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 0, 0, 0, 0, 0, 0, 5_000, 5_000, 5_000, 5_000,
+        0, 0, 0, 0, 0, 0, 0, 0).Write(npcMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    npcMob[LegacyAccountSnapshot.MobClanOffset] = 5;
+    var npcId = npcTarget.Hub.EnterNpc(npcMob, 2005, 2005, requestedConnectionId: 20_020);
+    var npcHit = npcTarget.Hub.TryApplyPhysicalAttack(
+        1, npcId, randomFactor: 99, out var npcOutcome, attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    Assert(npcHit == LegacyPhysicalAttackResult.Accepted && npcOutcome is { Damage: > 0 } &&
+        ApplyPvpParrySummonAttack(npcTarget, GetPvpParryTransitionRoll(npcTarget, reduction: 30)).Damage == -3,
+        "A hit against an NPC changed Parry state used by the separate player target.");
+
+    var catalyst = CreatePvpParryFixture(affectCount: 1, mountRestorer: true);
+    var catalystRoll = GetPvpParryTransitionRoll(catalyst, reduction: 30);
+    var catalystHit = catalyst.Hub.TryApplyPhysicalAttack(
+        1, 2, randomFactor: 99, out var catalystOutcome, attackMissRoll: 99,
+        itemData: CreateCombatItemDataTable());
+    Assert(catalystHit == LegacyPhysicalAttackResult.Accepted && catalystOutcome is { Damage: > 0 } &&
+        ApplyPvpParrySummonAttack(catalyst, catalystRoll).Damage > 0,
+        "The catalyst fixture did not accumulate the PvP Parry adjustment.");
+    var catalystResult = catalyst.Hub.TryApplyMountCatalyst(
+        2, new UseItemRequest(1, 0, 0, 14, 20, 30, 4), out var catalystOutcomeResult,
+        roll: static _ => 0);
+    Assert(catalystResult == LegacyUseItemResult.Accepted && catalystOutcomeResult is not null &&
+        ApplyPvpParrySummonAttack(catalyst, catalystRoll).Damage == -3,
+        "A successful equipped mount catalyst did not reset the accumulated Parry adjustment.");
+}
+
+static PvpParryFixture CreatePvpParryFixture(
+    int affectCount,
+    bool targetType6 = false,
+    bool includeCarryEquipmentItem = false,
+    bool mountRestorer = false)
+{
+    var run = FindReference769TmsrvRun();
+    var catalog = LegacySummonCatalog.Load(Path.Combine(run, "BaseSummon"));
+    var itemData = CreateCombatItemDataTable();
+    var hub = new WorldHub(summonCatalog: catalog, itemData: itemData);
+
+    var attackerMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    var attackerScore = new LegacyScore(100, 0, 100, 0, 0, 0, 0,
+        5_000, 5_000, 5_000, 5_000, 100, 100, 0, 0, 0, 100, 20, 0);
+    attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobBaseScoreOffset));
+    attackerScore.Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    BinaryPrimitives.WriteInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobLearnedSkillOffset), 1 << 9);
+    BinaryPrimitives.WriteInt32LittleEndian(attackerMob.AsSpan(LegacyAccountSnapshot.MobMagicOffset), 50);
+    new LegacyItem(1, 0, 0, 0, 0, 0, 0).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + 6 * LegacyItem.SizeInBytes));
+    new LegacyItem(2, 0, 0, 0, 0, 0, 0).Write(attackerMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + 7 * LegacyItem.SizeInBytes));
+    var leaderMountOffset = LegacyAccountSnapshot.MobEquipmentOffset + 14 * LegacyItem.SizeInBytes;
+    new LegacyItem(2330, 0, 0, 0, 0, 0, 0).Write(attackerMob.AsSpan(leaderMountOffset, LegacyItem.SizeInBytes));
+    BinaryPrimitives.WriteInt16LittleEndian(attackerMob.AsSpan(leaderMountOffset + 2), 1);
+
+    var attackerAffect = new byte[LegacyAccountSnapshot.AffectStride];
+    for (var index = 0; index < affectCount; index++)
+    {
+        var offset = index * 8;
+        attackerAffect[offset] = 8;
+        BinaryPrimitives.WriteUInt16LittleEndian(attackerAffect.AsSpan(offset + 2), 1 << 6);
+    }
+
+    Assert(hub.Enter(1, $"PVP_PARRY_OWNER_{affectCount}_{Guid.NewGuid():N}", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(1, 0, 0, 1, 0, 0, 2000, 2000, attackerMob,
+            LegacyAccountSnapshot.ClassMasterMortal, attackerAffect),
+        "PvP Parry attacker fixture was not initialized.");
+
+    var targetMob = new byte[LegacyAccountSnapshot.CharacterStride];
+    new LegacyScore(100, 0, 0, 0, 0, 0, 0,
+        5_000, 5_000, 5_000, 5_000, 0, 0, 0, 0, 0, 0, 0, 0)
+        .Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCurrentScoreOffset));
+    new LegacyItem(4, 0, 0, 0, 0, 0, 0)
+        .Write(targetMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + LegacyItem.SizeInBytes));
+    if (includeCarryEquipmentItem)
+        new LegacyItem(7, 0, 0, 0, 0, 0, 0).Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset));
+    if (mountRestorer)
+    {
+        new LegacyItem(3351, 61, 1, 0, 0, 0, 0).Write(targetMob.AsSpan(LegacyAccountSnapshot.MobCarryOffset));
+        new LegacyItem(2363, 60, 1, 4, 10, 5, 9).Write(
+            targetMob.AsSpan(LegacyAccountSnapshot.MobEquipmentOffset + 14 * LegacyItem.SizeInBytes));
+    }
+    var targetAffect = new byte[LegacyAccountSnapshot.AffectStride];
+    if (targetType6)
+        targetAffect[0] = 6;
+    Assert(hub.Enter(2, $"PVP_PARRY_TARGET_{Guid.NewGuid():N}", (_, _) => ValueTask.CompletedTask) &&
+        hub.SetCharacterState(2, 0, 0, 5, 0, 0, 2005, 2005, targetMob,
+            LegacyAccountSnapshot.ClassMasterMortal, targetAffect),
+        "PvP Parry target fixture was not initialized.");
+
+    var summonSkill = new LegacySkillDefinition(
+        50, 20, 0, 20, 0, 0, 11, 8, 0, 0, 0, 0, 0,
+        [], [], 0, 0, 1, 1, 0, 0, 0, 0, "PVP_PARRY_SUMMON");
+    Assert(hub.TryConsumeSkillMana(1, summonSkill, out _, out _, out _) == LegacySkillManaResult.Accepted,
+        "PvP Parry fixture could not consume the summon skill mana.");
+    var summonResult = hub.TryApplySkillAttack(
+        1, 1, summonSkill, itemData: null, weather: 0, randomFactor: 90,
+        out var summonOutcome);
+    Assert(summonResult == LegacySkillAttackResult.Accepted && summonOutcome?.SummonedMobs is { Count: 1 },
+        "PvP Parry fixture could not create its automatic summon.");
+    var summon = summonOutcome!.SummonedMobs![0];
+    return new PvpParryFixture(hub, summon.ConnectionId, targetMob, summon.MobSnapshot);
+}
+
+static int GetPvpParryTransitionRoll(PvpParryFixture fixture, int reduction)
+{
+    var summonState = LegacyMobCombatState.Read(fixture.SummonMob);
+    var targetState = LegacyMobCombatState.Read(fixture.TargetMob);
+    var attackerDexterity = summonState.CurrentScore.Dexterity / 5;
+    if ((summonState.LearnedSkill & 0x1000000) != 0)
+        attackerDexterity += 100;
+    if ((summonState.Rsv & 0x40) != 0)
+        attackerDexterity += 500;
+    var baselineRate = LegacySkillCombatMath.GetParryRate(
+        targetState.CurrentScore.Dexterity, 100, attackerDexterity, summonState.Rsv);
+    var adjustedRate = LegacySkillCombatMath.GetParryRate(
+        targetState.CurrentScore.Dexterity, 100 - reduction, attackerDexterity, summonState.Rsv);
+    Assert(baselineRate > adjustedRate,
+        $"The deterministic summon fixture did not expose a Parry-rate difference for reduction {reduction}: {baselineRate}->{adjustedRate}.");
+    return (baselineRate + adjustedRate) / 2;
+}
+
+static LegacySummonAttackOutcome ApplyPvpParrySummonAttack(PvpParryFixture fixture, int parryRoll)
+{
+    Assert(fixture.Hub.TrySelectSummonTarget(fixture.SummonId, out var selectedTarget) &&
+        selectedTarget?.TargetConnectionId == 2,
+        "PvP Parry summon could not select the equipped player target.");
+    var result = fixture.Hub.TryApplySummonAttack(
+        fixture.SummonId, randomFactor: 99, out var outcome, parryRandomRoll: parryRoll);
+    Assert(result == LegacySummonAttackResult.Accepted && outcome is not null,
+        $"PvP Parry summon attack was rejected: {result}.");
+    return outcome!;
+}
+
 static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 
 sealed class FixedAccountStore(AccountAuthenticationResult result) : IAccountStore
@@ -10273,3 +13793,5 @@ sealed class FixedAutoTradePurchaseCommitStore(LegacyAutoTradePurchaseCommitResu
 static class TestAssemblyMarker
 {
 }
+
+sealed record PvpParryFixture(WorldHub Hub, int SummonId, byte[] TargetMob, byte[] SummonMob);

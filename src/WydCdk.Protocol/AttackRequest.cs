@@ -10,9 +10,22 @@ public sealed record AttackRequest(ushort MessageType, ushort PositionX, ushort 
     public const ushort TwoTargetMessageType = 0x039E; // 158 | both directions
     public const int AreaPacketSize = 168;
     public const int OneTargetPacketSize = 68;
+    public const int OneTargetClientPaddedPacketSize = 72;
+    public const int TwoTargetMinimumCompletePacketSize = 76;
     public const int TwoTargetPacketSize = 80;
     public const int DamageArrayOffset = 48;
     public const int DamageSlotSize = 8;
+    public const int ProgressOffset = 32;
+    public const int MotionOffset = 34;
+
+    /// <summary>The received wire size, including any x86 client tail padding.</summary>
+    public int WireSize { get; init; }
+
+    /// <summary>True only for a two-slot packet whose second STRUCT_DAM is complete but whose struct tail is short.</summary>
+    public bool IsShortTwoTargetPacket =>
+        MessageType == TwoTargetMessageType &&
+        WireSize >= TwoTargetMinimumCompletePacketSize &&
+        WireSize < TwoTargetPacketSize;
 
     public static int GetTargetCount(ushort messageType) => messageType switch
     {
@@ -25,14 +38,9 @@ public sealed record AttackRequest(ushort MessageType, ushort PositionX, ushort 
     public static bool TryParse(DecodedFrame frame, out AttackRequest? request)
     {
         request = null;
-        var expectedSize = frame.Header.Type switch
-        {
-            AreaMessageType => AreaPacketSize,
-            OneTargetMessageType => OneTargetPacketSize,
-            TwoTargetMessageType => TwoTargetPacketSize,
-            _ => 0,
-        };
-        if (!frame.IsChecksumValid || expectedSize == 0 || frame.Header.Size != expectedSize || frame.Payload.Length != expectedSize - PacketHeader.SizeInBytes)
+        if (!frame.IsChecksumValid ||
+            !IsSupportedPacketSize(frame.Header.Type, frame.Header.Size) ||
+            frame.Payload.Length != frame.Header.Size - PacketHeader.SizeInBytes)
             return false;
 
         // Confirmed with the x86 legacy-layout probe: PosX=34, TargetX=38, AttackerID=42,
@@ -45,13 +53,27 @@ public sealed record AttackRequest(ushort MessageType, ushort PositionX, ushort 
             BinaryPrimitives.ReadUInt16LittleEndian(payload[26..]),
             BinaryPrimitives.ReadUInt16LittleEndian(payload[28..]),
             BinaryPrimitives.ReadUInt16LittleEndian(payload[30..]),
-            BinaryPrimitives.ReadUInt16LittleEndian(payload[32..]),
-            payload[34], payload[35], payload[36], payload[37],
+            BinaryPrimitives.ReadUInt16LittleEndian(payload[ProgressOffset..]),
+            payload[MotionOffset], payload[35], payload[36], payload[37],
             BinaryPrimitives.ReadInt16LittleEndian(payload[38..]),
             BinaryPrimitives.ReadInt16LittleEndian(payload[44..]),
-            BinaryPrimitives.ReadInt16LittleEndian(payload[46..]));
+            BinaryPrimitives.ReadInt16LittleEndian(payload[46..]))
+        {
+            WireSize = frame.Header.Size,
+        };
         return true;
     }
+
+    public static bool IsSupportedPacketSize(ushort messageType, int size) => messageType switch
+    {
+        AreaMessageType => size == AreaPacketSize,
+        // TMProject's x86 client emits sizeof(MSG_AttackOne)=72 because its header is not packed;
+        // the actual fields occupy the server's 68-byte MSG_AttackOne and the final four bytes are padding.
+        OneTargetMessageType => size is OneTargetPacketSize or OneTargetClientPaddedPacketSize,
+        // A short two-target frame is safe to inspect only when both 8-byte STRUCT_DAM slots are present.
+        TwoTargetMessageType => size >= TwoTargetMinimumCompletePacketSize && size <= TwoTargetPacketSize,
+        _ => false,
+    };
 
     public static bool TryReadDamageSlot(DecodedFrame frame, int index, out ushort targetId, out int declaredDamage)
     {

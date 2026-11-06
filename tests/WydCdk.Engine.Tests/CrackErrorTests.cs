@@ -41,6 +41,21 @@ internal static class CrackErrorTests
         return Task.CompletedTask;
     }
 
+    public static Task RenascimentoResetsOnlyTheRevivedPlayersCrackCounter()
+    {
+        var sessions = new LoginSessionRegistry();
+        Check(sessions.Open(1) && sessions.Open(2), "Renascimento crack-counter fixtures could not open.");
+        Check(sessions.TryAddCrackError(1, 40, 17, out _) && sessions.TryAddCrackError(2, 70, 17, out _),
+            "Renascimento crack-counter fixtures could not seed their session-local points.");
+
+        Check(sessions.TryResetCrackErrorPoints(1), "Renascimento could not reset the active target session counter.");
+        Check(sessions.TryGet(1, out var revived) && revived!.CrackErrorPoints == 0 &&
+            sessions.TryGet(2, out var other) && other!.CrackErrorPoints == 70,
+            "Renascimento reset another session or retained the revived target's crack-error points.");
+        Check(!sessions.TryResetCrackErrorPoints(99), "Renascimento reset reported success for an unknown target session.");
+        return Task.CompletedTask;
+    }
+
     public static Task MotionSharesQuitTradeCounter()
     {
         var sessions = new LoginSessionRegistry();

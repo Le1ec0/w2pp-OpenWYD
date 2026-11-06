@@ -15,6 +15,8 @@ public enum LegacyAutoTradePurchaseHostResult
     TargetNotPlaying,
     SellerIdentityUnavailable,
     SellerStateUnavailable,
+    SellerCargoReconciled,
+    AccountRecoveryRequired,
     ExecutionRejected,
     PendingRecovery,
 }
@@ -24,7 +26,8 @@ public sealed record LegacyAutoTradePurchaseHostOutcome(
     LegacyAutoTradePurchaseExecution? Execution,
     string? SellerAccountName,
     bool TargetOnline,
-    bool TargetOffline);
+    bool TargetOffline,
+    LegacyAccountCargoSnapshot? CargoSnapshot = null);
 
 /// <summary>
 /// Reads the host-owned session/world/storage state and builds one purchase
@@ -42,7 +45,9 @@ public static class LegacyAutoTradePurchaseCoordinator
         IAccountSnapshotStore? accountSnapshots,
         ILegacyCharacterLoginDataStore? characterLoginData,
         ILegacyAutoTradePurchaseCommitStore? commitStore,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        LegacyAccountOperationGate? accountOperationGate = null,
+        LegacyAccountCargoRuntime? cargoRuntime = null)
     {
         ArgumentNullException.ThrowIfNull(purchaseRequest);
         ArgumentNullException.ThrowIfNull(sessions);
@@ -77,13 +82,6 @@ public static class LegacyAutoTradePurchaseCoordinator
             !TryReadLegacyCarry(buyerMob, out var buyerCarry))
             return new(LegacyAutoTradePurchaseHostResult.BuyerStateUnavailable, null, null, false, false);
 
-        var persistedBuyerData = await characterLoginData.ReadCharacterLoginDataAsync(
-            purchaseSession.AccountName,
-            purchaseSession.CharacterSlot,
-            cancellationToken);
-        if (persistedBuyerData is null || persistedBuyerData.Mob.Length != LegacyAccountSnapshot.CharacterStride)
-            return new(LegacyAutoTradePurchaseHostResult.BuyerPersistenceBaselineUnavailable, null, null, false, false);
-
         if (!world.TryGetCombatState(buyerConnectionId, out var buyerCombatState) || buyerCombatState is null)
             return new(LegacyAutoTradePurchaseHostResult.BuyerCombatStateUnavailable, null, null, false, false);
 
@@ -117,10 +115,25 @@ public static class LegacyAutoTradePurchaseCoordinator
         else
             return new(LegacyAutoTradePurchaseHostResult.SellerIdentityUnavailable, null, null, targetOnline, targetOffline);
 
+        if (accountOperationGate is null || cargoRuntime is null)
+            return new(LegacyAutoTradePurchaseHostResult.AtomicPersistenceUnavailable, null, sellerAccountName, targetOnline, targetOffline);
+        await using var accountLease = await accountOperationGate.AcquireAsync(
+            [purchaseSession.AccountName, sellerAccountName], cancellationToken);
+
+        var persistedBuyerData = await characterLoginData.ReadCharacterLoginDataAsync(
+            purchaseSession.AccountName,
+            purchaseSession.CharacterSlot,
+            cancellationToken);
+        if (persistedBuyerData is null || persistedBuyerData.Mob.Length != LegacyAccountSnapshot.CharacterStride)
+            return new(LegacyAutoTradePurchaseHostResult.BuyerPersistenceBaselineUnavailable, null, sellerAccountName, targetOnline, targetOffline);
+
         var sellerSnapshot = await accountSnapshots.ReadSnapshotAsync(sellerAccountName, cancellationToken);
         var sellerCargo = sellerSnapshot?.Cargo.Take(LegacyAutoTradeBook.CargoSlotCount).ToArray();
         if (sellerSnapshot is null || sellerCargo is null || sellerCargo.Length != LegacyAutoTradeBook.CargoSlotCount)
             return new(LegacyAutoTradePurchaseHostResult.SellerStateUnavailable, null, sellerAccountName, targetOnline, targetOffline);
+        var cargoOwner = cargoRuntime.LoadAuthoritative(sellerAccountName, sellerSnapshot.Cargo);
+        if (cargoOwner.WasReconciled)
+            return new(LegacyAutoTradePurchaseHostResult.SellerCargoReconciled, null, sellerAccountName, targetOnline, targetOffline, cargoOwner);
 
         var targetVillage = targetOnline
             ? world.TryGetAutoTradeLocation(purchaseRequest.TargetId, out var resolvedVillage, out _)
@@ -148,7 +161,7 @@ public static class LegacyAutoTradePurchaseCoordinator
             sellerCargo,
             buyerCarry,
             BinaryPrimitives.ReadInt32LittleEndian(buyerMob.AsSpan(LegacyAccountSnapshot.MobCoinOffset)),
-            sellerSnapshot.Coin,
+            sellerSnapshot.BankCoin,
             targetVillage);
         var expectedListing = new LegacyAutoTradePersistedListing(
             sellerAccountName.Trim().ToUpperInvariant(),
@@ -182,9 +195,33 @@ public static class LegacyAutoTradePurchaseCoordinator
             commitStore,
             executionRequest,
             cancellationToken);
-        return execution.Result == LegacyAutoTradePurchaseExecutionResult.Accepted
-            ? new(LegacyAutoTradePurchaseHostResult.Accepted, execution, sellerAccountName, targetOnline, targetOffline)
-            : new(LegacyAutoTradePurchaseHostResult.ExecutionRejected, execution, sellerAccountName, targetOnline, targetOffline);
+        if (execution.Result == LegacyAutoTradePurchaseExecutionResult.Accepted)
+        {
+            var updatedCargo = cargoOwner.Items.ToArray();
+            var cargoPosition = execution.Outcome!.Plan.SellerCargoPosition;
+            if (cargoPosition is < 0 or >= LegacyAutoTradeBook.CargoSlotCount ||
+                !cargoRuntime.TryCommit(
+                    sellerAccountName,
+                    cargoOwner.Revision,
+                    cargoOwner.Items,
+                    ClearCargoPosition(updatedCargo, cargoPosition),
+                    out var committedCargo) || committedCargo is null)
+            {
+                accountOperationGate.MarkRecoveryRequired(sellerAccountName, "AutoTrade purchase committed but Cargo owner revision changed");
+                return new(LegacyAutoTradePurchaseHostResult.AccountRecoveryRequired, execution, sellerAccountName, targetOnline, targetOffline);
+            }
+            accountOperationGate.ResolveRecovery(sellerAccountName);
+            return new(LegacyAutoTradePurchaseHostResult.Accepted, execution, sellerAccountName, targetOnline, targetOffline, committedCargo);
+        }
+
+        return new(LegacyAutoTradePurchaseHostResult.ExecutionRejected, execution, sellerAccountName, targetOnline, targetOffline);
+    }
+
+    private static LegacyItem[] ClearCargoPosition(LegacyItem[] cargo, int position)
+    {
+        var updated = cargo.ToArray();
+        updated[position] = default;
+        return updated;
     }
 
     private static bool TryReadLegacyCarry(ReadOnlySpan<byte> mob, out IReadOnlyList<LegacyItem> carry)

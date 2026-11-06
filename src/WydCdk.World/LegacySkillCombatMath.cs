@@ -22,11 +22,46 @@ public static class LegacySkillCombatMath
         return Math.Clamp(state.CurrentScore.Special3 / 20, 0, 15);
     }
 
+    /// <summary>
+    /// The handler-local <c>Special</c> of TMProject 7.69 Exec_MSG_Attack, shared by mana, heal, affect and tick
+    /// levels: <c>CurrentScore.Special[skill % 24 / 8 + 1]</c> for 0..95, Level for 96..100, zero for 101+.
+    /// </summary>
     public static int GetSkillSpecial(LegacySkillDefinition skill, LegacyMobCombatState state)
     {
         ArgumentNullException.ThrowIfNull(skill);
         ArgumentNullException.ThrowIfNull(state);
-        return GetSpecial(state.CurrentScore, skill.Id % 24 / 8 + 1);
+        return skill.Id switch
+        {
+            >= 0 and < 96 => GetStageSpecial(state.CurrentScore, skill.Id % 24 / 8 + 1),
+            >= 96 and <= 100 => state.CurrentScore.Level,
+            _ => 0,
+        };
+    }
+
+    /// <summary>
+    /// Computes the handler-local delay passed to SetAffect/SetTick in Exec_MSG_Attack.
+    /// Skill 102 starts from the common 100 default, then overrides it for Mortal and
+    /// non-Mortal/non-Arch casters in both TMProject 7.69 and W2PP.
+    /// </summary>
+    public static int GetSkillAffectDelay(LegacySkillDefinition skill, LegacyMobCombatState state, int classMaster)
+    {
+        ArgumentNullException.ThrowIfNull(skill);
+        ArgumentNullException.ThrowIfNull(state);
+
+        var delay = 100 + GetSkillSpecial(skill, state);
+        if (skill.Id != 102)
+            return delay;
+
+        if (classMaster == LegacyAccountSnapshot.ClassMasterMortal)
+            return 200;
+
+        if (classMaster == LegacyAccountSnapshot.ClassMasterArch)
+            return delay;
+
+        var level = state.CurrentScore.Level;
+        if (level < 39)
+            return 200 - ((39 - level) * 4);
+        return level >= 199 ? 400 : 200;
     }
 
     /// <summary>
@@ -82,89 +117,99 @@ public static class LegacySkillCombatMath
     }
 
     /// <summary>
-    /// Matches BASE_GetSkillDamage(int skillnum, STRUCT_MOB*, int weather,
-    /// int weapondamage). Magic and weapon damage remain explicit inputs so
-    /// the pure formula can receive values derived from the authoritative MOB
-    /// and ItemList snapshot by the listener.
+    /// Matches TMProject 7.69 BASE_GetSkillDamage(int skillnum, STRUCT_MOB*, int weather, int weapondamage) from the
+    /// common Basedef.cpp compiled by TMSrv (the W2PP formula is kept there only as a "Not Usage" region).
+    /// <paramref name="magic"/> is STRUCT_MOB.Magic, declared <c>char</c> in the 7.69 common header, so it is
+    /// narrowed to a signed byte. Weapon damage remains an explicit input derived from the authoritative MOB.
     /// </summary>
     public static int GetSkillBaseDamage(LegacySkillDefinition skill, LegacyMobCombatState state, int weather, int weaponDamage, int magic)
     {
         ArgumentNullException.ThrowIfNull(skill);
         ArgumentNullException.ThrowIfNull(state);
 
+        if (skill.Id == 79)
+            return state.CurrentScore.Damage;
+
+        var mobMagic = unchecked((sbyte)magic);
         var instanceType = skill.InstanceType;
-        var skillKind = skill.Id % 24 / 8 + 1;
-        var level = Math.Clamp(state.CurrentScore.Level, 0, LegacyMaxLevel);
-        var special = GetSpecial(state.CurrentScore, skillKind);
-        var baseDamage = skill.InstanceValue;
-        var affectBase = skill.AffectValue;
-        var damage = 0;
+        var spell = skill.Id % 24;
+        var stage = spell / 8 + 1;
+        var readCount0 = spell >> 3;
+        var readCount1 = Math.Clamp(state.CurrentScore.Level, 0, LegacyMaxLevel);
+        var readCount2 = GetStageSpecial(state.CurrentScore, stage) + readCount0;
+        var attack0 = skill.InstanceValue;
+        var attack1 = skill.TickValue;
+        var result = 0;
 
         if (instanceType == 0)
         {
-            damage = skill.Id switch
+            switch (skill.Id)
             {
-                11 => special / 10 + affectBase,
-                13 => 3 * special / 4 + affectBase,
-                41 => special / 25 + 2,
-                43 => special / 3 + affectBase,
-                44 => 2 * (3 * special / 20 + affectBase),
-                45 => special / 10 + affectBase,
-                _ => 0,
-            };
+                case 11: result = readCount2 / 10 + attack1; break;
+                case 13: result = ((readCount2 * 3) >> 2) + attack1; break;
+                case 41: result = readCount2 / 25 + 2; break;
+                case 43: result = readCount2 / 3 + attack1; break;
+                case 44: result = ((readCount2 * 3) / 20 + attack1) << 1; break;
+                case 45: result = readCount2 / 10 + attack1; break;
+                default: return result;
+            }
+            // The listed cases `break` out of the switch and reach the final `else Result = mob->Magic;` below.
         }
-        else if (instanceType is >= 1 and <= 5)
-        {
-            var skillCategory = skill.Id / 8;
-            damage = skill.Id == 97
-                ? 15 * level + baseDamage
-                : state.CharacterClass switch
-                {
-                    0 when skillCategory == 1 => 3 * weaponDamage + 3 * state.CurrentScore.Strength + level + special + baseDamage,
-                    0 => special + baseDamage + weaponDamage + level + state.CurrentScore.Intelligence / 4 + state.CurrentScore.Intelligence / 40,
-                    1 or 2 => state.CurrentScore.Intelligence / 30 + state.CurrentScore.Intelligence / 3 + level + baseDamage + 2 * special,
-                    3 => 3 * weaponDamage + 3 * state.CurrentScore.Strength + level / 2 + special + baseDamage,
-                    _ => 0,
-                };
 
+        if (instanceType is >= 1 and <= 5)
+        {
+            var local8 = skill.Id >> 3;
+            if (skill.Id == 97)
+                result = readCount1 * 15 + attack0;
+            else if (state.CharacterClass == 0)
+                result = attack0 + readCount2 + (readCount1 >> 1) + (state.CurrentScore.Intelligence / 2) + ((weaponDamage + 1) / 2);
+            else if (state.CharacterClass is 1 or 2)
+                result = attack0 + readCount2 + (readCount1 >> 1) + (state.CurrentScore.Intelligence / 2);
+            else if (state.CharacterClass == 3)
+                result = attack0 + readCount2 + (readCount1 >> 1) + (state.CurrentScore.Strength >> 1) + (weaponDamage * 3);
+
+            // 7.69 keys the weather adjustment by skill number (2, 5, 3), not by instance type.
             if (weather == 1)
             {
-                if (instanceType == 2) damage = 90 * damage / 100;
-                if (instanceType == 5) damage = 130 * damage / 100;
+                if (skill.Id == 2)
+                    result = result * 90 / 100;
+                else if (skill.Id == 5)
+                    result = result * 130 / 100;
             }
-            else if (weather == 2 && instanceType == 3)
+            else if (weather == 2 && skill.Id == 3)
             {
-                damage = 120 * damage / 100;
+                result = result * 120 / 100;
             }
 
-            if ((state.CharacterClass != 0 || skillCategory != 1) && state.CharacterClass != 3)
+            if (skill.Id == 97)
+                return result;
+            if (state.CharacterClass != 0 || local8 != 1)
             {
-                damage = (4 * magic + 100) * damage / 100;
-                damage = 5 * damage / 4;
+                if (state.CharacterClass == 3)
+                    return (result * 5) >> 2;
+                result = ((mobMagic * 2) + 100) * result / 100;
+                result = (result * 5) >> 2;
             }
             else
             {
-                damage = 5 * damage / 4;
+                return (result * 5) >> 2;
             }
         }
         else if (instanceType == 6)
         {
-            damage = 3 * special / 2 + baseDamage;
+            return readCount2 * 3 + attack0;
         }
         else if (instanceType == 11)
         {
-            damage = baseDamage;
+            result = attack0;
+            return result;
         }
         else
         {
-            damage = magic;
+            result = mobMagic;
         }
 
-        // Tempestade de raios replaces the normal instance calculation.
-        if (skill.Id == 79)
-            damage = state.CurrentScore.Damage * 180 / 100;
-
-        return damage;
+        return result;
     }
 
     public static int GetSkillBaseDamage(
@@ -198,28 +243,29 @@ public static class LegacySkillCombatMath
     /// </summary>
     public static int GetSkillDamage(int damage, int armor, int combat, int randomFactor)
     {
-        var result = damage - (armor / 2);
+        // TMProject 7.69 Basedef.cpp: `dam - (ac >> 1)`, the -50..-1 band includes -50, and the low band is 0..50.
+        var result = damage - (armor >> 1);
         combat = Math.Min(combat, 15);
         var delta = 21 - combat;
+        if (delta <= 0)
+            delta = 2;
         if (randomFactor < combat + 90 || randomFactor >= combat + 90 + delta)
             throw new ArgumentOutOfRangeException(nameof(randomFactor), "Legacy skill damage random factor is outside the BASE_GetSkillDamage range.");
 
         result = result * randomFactor / 100;
         if (result < -50)
             result = 0;
-        else if (result > -50 && result < 0)
-        {
-            result += 50;
-            result /= 10;
-        }
-        else if (result >= 0 && result <= 45)
-        {
-            result = 5 * result / 4;
-            result += 5;
-        }
+        else if (result >= -50 && result < 0)
+            result = (result + 50) / 10;
+        else if (result >= 0 && result <= 50)
+            result = ((result * 5) >> 2) + 5;
 
         return result <= 0 ? 1 : result;
     }
+
+    /// <summary>7.69 Exterminar adds current MP and half of Intelligence to the already-resisted skill damage.</summary>
+    public static int AddExterminarManaBonus(int damage, int currentMana, int intelligence) =>
+        unchecked((damage + currentMana) + (intelligence / 2));
 
     public static int GetPhysicalDamage(int damage, int armor, int combat, int randomFactor)
     {
@@ -268,23 +314,131 @@ public static class LegacySkillCombatMath
     public static int GetManaSpent(LegacySkillDefinition skill, LegacyMobCombatState state)
     {
         ArgumentNullException.ThrowIfNull(skill);
+        ArgumentNullException.ThrowIfNull(state);
 
-        // The legacy mana helper has a separate branch for the 96+ skills:
-        // it uses level as Special instead of the spell's class bucket.
-        var special = skill.Id < 96
-            ? GetSpecial(state.CurrentScore, skill.Id % 24 / 8 + 1)
-            : state.CurrentScore.Level;
+        // TMProject 7.69 Exec_MSG_Attack passes its local Special: the class bucket for 0..95,
+        // Level for the shared skills 96..100 and zero for 101+ (neither branch assigns it).
+        var special = GetSkillSpecial(skill, state);
+        return GetManaSpent(skill, state, special);
+    }
+
+    /// <summary>Matches BASE_GetManaSpent with an explicit handler-local Special value.</summary>
+    public static int GetManaSpent(LegacySkillDefinition skill, LegacyMobCombatState state, int special)
+    {
+        ArgumentNullException.ThrowIfNull(skill);
+        ArgumentNullException.ThrowIfNull(state);
         var manaSpent = skill.ManaSpent * (special / 2 + 100) / 100;
         return (100 - state.SaveMana) * manaSpent / 100;
     }
 
-    private static int GetSpecial(LegacyScore score, int specialIndex)
+    /// <summary>7.69 Exec_MSG_Attack clears the weather for attackers in sectors x&lt;12 and y&gt;25.</summary>
+    public static int GetSkillWeather(int currentWeather, int attackerX, int attackerY) =>
+        attackerX / 128 < 12 && attackerY / 128 > 25 ? 0 : currentWeather;
+
+    /// <summary>
+    /// 7.69 InstanceType 9 target zones answered with _NN_Cant_Use_That_Here: Kefra (2335..2395, 3896..3955),
+    /// RvR (1710..1755, 1968..1995), and the Zumbi (x/128==13 || y/128==16) and Coliseu N (x/128==27 || y/128==11)
+    /// bands. The source uses `||` for the last two, blocking whole columns/rows.
+    /// </summary>
+    public static bool IsSummonTargetZoneBlocked(int targetX, int targetY) =>
+        (targetX >= 2335 && targetY >= 3896 && targetX <= 2395 && targetY <= 3955) ||
+        (targetX >= 1710 && targetY >= 1968 && targetX <= 1755 && targetY <= 1995) ||
+        targetX / 128 == 13 || targetY / 128 == 16 ||
+        targetX / 128 == 27 || targetY / 128 == 11;
+
+    /// <summary>7.69 elemental defense: player targets double Ac, class 1 (Foema) targets add half.</summary>
+    public static int GetSkillDefense(int targetAc, bool targetIsPlayer, int targetClass)
     {
-        return specialIndex switch
+        var defense = targetIsPlayer ? targetAc * 2 : targetAc;
+        if (targetClass == 1)
+            defense = (defense * 3) / 2;
+        return defense;
+    }
+
+    /// <summary>
+    /// 7.69 elemental resistance after BASE_GetSkillDamage(dam, def, master). InstanceType 1 uses ResistPoint
+    /// (players: 10, plus 32/16/15 above level 354 by ClassMaster; NPCs: LearnedSkill / 1000) with
+    /// <c>(100 - ResistPoint) * dam / 100</c>. InstanceType 2..5 (except skill 97) use the signed Resist[type-2],
+    /// halved for players, with <c>dam * (200 - resist) / 100</c>.
+    /// </summary>
+    public static int ApplySkillResistance(
+        int skillId,
+        int instanceType,
+        int damage,
+        bool targetIsPlayer,
+        int targetLevel,
+        int targetClassMaster,
+        uint targetLearnedSkill,
+        ReadOnlySpan<byte> targetResist,
+        out int resistance)
+    {
+        resistance = 0;
+        if (instanceType == 1)
         {
-            1 => score.Special1,
-            2 => score.Special2,
-            3 => score.Special3,
+            if (targetIsPlayer)
+            {
+                resistance = 10;
+                if (targetLevel > 354)
+                    resistance += targetClassMaster >= 3 ? 32 : targetClassMaster == 1 ? 16 : 15;
+            }
+            else
+            {
+                resistance = unchecked((int)(targetLearnedSkill / 1000));
+            }
+
+            return unchecked((100 - resistance) * damage / 100);
+        }
+
+        if (instanceType is >= 2 and <= 5 && skillId != 97)
+        {
+            resistance = unchecked((sbyte)targetResist[instanceType - 2]);
+            if (targetIsPlayer)
+                resistance /= 2;
+            return unchecked(damage * (200 - resistance) / 100);
+        }
+
+        return damage;
+    }
+
+    /// <summary>
+    /// 7.69 InstanceType 6 heal: <c>Special*2</c> (skill 27) or <c>Special*3</c> plus InstanceValue, doubled for
+    /// ClassMaster other than MORTAL/ARCH; those reach 1100 at 1090+, the others cap at 638; a 1..5 heal becomes 6.
+    /// </summary>
+    public static int GetHealAmount(LegacySkillDefinition skill, LegacyMobCombatState attacker, int attackerClassMaster)
+    {
+        ArgumentNullException.ThrowIfNull(skill);
+        ArgumentNullException.ThrowIfNull(attacker);
+        var special = GetSkillSpecial(skill, attacker);
+        var heal = skill.Id == 27 ? (special * 2) + skill.InstanceValue : (special * 3) + skill.InstanceValue;
+        var ascended = attackerClassMaster != 2 && attackerClassMaster != 1;
+        if (ascended)
+        {
+            heal *= 2;
+            if (heal >= 1090)
+                heal = 1100;
+        }
+        else if (heal >= 638)
+        {
+            heal = 638;
+        }
+
+        // `dam = -dam; if (dam < 0 && dam > -6) dam = -6;`
+        if (heal > 0 && heal < 6)
+            heal = 6;
+        return heal;
+    }
+
+    /// <summary>
+    /// <c>CurrentScore.Special[stage]</c> with stage = skill % 24 / 8 + 1 (1..3) in both 7.69 and W2PP.
+    /// STRUCT_SCORE.Special[0] is <see cref="LegacyScore.Special1"/>, so stages map to Special2..Special4.
+    /// </summary>
+    private static int GetStageSpecial(LegacyScore score, int stage)
+    {
+        return stage switch
+        {
+            1 => score.Special2,
+            2 => score.Special3,
+            3 => score.Special4,
             _ => 0,
         };
     }

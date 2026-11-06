@@ -3,14 +3,201 @@ using System.Net.Sockets;
 using System.Text;
 using WydCdk.Protocol;
 
+if (args.Length > 0 && args[0] == "--prepare-skill-second-bar-visual-fixture")
+{
+    if (args.Length != 4)
+        throw new ArgumentException("Second-bar visual fixture preparation requires exactly --prepare-skill-second-bar-visual-fixture <Backup/Build/SkillSecondBarVisual> <base-word-uint32> <extra-word-uint32>.");
+    await SkillSecondBarVisualFixture.PrepareAsync(
+        Path.GetFullPath(args[1]),
+        SkillSecondBarVisualFixture.ParseUInt32(args[2]),
+        SkillSecondBarVisualFixture.ParseUInt32(args[3]));
+    return;
+}
+
+if (args.Length > 0 && args[0] == "--prepare-skill-second-bar-blood-hands-book-fixture")
+{
+    if (args.Length != 2)
+        throw new ArgumentException("Blood Hands book fixture preparation requires exactly --prepare-skill-second-bar-blood-hands-book-fixture <Backup/Build/SkillSecondBarBloodHandsBook>.");
+    await SkillSecondBarVisualFixture.PrepareBloodHandsBookAsync(Path.GetFullPath(args[1]));
+    return;
+}
+
+if (args.Length > 0 && args[0] == "--skill-second-bar-wire-proxy")
+{
+    var proxyOptions = SkillSecondBarWireProxyOptions.Parse(args);
+    await SkillSecondBarWireProxy.RunAsync(proxyOptions);
+    return;
+}
+
+if (args.Contains("--dungeon-event-smoke", StringComparer.Ordinal))
+{
+    if (!args.SequenceEqual(["--dungeon-event-smoke"]))
+        throw new ArgumentException("Dungeon event loopback smoke requires exactly --dungeon-event-smoke and accepts no account or configuration arguments.");
+    await DungeonEventNetwork.RunAsync();
+    return;
+}
+
+if (args.Contains("--mob-ai-smoke", StringComparer.Ordinal))
+{
+    if (!args.SequenceEqual(["--mob-ai-smoke"]))
+        throw new ArgumentException("Mob AI loopback smoke requires exactly --mob-ai-smoke and accepts no account or configuration arguments.");
+    try
+    {
+        await MobAiNetwork.RunAsync();
+    }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"FAIL --mob-ai-smoke: {error}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
+if (args.Contains("--character-checkpoint-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--character-checkpoint-smoke") != 1)
+        throw new ArgumentException("Character checkpoint smoke flag must appear once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length || args.Length != 3)
+        throw new ArgumentException("Character checkpoint smoke requires exactly --character-checkpoint-smoke --item-data <ItemList.bin>.");
+    await LegacyCharacterCheckpointNetwork.RunAsync(Path.GetFullPath(args[itemDataIndex + 1]));
+    return;
+}
+
+if (args.Contains("--npc-sell-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--npc-sell-smoke") != 1)
+        throw new ArgumentException("NPC sell smoke flag must appear once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length || args.Length != 3)
+        throw new ArgumentException("NPC sell smoke requires exactly --npc-sell-smoke --item-data <ItemList.bin>.");
+    await NpcSellNetwork.RunAsync(Path.GetFullPath(args[itemDataIndex + 1]));
+    return;
+}
+
+if (args.Contains("--npc-sell-cargo-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--npc-sell-cargo-smoke") != 1)
+        throw new ArgumentException("NPC Cargo sell smoke flag must appear once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length || args.Length != 3)
+        throw new ArgumentException("NPC Cargo sell smoke requires exactly --npc-sell-cargo-smoke --item-data <ItemList.bin>.");
+    await NpcSellNetwork.RunCargoAsync(Path.GetFullPath(args[itemDataIndex + 1]));
+    return;
+}
+
+if (args.Contains("--npc-sell-out-of-view-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--npc-sell-out-of-view-smoke") != 1)
+        throw new ArgumentException("NPC sell out-of-view smoke flag must appear once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length || args.Length != 3)
+        throw new ArgumentException("NPC sell out-of-view smoke requires exactly --npc-sell-out-of-view-smoke --item-data <ItemList.bin>.");
+    await NpcSellNetwork.RunOutOfViewAsync(Path.GetFullPath(args[itemDataIndex + 1]));
+    return;
+}
+
+if (args.Contains("--npc-sell-empty-carry-resync-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--npc-sell-empty-carry-resync-smoke") != 1)
+        throw new ArgumentException("NPC sell empty-carry resync smoke flag must appear once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length || args.Length != 3)
+        throw new ArgumentException("NPC sell empty-carry resync smoke requires exactly --npc-sell-empty-carry-resync-smoke --item-data <ItemList.bin>.");
+    await NpcSellNetwork.RunEmptyCarryResyncAsync(Path.GetFullPath(args[itemDataIndex + 1]));
+    return;
+}
+
+if (args.SequenceEqual(new[] { "--self-test-guild-war-relay" }))
+{
+    await GuildWarTransitionRelayGateTests.RunAsync();
+    return;
+}
+
+if (args.Contains("--guild-war-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--guild-war-smoke") != 1)
+        throw new ArgumentException("GuildWar smoke may be selected only once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length || args.Length != 3)
+        throw new ArgumentException("GuildWar smoke requires exactly --guild-war-smoke --item-data <ItemList.bin>.");
+    await GuildWarNetwork.RunAsync(Path.GetFullPath(args[itemDataIndex + 1]));
+    return;
+}
+
+if (args.Contains("--host-authenticated-type25-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--host-authenticated-type25-smoke") != 1)
+        throw new ArgumentException("Authenticated Type 25 smoke may be selected only once.");
+    var itemDataIndex = Array.IndexOf(args, "--item-data");
+    var skillDataIndex = Array.IndexOf(args, "--skill-data");
+    if (itemDataIndex < 0 || itemDataIndex + 1 >= args.Length ||
+        skillDataIndex < 0 || skillDataIndex + 1 >= args.Length || args.Length != 5)
+        throw new ArgumentException("Authenticated Type 25 smoke requires exactly --host-authenticated-type25-smoke --item-data <ItemList.bin> --skill-data <SkillData.csv>.");
+    await PlayerElementalProtectionHostNetwork.RunAsync(
+        Path.GetFullPath(args[itemDataIndex + 1]),
+        Path.GetFullPath(args[skillDataIndex + 1]));
+    return;
+}
+
+if (args.Contains("--prepare-type25-visual-fixture", StringComparer.Ordinal))
+{
+    if (args.Length != 2 || args[0] != "--prepare-type25-visual-fixture")
+        throw new ArgumentException("Type 25 visual fixture preparation requires exactly --prepare-type25-visual-fixture <dedicated-fixture-directory>.");
+    await PlayerElementalProtectionHostNetwork.PrepareVisualFixtureAsync(Path.GetFullPath(args[1]));
+    return;
+}
+
 if (args.SequenceEqual(new[] { "--self-test-autotrade-harness" }))
 {
     await AutoTradeCloseHarnessTests.RunAsync();
     return;
 }
+if (args.Contains("--attack-transformation-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--attack-transformation-smoke") != 1)
+        throw new ArgumentException("Transformation smoke may be selected only once.");
+    var transformationOptions = E2eOptions.Parse(args.Where(value => value != "--attack-transformation-smoke").ToArray());
+    await AttackTransformationNetwork.RunAsync(
+        transformationOptions,
+        await ReadAccountHeaderAsync(transformationOptions.AccountFile),
+        LegacyFrameCodec.CreateDefault());
+    return;
+}
+if (args.Contains("--attack-empty-target-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--attack-empty-target-smoke") != 1)
+        throw new ArgumentException("Empty-target smoke may be selected only once.");
+    var emptyTargetOptions = E2eOptions.Parse(args.Where(value => value != "--attack-empty-target-smoke").ToArray());
+    if (emptyTargetOptions.AutoTradeClosePeerAccountFile is null)
+        throw new ArgumentException("Empty-target smoke requires --autotrade-close-peer-account-file.");
+    await AttackEmptyTargetNetwork.RunAsync(emptyTargetOptions, LegacyFrameCodec.CreateDefault());
+    return;
+}
+if (args.Contains("--auto-double-magic-trumpet-smoke", StringComparer.Ordinal))
+{
+    if (args.Count(value => value == "--auto-double-magic-trumpet-smoke") != 1)
+        throw new ArgumentException("AutoDouble MagicTrumpet smoke may be selected only once.");
+    var autoDoubleOptions = E2eOptions.Parse(args.Where(value => value != "--auto-double-magic-trumpet-smoke").ToArray());
+    if (autoDoubleOptions.AutoTradeClosePeerAccountFile is null)
+        throw new ArgumentException("AutoDouble MagicTrumpet smoke requires --autotrade-close-peer-account-file.");
+    await AutoDoubleMagicTrumpetNetwork.RunAsync(autoDoubleOptions, await ReadAccountHeaderAsync(autoDoubleOptions.AccountFile), LegacyFrameCodec.CreateDefault());
+    return;
+}
 var options = E2eOptions.Parse(args);
 var codec = LegacyFrameCodec.CreateDefault();
 var accountHeader = await ReadAccountHeaderAsync(options.AccountFile);
+if (options.CurrentScoreLoginProjectionSmoke || options.CurrentScoreLoginProjectionRejectSmoke)
+{
+    var observerPath = Path.Combine(Path.GetDirectoryName(options.AccountFile)!, "SCOREOBS");
+    var observerOptions = options with { AccountFile = observerPath, ConnectionId = checked((ushort)(options.ConnectionId + 1)) };
+    var observerHeader = await ReadAccountHeaderAsync(observerPath);
+    if (options.CurrentScoreLoginProjectionRejectSmoke)
+        await CurrentScoreLoginProjectionNetwork.RunRejectAsync(options, observerOptions, accountHeader, observerHeader, codec);
+    else
+        await CurrentScoreLoginProjectionNetwork.RunAsync(options, observerOptions, accountHeader, observerHeader, codec);
+    return;
+}
 if (options.ActionAccountAnalysisSmoke || options.ActionAccountAnalysisThresholdSmoke ||
     options.AccountAnalysisLoginSmoke || options.AccountReviewUnavailableLoginSmoke)
 {
@@ -32,6 +219,21 @@ if (options.AutoTradeClosePeerAccountFile is not null)
         else if (options.AttackDeadGateSmoke) await AttackDeadGateNetwork.RunAsync(options, accountHeader, codec);
         else if (options.AttackRvrGateSmoke) await AttackRvrGateNetwork.RunAsync(options, accountHeader, codec);
         else if (options.AttackTimingGateSmoke) await AttackTimingGateNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackSkillGateSmoke) await AttackSkillGateNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackPartySkillGateSmoke) await AttackPartySkillGateNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackGoldenShieldCoinSmoke) await AttackGoldenShieldCoinNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackType6ProtectionSmoke) await AttackType6ProtectionNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackMultiTargetSmoke) await AttackMultiTargetNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackViewGateSmoke) await AttackViewGateNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackMixedSlotsSmoke) await AttackMixedSlotsNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackDoubleCriticalSmoke) await AttackDoubleCriticalNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackManaControlSmoke) await AttackManaControlNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackManaGainSmoke) await AttackManaGainNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackDivineBlessingSmoke || options.AttackDivineBlessingInsufficientManaSmoke)
+            await AttackDivineBlessingNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackSkillSummonNoticeSmoke)
+            await AttackSkillSummonNoticeNetwork.RunAsync(options, accountHeader, codec);
+        else if (options.AttackSkillHealSmoke) await AttackSkillHealNetwork.RunAsync(options, accountHeader, codec);
         else await AutoTradeCloseNetwork.RunAsync(options, accountHeader, codec);
     }
     catch (Exception error)
@@ -774,6 +976,23 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
     public bool AttackDeadGateSmoke { get; init; }
     public bool AttackRvrGateSmoke { get; init; }
     public bool AttackTimingGateSmoke { get; init; }
+    public bool AttackSkillGateSmoke { get; init; }
+    public bool AttackPartySkillGateSmoke { get; init; }
+    public bool AttackGoldenShieldCoinSmoke { get; init; }
+    public bool AttackType6ProtectionSmoke { get; init; }
+    public bool AttackMultiTargetSmoke { get; init; }
+    public bool AttackViewGateSmoke { get; init; }
+    public bool AttackMixedSlotsSmoke { get; init; }
+    public string? AttackMixedOutOfRangeAccountFile { get; init; }
+    public bool AttackDoubleCriticalSmoke { get; init; }
+    public bool AttackManaControlSmoke { get; init; }
+    public bool AttackManaGainSmoke { get; init; }
+    public bool AttackSkillHealSmoke { get; init; }
+    public bool AttackSkillSummonNoticeSmoke { get; init; }
+    public int ExpectedDoubleModeMultiplier { get; init; } = 1;
+    public bool AttackDivineBlessingSmoke { get; init; }
+    public bool AttackDivineBlessingInsufficientManaSmoke { get; init; }
+    public string? AttackDivineBlessingDistantObserverAccountFile { get; init; }
     public bool ActionRangeSmoke { get; init; }
     public bool ActionIllusionEligibilitySmoke { get; init; }
     public bool ActionIllusionManaSmoke { get; init; }
@@ -792,6 +1011,8 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
     public bool AccountAnalysisLoginSmoke { get; init; }
     public bool AccountReviewUnavailableLoginSmoke { get; init; }
     public bool ExpectReviewWriteFailure { get; init; }
+    public bool CurrentScoreLoginProjectionSmoke { get; init; }
+    public bool CurrentScoreLoginProjectionRejectSmoke { get; init; }
 
     public static E2eOptions Parse(string[] args)
     {
@@ -819,6 +1040,7 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
         var tradeQuitNegativeHp = false;
         var tradeQuitIdle = false;
         string? autoTradeClosePeerAccountFile = null;
+        string? attackMixedOutOfRangeAccountFile = null;
         string? autoTradeStateFile = null;
         var motionGateSmoke = false;
         var motionNegativeHp = false;
@@ -829,6 +1051,22 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
         var attackDeadGateSmoke = false;
         var attackRvrGateSmoke = false;
         var attackTimingGateSmoke = false;
+        var attackSkillGateSmoke = false;
+        var attackPartySkillGateSmoke = false;
+        var attackGoldenShieldCoinSmoke = false;
+        var attackType6ProtectionSmoke = false;
+        var attackMultiTargetSmoke = false;
+        var attackViewGateSmoke = false;
+        var attackMixedSlotsSmoke = false;
+        var attackDoubleCriticalSmoke = false;
+        var attackManaControlSmoke = false;
+        var attackManaGainSmoke = false;
+        var attackSkillHealSmoke = false;
+        var attackSkillSummonNoticeSmoke = false;
+        var expectedDoubleModeMultiplier = 1;
+        var attackDivineBlessingSmoke = false;
+        var attackDivineBlessingInsufficientManaSmoke = false;
+        string? attackDivineBlessingDistantObserverAccountFile = null;
         var actionRangeSmoke = false;
         var actionIllusionEligibilitySmoke = false;
         var actionIllusionManaSmoke = false;
@@ -847,11 +1085,19 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
         var accountAnalysisLoginSmoke = false;
         var accountReviewUnavailableLoginSmoke = false;
         var expectReviewWriteFailure = false;
+        var currentScoreLoginProjectionSmoke = false;
+        var currentScoreLoginProjectionRejectSmoke = false;
 
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
             {
+                case "--current-score-login-projection-smoke":
+                    currentScoreLoginProjectionSmoke = true;
+                    break;
+                case "--current-score-login-projection-reject-smoke":
+                    currentScoreLoginProjectionRejectSmoke = true;
+                    break;
                 case "--action-range-smoke":
                     actionRangeSmoke = true;
                     actionGateSmoke = true;
@@ -918,6 +1164,54 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
                 case "--attack-rvr-gate-smoke":
                     attackRvrGateSmoke = true;
                     break;
+                case "--attack-skill-heal-smoke":
+                    attackSkillHealSmoke = true;
+                    break;
+                case "--attack-summon-notice-smoke":
+                    attackSkillSummonNoticeSmoke = true;
+                    break;
+                case "--expected-double-mode" when index + 1 < args.Length && int.TryParse(args[++index], out var parsedExpectedDoubleModeMultiplier):
+                    expectedDoubleModeMultiplier = parsedExpectedDoubleModeMultiplier;
+                    break;
+                case "--attack-divine-blessing-smoke":
+                    attackDivineBlessingSmoke = true;
+                    break;
+                case "--attack-divine-blessing-insufficient-mana-smoke":
+                    attackDivineBlessingInsufficientManaSmoke = true;
+                    break;
+                case "--attack-divine-blessing-distant-observer-account-file" when index + 1 < args.Length:
+                    attackDivineBlessingDistantObserverAccountFile = Path.GetFullPath(args[++index]);
+                    break;
+                case "--attack-mana-gain-smoke":
+                    attackManaGainSmoke = true;
+                    break;
+                case "--attack-skill-gate-smoke":
+                    attackSkillGateSmoke = true;
+                    break;
+                case "--attack-party-skill-gate-smoke":
+                    attackPartySkillGateSmoke = true;
+                    break;
+                case "--attack-golden-shield-coin-smoke":
+                    attackGoldenShieldCoinSmoke = true;
+                    break;
+                case "--attack-type6-protection-smoke":
+                    attackType6ProtectionSmoke = true;
+                    break;
+                case "--attack-double-critical-smoke":
+                    attackDoubleCriticalSmoke = true;
+                    break;
+                case "--attack-multi-target-smoke":
+                    attackMultiTargetSmoke = true;
+                    break;
+                case "--attack-view-gate-smoke":
+                    attackViewGateSmoke = true;
+                    break;
+                case "--attack-mixed-slots-smoke":
+                    attackMixedSlotsSmoke = true;
+                    break;
+                case "--attack-mana-control-smoke":
+                    attackManaControlSmoke = true;
+                    break;
                 case "--attack-timing-gate-smoke":
                     attackTimingGateSmoke = true;
                     break;
@@ -944,6 +1238,9 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
                     break;
                 case "--autotrade-state-file" when index + 1 < args.Length:
                     autoTradeStateFile = Path.GetFullPath(args[++index]);
+                    break;
+                case "--attack-mixed-out-of-range-account-file" when index + 1 < args.Length:
+                    attackMixedOutOfRangeAccountFile = Path.GetFullPath(args[++index]);
                     break;
                 case "--host" when index + 1 < args.Length:
                     host = args[++index];
@@ -1025,6 +1322,22 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
 
         if (string.IsNullOrWhiteSpace(host)) host = "127.0.0.1";
         if (string.IsNullOrWhiteSpace(accountFile)) throw new ArgumentException("--account-file is required for the local sandbox smoke.");
+        if ((currentScoreLoginProjectionSmoke || currentScoreLoginProjectionRejectSmoke) && (currentScoreLoginProjectionSmoke == currentScoreLoginProjectionRejectSmoke ||
+            host != "127.0.0.1" || port != 18283 ||
+            !Path.GetFileName(accountFile).Equals("SCORETEST", StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(Path.GetDirectoryName(accountFile)!).Equals("S", StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(accountFile)!)!).Equals("account", StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFullPath(accountFile).Contains(Path.Combine("Backup", "Build", "CurrentScoreLoginProjection-20261008"), StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("CurrentScore login projection smoke requires exactly one smoke mode and the disposable SCORETEST fixture under Backup/Build/CurrentScoreLoginProjection-20261008 on loopback port 18283.");
+        if ((currentScoreLoginProjectionSmoke || currentScoreLoginProjectionRejectSmoke) && (splitSlot is not null || seedStackSlot is not null || deleteSlot is not null ||
+            tradeDeletePeerAccountFile is not null || tradeQuitPeerAccountFile is not null || adversarialPeerAccountFile is not null ||
+            tradeReplayPeerAccountFile is not null || autoTradeClosePeerAccountFile is not null || autoTradeStateFile is not null ||
+            actionAccountAnalysisSmoke || actionAccountAnalysisThresholdSmoke || accountAnalysisLoginSmoke || accountReviewUnavailableLoginSmoke ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke ||
+            attackSkillGateSmoke || attackPartySkillGateSmoke || attackGoldenShieldCoinSmoke || attackType6ProtectionSmoke || attackMultiTargetSmoke ||
+            attackMixedSlotsSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            attackSkillSummonNoticeSmoke || actionOriginRecallSmoke || movementRestrictionRecallSmoke))
+            throw new ArgumentException("CurrentScore login projection smoke cannot be combined with another gameplay smoke mode.");
         var accountAnalysisMode = actionAccountAnalysisSmoke || actionAccountAnalysisThresholdSmoke ||
             accountAnalysisLoginSmoke || accountReviewUnavailableLoginSmoke;
         if (accountAnalysisMode != (accountReviewPeerAccountFile is not null) || accountAnalysisMode != (accountReviewRoot is not null))
@@ -1063,7 +1376,7 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
                 tradeQuitPeerAccountFile is not null || adversarialPeerAccountFile is not null || tradeReplayPeerAccountFile is not null ||
                 splitSlot is not null || splitQuantity is not null || seedStackSlot is not null || deleteSlot is not null ||
                 setAccountBlocked is not null || expectDeleteBlocked || tradeGoldOnly || tradeQuitDead || tradeQuitKilled || tradeQuitPk ||
-                motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke)
+                motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackGoldenShieldCoinSmoke || attackType6ProtectionSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke)
                 throw new ArgumentException("Account Analysis smokes are restricted to distinct isolated fixture copies and loopback port 18283.");
         }
         if (motionGateSmoke && autoTradeClosePeerAccountFile is null)
@@ -1079,6 +1392,70 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
         if (attackTimingGateSmoke && (autoTradeClosePeerAccountFile is null || motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke ||
             actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode))
             throw new ArgumentException("Attack timing requires its own guarded autotrade fixture pair and isolated port.");
+        if (attackSkillGateSmoke && (autoTradeClosePeerAccountFile is null || motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke ||
+            attackTimingGateSmoke || actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode))
+            throw new ArgumentException("Attack skill gate requires its own guarded autotrade fixture pair and isolated port.");
+        if (attackPartySkillGateSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackGoldenShieldCoinSmoke || attackType6ProtectionSmoke ||
+            attackMultiTargetSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Party skill gate requires its own loopback port 18283 run and distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackGoldenShieldCoinSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackType6ProtectionSmoke || attackMultiTargetSmoke ||
+            attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Golden Shield coin smoke requires its own loopback port 18283 run and distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackManaGainSmoke && (autoTradeClosePeerAccountFile is null || motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke ||
+            attackTimingGateSmoke || attackSkillGateSmoke || actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode))
+            throw new ArgumentException("Attack mana gain requires its own guarded autotrade fixture pair and isolated port.");
+        if (attackSkillHealSmoke && (autoTradeClosePeerAccountFile is null || motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke ||
+            attackTimingGateSmoke || attackSkillGateSmoke || attackManaGainSmoke || actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode))
+            throw new ArgumentException("Attack skill heal requires its own guarded autotrade fixture pair and isolated port.");
+        var attackDivineBlessingMode = attackDivineBlessingSmoke || attackDivineBlessingInsufficientManaSmoke;
+        if (attackSkillSummonNoticeSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackPartySkillGateSmoke || attackGoldenShieldCoinSmoke ||
+            attackType6ProtectionSmoke || attackMultiTargetSmoke || attackMixedSlotsSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke ||
+            attackManaGainSmoke || attackSkillHealSmoke || attackDivineBlessingMode || actionOriginRecallSmoke || movementRestrictionRecallSmoke ||
+            accountAnalysisMode || splitSlot is not null || splitQuantity is not null || seedStackSlot is not null || deleteSlot is not null ||
+            setAccountBlocked is not null || expectDeleteBlocked || tradeGoldOnly || tradeQuitDead || tradeQuitKilled || tradeQuitPk ||
+            host != "127.0.0.1" || port != 18283 || !IsAutoTradeFixture(accountFile) ||
+            !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            !Path.GetDirectoryName(accountFile)!.Equals(Path.GetDirectoryName(autoTradeClosePeerAccountFile), StringComparison.OrdinalIgnoreCase) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Attack summon notice requires its own loopback port 18283 run and distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackDivineBlessingSmoke && attackDivineBlessingInsufficientManaSmoke)
+            throw new ArgumentException("Divine Blessing success and insufficient-mana cases require separate invocations.");
+        if (attackDivineBlessingMode && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            attackDivineBlessingDistantObserverAccountFile is null || motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp ||
+            actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke || attackDeadGateSmoke || attackRvrGateSmoke ||
+            attackTimingGateSmoke || attackSkillGateSmoke || attackPartySkillGateSmoke || attackGoldenShieldCoinSmoke || attackType6ProtectionSmoke ||
+            attackMultiTargetSmoke || attackMixedSlotsSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode || splitSlot is not null || splitQuantity is not null ||
+            seedStackSlot is not null || deleteSlot is not null || setAccountBlocked is not null || expectDeleteBlocked || tradeGoldOnly || tradeQuitDead ||
+            tradeQuitKilled || tradeQuitPk || host != "127.0.0.1" || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) || !IsAutoTradeFixture(attackDivineBlessingDistantObserverAccountFile) ||
+            !Path.GetDirectoryName(accountFile)!.Equals(Path.GetDirectoryName(autoTradeClosePeerAccountFile), StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetDirectoryName(accountFile)!.Equals(Path.GetDirectoryName(attackDivineBlessingDistantObserverAccountFile), StringComparison.OrdinalIgnoreCase) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase) ||
+            accountFile.Equals(attackDivineBlessingDistantObserverAccountFile, StringComparison.OrdinalIgnoreCase) ||
+            autoTradeClosePeerAccountFile.Equals(attackDivineBlessingDistantObserverAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Divine Blessing requires its own loopback port 18283 run and three distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackDivineBlessingDistantObserverAccountFile is not null && !attackDivineBlessingMode)
+            throw new ArgumentException("The Divine Blessing distant observer fixture is valid only with a Divine Blessing smoke.");
+        if (attackType6ProtectionSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackMultiTargetSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Type 6 protection requires its own loopback port 18283 run and distinct isolated AutoTradeCloseSmoke account copies.");
         if (actionRangeSmoke && actionNegativeHp) throw new ArgumentException("Action range and HP modes are separate.");
         if (actionIllusionEligibilitySmoke && (actionRangeSmoke || actionNegativeHp || actionOriginRecallSmoke || movementRestrictionRecallSmoke))
             throw new ArgumentException("Action3 eligibility is a separate smoke mode.");
@@ -1097,7 +1474,7 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
             };
             if (autoTradeClosePeerAccountFile is null || actionRecallDestinationObserverAccountFile is null ||
                 actionRecallDistantObserverAccountFile is null || actionGateSmoke || actionNegativeHp || actionRangeSmoke ||
-                motionGateSmoke || tradeListGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
+                motionGateSmoke || tradeListGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackManaGainSmoke || attackSkillHealSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
                 recallAccounts.Any(path => path is null || !IsAutoTradeFixture(path)) ||
                 recallAccounts.Select(path => Path.GetDirectoryName(path!)).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1 ||
                 recallAccounts.Distinct(StringComparer.OrdinalIgnoreCase).Count() != recallAccounts.Length)
@@ -1162,13 +1539,59 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
                 accountFile.Equals(tradeReplayPeerAccountFile, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Completed-trade replay is restricted to loopback and distinct E2E7670/TESTE or TESTE2 fixtures.");
         }
+        if (attackDoubleCriticalSmoke && (autoTradeClosePeerAccountFile is null ||
+            !System.Net.IPAddress.TryParse(host, out var doubleCriticalIp) || !System.Net.IPAddress.IsLoopback(doubleCriticalIp) ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("DoubleCritical smoke requires loopback and distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackMultiTargetSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Multi-target Attack smoke requires its own loopback port 18283 run and distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackMixedSlotsSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null || attackMixedOutOfRangeAccountFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackPartySkillGateSmoke || attackGoldenShieldCoinSmoke ||
+            attackType6ProtectionSmoke || attackMultiTargetSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode || host != "127.0.0.1" || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) || !IsAutoTradeFixture(attackMixedOutOfRangeAccountFile) ||
+            !Path.GetDirectoryName(accountFile)!.Equals(Path.GetDirectoryName(autoTradeClosePeerAccountFile), StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetDirectoryName(accountFile)!.Equals(Path.GetDirectoryName(attackMixedOutOfRangeAccountFile), StringComparison.OrdinalIgnoreCase) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase) ||
+            accountFile.Equals(attackMixedOutOfRangeAccountFile, StringComparison.OrdinalIgnoreCase) ||
+            autoTradeClosePeerAccountFile.Equals(attackMixedOutOfRangeAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Mixed-slot Attack smoke requires loopback port 18283 and three distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackViewGateSmoke && (autoTradeClosePeerAccountFile is null || autoTradeStateFile is null ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || actionNegativeHp || actionRangeSmoke || actionIllusionEligibilitySmoke || actionIllusionManaSmoke ||
+            attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke || attackPartySkillGateSmoke || attackGoldenShieldCoinSmoke ||
+            attackType6ProtectionSmoke || attackMultiTargetSmoke || attackMixedSlotsSmoke || attackDoubleCriticalSmoke || attackManaControlSmoke || attackManaGainSmoke ||
+            attackSkillHealSmoke || attackSkillSummonNoticeSmoke || attackDivineBlessingMode || actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode ||
+            host != "127.0.0.1" || port != 18283 || !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            !Path.GetDirectoryName(accountFile)!.Equals(Path.GetDirectoryName(autoTradeClosePeerAccountFile), StringComparison.OrdinalIgnoreCase) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("View-gate smoke requires loopback port 18283 and two distinct isolated AutoTradeCloseSmoke account copies.");
+        if (attackMixedOutOfRangeAccountFile is not null && !attackMixedSlotsSmoke)
+            throw new ArgumentException("The mixed-slot out-of-range account fixture is valid only with --attack-mixed-slots-smoke.");
+        if (attackManaControlSmoke && (autoTradeClosePeerAccountFile is null || attackDoubleCriticalSmoke || attackManaGainSmoke || attackSkillHealSmoke ||
+            motionGateSmoke || tradeListGateSmoke || actionGateSmoke || attackDeadGateSmoke || attackRvrGateSmoke || attackTimingGateSmoke || attackSkillGateSmoke ||
+            actionOriginRecallSmoke || movementRestrictionRecallSmoke || accountAnalysisMode ||
+            !System.Net.IPAddress.TryParse(host, out var manaControlIp) || !System.Net.IPAddress.IsLoopback(manaControlIp) || port != 18283 ||
+            !IsAutoTradeFixture(accountFile) || !IsAutoTradeFixture(autoTradeClosePeerAccountFile) ||
+            accountFile.Equals(autoTradeClosePeerAccountFile, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("ManaControl smoke requires its own loopback port18283 run and distinct isolated AutoTradeCloseSmoke account copies.");
         return new(host, port, accountFile, slot, connectionId, timeout, splitSlot, splitQuantity, seedStackSlot, deleteSlot, setAccountBlocked, expectDeleteBlocked, tradeDeletePeerAccountFile, tradeQuitPeerAccountFile, adversarialPeerAccountFile, tradeReplayPeerAccountFile, tradeGoldOnly, tradeQuitDead, tradeQuitKilled, tradeQuitPk, tradeQuitPkActive)
         { TradeQuitNegativeHp = tradeQuitNegativeHp, TradeQuitIdle = tradeQuitIdle,
-          AutoTradeClosePeerAccountFile = autoTradeClosePeerAccountFile, AutoTradeStateFile = autoTradeStateFile,
+          AutoTradeClosePeerAccountFile = autoTradeClosePeerAccountFile, AutoTradeStateFile = autoTradeStateFile, AttackMixedOutOfRangeAccountFile = attackMixedOutOfRangeAccountFile,
+          AttackSkillSummonNoticeSmoke = attackSkillSummonNoticeSmoke,
           MotionGateSmoke = motionGateSmoke, MotionNegativeHp = motionNegativeHp,
           TradeListGateSmoke = tradeListGateSmoke, TradeListNegativeHp = tradeListNegativeHp,
           ActionGateSmoke = actionGateSmoke, ActionNegativeHp = actionNegativeHp, AttackDeadGateSmoke = attackDeadGateSmoke,
-          AttackRvrGateSmoke = attackRvrGateSmoke, AttackTimingGateSmoke = attackTimingGateSmoke, ActionRangeSmoke = actionRangeSmoke,
+          AttackRvrGateSmoke = attackRvrGateSmoke, AttackTimingGateSmoke = attackTimingGateSmoke, AttackSkillGateSmoke = attackSkillGateSmoke, AttackPartySkillGateSmoke = attackPartySkillGateSmoke, AttackGoldenShieldCoinSmoke = attackGoldenShieldCoinSmoke, AttackType6ProtectionSmoke = attackType6ProtectionSmoke, AttackMultiTargetSmoke = attackMultiTargetSmoke, AttackViewGateSmoke = attackViewGateSmoke, AttackMixedSlotsSmoke = attackMixedSlotsSmoke, AttackDoubleCriticalSmoke = attackDoubleCriticalSmoke, AttackManaControlSmoke = attackManaControlSmoke, AttackManaGainSmoke = attackManaGainSmoke, AttackSkillHealSmoke = attackSkillHealSmoke,
+          ExpectedDoubleModeMultiplier = expectedDoubleModeMultiplier,
+          AttackDivineBlessingSmoke = attackDivineBlessingSmoke, AttackDivineBlessingInsufficientManaSmoke = attackDivineBlessingInsufficientManaSmoke,
+          AttackDivineBlessingDistantObserverAccountFile = attackDivineBlessingDistantObserverAccountFile, ActionRangeSmoke = actionRangeSmoke,
           ActionIllusionEligibilitySmoke = actionIllusionEligibilitySmoke,
           ActionIllusionManaSmoke = actionIllusionManaSmoke,
           ActionOriginRecallSmoke = actionOriginRecallSmoke,
@@ -1182,7 +1605,9 @@ sealed record E2eOptions(string Host, int Port, string AccountFile, int Slot, us
           ActionAccountAnalysisThresholdSmoke = actionAccountAnalysisThresholdSmoke,
           AccountAnalysisLoginSmoke = accountAnalysisLoginSmoke,
           AccountReviewUnavailableLoginSmoke = accountReviewUnavailableLoginSmoke,
-          ExpectReviewWriteFailure = expectReviewWriteFailure };
+          ExpectReviewWriteFailure = expectReviewWriteFailure,
+          CurrentScoreLoginProjectionSmoke = currentScoreLoginProjectionSmoke,
+          CurrentScoreLoginProjectionRejectSmoke = currentScoreLoginProjectionRejectSmoke };
     }
 
     private static bool IsIsolatedFixture(string path)
@@ -1240,10 +1665,11 @@ sealed class E2eSession : IAsyncDisposable
     private readonly E2eOptions options;
     private bool loggedOut;
 
-    private E2eSession(TcpClient client, NetworkStream stream, DecodedFrame characterLoginFrame, LegacyFrameCodec codec, E2eOptions options)
+    private E2eSession(TcpClient client, NetworkStream stream, DecodedFrame accountLoginFrame, DecodedFrame characterLoginFrame, LegacyFrameCodec codec, E2eOptions options)
     {
         Client = client;
         Stream = stream;
+        AccountLoginFrame = accountLoginFrame;
         CharacterLoginFrame = characterLoginFrame;
         this.codec = codec;
         this.options = options;
@@ -1251,6 +1677,7 @@ sealed class E2eSession : IAsyncDisposable
 
     public TcpClient Client { get; }
     public NetworkStream Stream { get; }
+    public DecodedFrame AccountLoginFrame { get; }
     public DecodedFrame CharacterLoginFrame { get; }
 
     public static async ValueTask<E2eSession> ConnectAndLoginAsync(E2eOptions options, AccountHeader accountHeader, LegacyFrameCodec codec, string label, bool verifyQuitTradeModeGate = false, bool verifyMotionModeGate = false, bool verifyTradeListModeGate = false, bool verifyActionModeGate = false)
@@ -1355,7 +1782,7 @@ sealed class E2eSession : IAsyncDisposable
             }
 
             Ensure(characterLogin is not null, "character login confirmation was not received.");
-            return new E2eSession(client, stream, characterLogin ?? throw new InvalidOperationException("character login confirmation was not received."), codec, options);
+            return new E2eSession(client, stream, loginResponse, characterLogin ?? throw new InvalidOperationException("character login confirmation was not received."), codec, options);
         }
         catch
         {

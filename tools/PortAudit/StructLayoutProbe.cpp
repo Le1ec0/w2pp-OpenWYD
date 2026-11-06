@@ -31,6 +31,12 @@
 #error Define exactly one probe profile.
 #endif
 
+#if defined(PROBE_769_DBSRV) || defined(PROBE_769_TMSRV)
+using PROBE_MOBEXTRA_TYPE = STRUCT_MOBExtra;
+#elif defined(PROBE_W2PP)
+using PROBE_MOBEXTRA_TYPE = STRUCT_MOBEXTRA;
+#endif
+
 #define PRINT_SIZE(type) std::printf("sizeof.%s=%zu\n", #type, sizeof(type))
 #define PRINT_OFFSET(type, member) std::printf("offsetof.%s.%s=%zu\n", #type, #member, offsetof(type, member))
 
@@ -54,6 +60,12 @@ int main()
 #endif
 #if defined(PROBE_CLIENT)
     std::printf("MAX_CARGO=%d\n", MAX_CARGO);
+#endif
+#if !defined(PROBE_CLIENT)
+    std::printf("sizeof.MOBEXTRA=%zu\n", sizeof(PROBE_MOBEXTRA_TYPE));
+    std::printf("offsetof.MOBEXTRA.SecLearnedSkill=%zu\n", offsetof(PROBE_MOBEXTRA_TYPE, SecLearnedSkill));
+    std::printf("sizeof.MOBEXTRA.SecLearnedSkill=%zu\n", sizeof(((PROBE_MOBEXTRA_TYPE*)0)->SecLearnedSkill));
+    std::printf("offsetof.MOBEXTRA.Soul=%zu\n", offsetof(PROBE_MOBEXTRA_TYPE, Soul));
 #endif
 
     PRINT_SIZE(STRUCT_ITEM);
@@ -81,6 +93,7 @@ int main()
     PRINT_OFFSET(STRUCT_MOB, Equip);
     PRINT_OFFSET(STRUCT_MOB, Carry);
     PRINT_OFFSET(STRUCT_MOB, LearnedSkill);
+    PRINT_OFFSET(STRUCT_MOB, RegenHP);
 #if defined(PROBE_CLIENT)
     PRINT_OFFSET(STRUCT_MOB, HomeTownX);
     PRINT_OFFSET(STRUCT_MOB, HomeTownY);
@@ -120,7 +133,7 @@ int main()
     PRINT_OFFSET(STRUCT_EXT2, SendLevItem);
     PRINT_OFFSET(STRUCT_EXT2, AdminGuildItem);
     PRINT_OFFSET(STRUCT_EXT2, Dummy);
-#elif defined(PROBE_769_DBSRV)
+#elif defined(PROBE_769_DBSRV) || defined(PROBE_769_TMSRV)
     PRINT_OFFSET(STRUCT_MOB, SPX);
     PRINT_OFFSET(STRUCT_MOB, SPY);
     PRINT_OFFSET(STRUCT_MOB, BaseScore);
@@ -188,7 +201,7 @@ int main()
 #endif
 
     PRINT_SIZE(MSG_CNFCharacterLogin);
-#if defined(PROBE_CLIENT) || defined(PROBE_769_DBSRV)
+#if defined(PROBE_CLIENT) || defined(PROBE_769_DBSRV) || defined(PROBE_769_TMSRV)
     PRINT_OFFSET(MSG_CNFCharacterLogin, MOB);
     PRINT_OFFSET(MSG_CNFCharacterLogin, ShortSkill);
     PRINT_OFFSET(MSG_CNFCharacterLogin, Ext1);
@@ -232,7 +245,7 @@ int main()
     PRINT_OFFSET(MSG_UpdateEquip, Equip2);
 #else
     PRINT_SIZE(MSG_DBCNFAccountLogin);
-#if defined(PROBE_769_DBSRV)
+#if defined(PROBE_769_DBSRV) || defined(PROBE_769_TMSRV)
     PRINT_OFFSET(MSG_DBCNFAccountLogin, SelChar);
 #else
     PRINT_OFFSET(MSG_DBCNFAccountLogin, sel);
@@ -244,7 +257,7 @@ int main()
     PRINT_OFFSET(MSG_CNFDeleteCharacter, sel);
 #endif
 
-#if defined(PROBE_769_DBSRV)
+#if defined(PROBE_769_DBSRV) || defined(PROBE_769_TMSRV)
     PRINT_SIZE(STRUCT_MOBExtra);
     PRINT_SIZE(STRUCT_ACCOUNTINFO);
     PRINT_OFFSET(STRUCT_ACCOUNTINFO, NumericToken);
@@ -284,7 +297,7 @@ int main()
     PRINT_OFFSET(STRUCT_ACCOUNTFILE, IsBlocked);
 #endif
 
-#if defined(PROBE_769_DBSRV)
+#if defined(PROBE_769_DBSRV) || defined(PROBE_769_TMSRV)
     PRINT_OFFSET(MSG_CreateMob, Equip2);
     PRINT_OFFSET(MSG_UpdateEquip, Equip);
     PRINT_OFFSET(MSG_UpdateEquip, AnctCode);

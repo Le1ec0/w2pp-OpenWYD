@@ -23,6 +23,7 @@ public static class LegacyItemEffect
     public const int Volatile = 38;
     public const int ItemLevel = 87;
     public const int MobType = 112;
+    public const int ItemType = 113;
     public const int NoSanctuary = 126;
     public const int PvpAttack = 56;
     public const int PvpDefense = 57;
@@ -30,6 +31,10 @@ public static class LegacyItemEffect
     public const int AttackSpeed = 26;
     public const int RunSpeed = 29;
     public const int Critical = 42;
+    public const int Resist1 = 49;
+    public const int Resist2 = 50;
+    public const int Resist3 = 51;
+    public const int Resist4 = 52;
     public const int SaveMana = 44;
     public const int RegenHp = 47;
     public const int RegenMp = 48;

@@ -7,7 +7,7 @@ namespace WydCdk.Protocol;
 /// </summary>
 public static class ClientReleasePolicy
 {
-    public const int RequiredClientVersion = 7670;
+    public static int RequiredClientVersion => WydCdk.Release.ClientReleaseVersion.Required;
 
     public static bool IsSupported(int clientVersion) => clientVersion == RequiredClientVersion;
 }

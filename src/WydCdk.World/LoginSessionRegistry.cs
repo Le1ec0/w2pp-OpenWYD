@@ -62,6 +62,30 @@ public sealed class LoginSessionRegistry
 
     public bool TryGet(int connectionId, out LoginSession? session) => sessions.TryGetValue(connectionId, out session);
 
+    public IReadOnlyList<LoginSession> GetPlayingForAccount(string accountName)
+    {
+        if (!LegacyAccountNameRules.TryNormalize(accountName, out var canonical))
+            return Array.Empty<LoginSession>();
+        return sessions.Values
+            .Where(session => session.State == LoginSessionState.Playing &&
+                string.Equals(session.AccountName, canonical, StringComparison.Ordinal))
+            .OrderBy(static session => session.ConnectionId)
+            .ToArray();
+    }
+
+    /// <summary>Resets the legacy NumError counter for one active connection.</summary>
+    public bool TryResetCrackErrorPoints(int connectionId)
+    {
+        while (sessions.TryGetValue(connectionId, out var session))
+        {
+            if (session.CrackErrorPoints == 0)
+                return true;
+            if (sessions.TryUpdate(connectionId, session with { CrackErrorPoints = 0 }, session))
+                return true;
+        }
+        return false;
+    }
+
     public LoginTransitionResult BeginAccountLogin(int connectionId, AccountLoginRequest request)
     {
         if (!sessions.TryGetValue(connectionId, out var session)) return LoginTransitionResult.UnknownConnection;
@@ -142,6 +166,16 @@ public sealed class LoginSessionRegistry
         return MovementResult.Accepted;
     }
 
+    /// <summary>Records the legacy LastMove side effect for Action paths that return before movement acceptance.</summary>
+    public bool TryRecordMovementType(int connectionId, ushort wireType)
+    {
+        if (!sessions.TryGetValue(connectionId, out var session) || session.State != LoginSessionState.Playing)
+            return false;
+
+        sessions[connectionId] = session with { LastMoveType = wireType };
+        return true;
+    }
+
     public bool SetServerPosition(int connectionId, short positionX, short positionY)
     {
         if (!sessions.TryGetValue(connectionId, out var session)) return false;
@@ -161,8 +195,16 @@ public sealed class LoginSessionRegistry
     /// uses unsigned 32-bit arithmetic, updates LastAttackTick, and continues into the server-window gate.
     /// </summary>
     public AttackTimingResult TryAcceptAttackTiming(int connectionId, uint clientTick, uint serverTick, out bool hasBackwardTickError)
+        => TryAcceptAttackTiming(connectionId, clientTick, serverTick, out hasBackwardTickError, out _);
+
+    /// <summary>
+    /// Also reports the handler-local <c>LastAttackTick</c> copy used later by the skill delay gate:
+    /// zero when the session had no previous attack (legacy SKIPCHECKTICK), otherwise the previous tick.
+    /// </summary>
+    public AttackTimingResult TryAcceptAttackTiming(int connectionId, uint clientTick, uint serverTick, out bool hasBackwardTickError, out uint previousAttackTick)
     {
         hasBackwardTickError = false;
+        previousAttackTick = 0;
         if (!sessions.TryGetValue(connectionId, out var session)) return AttackTimingResult.UnknownConnection;
         if (session.State != LoginSessionState.Playing) return AttackTimingResult.InvalidState;
         if (!ClientTickPolicy.IsAllowedFromClient(clientTick)) return AttackTimingResult.ReservedTimestamp;
@@ -172,6 +214,7 @@ public sealed class LoginSessionRegistry
             if (clientTick < unchecked(session.LastAttackTick + 800u)) return AttackTimingResult.TooSoon;
 
             hasBackwardTickError = clientTick < unchecked(session.LastAttackTick - 100u);
+            previousAttackTick = session.LastAttackTick;
 
             // The legacy handler updates LastAttackTick before its clock-window rejection when there was a prior attack.
             session = session with { LastAttackTick = clientTick };

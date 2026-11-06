@@ -12,19 +12,19 @@
       "name": "standard-level-and-value",
       "records": [{ "slot": 0, "type": 31, "value": 25, "level": 100 }],
       "targetExpected": { "armorClassAddition": 75 },
-      "w2ppExpected": { "armorClassAddition": 0 }
+      "w2ppExpected": { "armorClassAddition": 75 }
     },
     {
       "name": "zero-level-with-value",
       "records": [{ "slot": 0, "type": 31, "value": 40, "level": 0 }],
       "targetExpected": { "armorClassAddition": 40 },
-      "w2ppExpected": { "armorClassAddition": 0 }
+      "w2ppExpected": { "armorClassAddition": 40 }
     },
     {
       "name": "odd-level-integer-division",
       "records": [{ "slot": 0, "type": 31, "value": 10, "level": 7 }],
       "targetExpected": { "armorClassAddition": 13 },
-      "w2ppExpected": { "armorClassAddition": 0 }
+      "w2ppExpected": { "armorClassAddition": 13 }
     },
     {
       "name": "multiple-affects-accumulate",
@@ -33,13 +33,13 @@
         { "slot": 1, "type": 31, "value": 15, "level": 50 }
       ],
       "targetExpected": { "armorClassAddition": 60 },
-      "w2ppExpected": { "armorClassAddition": 0 }
+      "w2ppExpected": { "armorClassAddition": 60 }
     },
     {
       "name": "level-only-zero-value",
       "records": [{ "slot": 0, "type": 31, "value": 0, "level": 120 }],
       "targetExpected": { "armorClassAddition": 60 },
-      "w2ppExpected": { "armorClassAddition": 0 }
+      "w2ppExpected": { "armorClassAddition": 60 }
     },
     {
       "name": "other-affects-ignored",

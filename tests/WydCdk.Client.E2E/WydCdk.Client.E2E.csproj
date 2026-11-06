@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Compile Include="..\Shared\MobAiSkillDataFixture.cs" Link="MobAiSkillDataFixture.cs" />
     <ProjectReference Include="..\..\src\WydCdk.Protocol\WydCdk.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\WydCdk.Server\WydCdk.Server.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

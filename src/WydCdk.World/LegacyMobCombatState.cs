@@ -4,13 +4,15 @@ using WydCdk.Protocol;
 namespace WydCdk.World;
 
 /// <summary>Combat fields read from the 816-byte legacy STRUCT_MOB.</summary>
-public sealed record LegacyMobCombatState(byte CharacterClass, uint LearnedSkill, int Magic, LegacyScore CurrentScore, byte SaveMana)
+public sealed record LegacyMobCombatState(byte CharacterClass, uint LearnedSkill, int Magic, LegacyScore CurrentScore, sbyte SaveMana)
 {
     public LegacyScore BaseScore { get; init; }
     public ushort Rsv { get; init; }
     public ushort RegenMp { get; init; }
+    public sbyte Critical { get; init; }
     public long Experience { get; init; }
     public int CurrentMana => CurrentScore.Mp;
+    public uint SecondaryLearnedSkill { get; init; }
 
     public static LegacyMobCombatState Read(ReadOnlySpan<byte> mob)
     {
@@ -22,11 +24,13 @@ public sealed record LegacyMobCombatState(byte CharacterClass, uint LearnedSkill
             unchecked((uint)BinaryPrimitives.ReadInt32LittleEndian(mob[LegacyAccountSnapshot.MobLearnedSkillOffset..])),
             BinaryPrimitives.ReadInt32LittleEndian(mob[LegacyAccountSnapshot.MobMagicOffset..]),
             LegacyScore.Read(mob[LegacyAccountSnapshot.MobCurrentScoreOffset..]),
-            mob[LegacyAccountSnapshot.MobSaveManaOffset])
+            // TMProject 7.69 common Basedef.h declares STRUCT_MOB.SaveMana as signed char (W2PP: unsigned char).
+            unchecked((sbyte)mob[LegacyAccountSnapshot.MobSaveManaOffset]))
         {
             BaseScore = LegacyScore.Read(mob[LegacyAccountSnapshot.MobBaseScoreOffset..]),
             Rsv = BinaryPrimitives.ReadUInt16LittleEndian(mob[LegacyAccountSnapshot.MobRsvOffset..]),
             RegenMp = BinaryPrimitives.ReadUInt16LittleEndian(mob[LegacyAccountSnapshot.MobRegenMpOffset..]),
+            Critical = unchecked((sbyte)mob[LegacyAccountSnapshot.MobCriticalOffset]),
             Experience = BinaryPrimitives.ReadInt64LittleEndian(mob[LegacyAccountSnapshot.MobExperienceOffset..]),
         };
     }

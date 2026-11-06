@@ -21,14 +21,18 @@ public sealed partial class WorldHub
 
     public LegacyTradeClosePrepareResult TryReserveTradeClose(int connectionId, int expectedOpponentId,
         out LegacyTradeCloseReservation? reservation)
-        => TryReserveTradeCloseCore(connectionId, expectedOpponentId, actionTriggered: false, out reservation);
+        => TryReserveTradeCloseCore(connectionId, expectedOpponentId, actionTriggered: false, allowDead: false, out reservation);
 
     public LegacyTradeClosePrepareResult TryReserveTradeCloseForAction(int connectionId, int expectedOpponentId,
         out LegacyTradeCloseReservation? reservation)
-        => TryReserveTradeCloseCore(connectionId, expectedOpponentId, actionTriggered: true, out reservation);
+        => TryReserveTradeCloseCore(connectionId, expectedOpponentId, actionTriggered: true, allowDead: false, out reservation);
+
+    public LegacyTradeClosePrepareResult TryReserveTradeCloseForTinyCombineInvalidPosition(int connectionId, int expectedOpponentId,
+        out LegacyTradeCloseReservation? reservation)
+        => TryReserveTradeCloseCore(connectionId, expectedOpponentId, actionTriggered: false, allowDead: true, out reservation);
 
     private LegacyTradeClosePrepareResult TryReserveTradeCloseCore(int connectionId, int expectedOpponentId,
-        bool actionTriggered, out LegacyTradeCloseReservation? reservation)
+        bool actionTriggered, bool allowDead, out LegacyTradeCloseReservation? reservation)
     {
         lock (gate)
         {
@@ -39,7 +43,7 @@ public sealed partial class WorldHub
             if (GetTradeOpponentId(connectionId) != expectedOpponentId) return LegacyTradeClosePrepareResult.PairChanged;
             if (!HasLiveCombatState(participant)) return LegacyTradeClosePrepareResult.CombatStateUnavailable;
             var hp = ReadCurrentHp(participant);
-            if (actionTriggered ? hp == 0 : hp <= 0) return LegacyTradeClosePrepareResult.NotAlive;
+            if (!allowDead && (actionTriggered ? hp == 0 : hp <= 0)) return LegacyTradeClosePrepareResult.NotAlive;
             Participant? opponent = null;
             if (expectedOpponentId > 0 && !participants.TryGetValue(expectedOpponentId, out opponent))
                 return LegacyTradeClosePrepareResult.PairChanged;

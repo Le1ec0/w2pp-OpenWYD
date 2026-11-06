@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Compile Include="..\Shared\MobAiSkillDataFixture.cs" Link="MobAiSkillDataFixture.cs" />
     <ProjectReference Include="..\..\src\WydCdk.Protocol\WydCdk.Protocol.csproj" />
     <ProjectReference Include="..\..\src\WydCdk.World\WydCdk.World.csproj" />
+    <ProjectReference Include="..\..\src\WydCdk.Server\WydCdk.Server.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\WydCdk.Server\WydCdk.Server.csproj" />
   </ItemGroup>
 
@@ -36,6 +38,7 @@
     <EmbeddedResource Include="Fixtures\V769\character-login-transformation-critical-equipment.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-critical-equipment.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-transformation-composition.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-transformation-composition.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-score-coordinator.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-score-coordinator.golden.json" />
+    <EmbeddedResource Include="Fixtures\V769\current-score-login-projection.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.current-score-login-projection.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-kibita-soul.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-kibita-soul.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-frozen-blade.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-frozen-blade.golden.json" />
     <EmbeddedResource Include="Fixtures\V769\character-login-weaken.golden.json" LogicalName="WydCdk.Engine.Tests.Fixtures.V769.character-login-weaken.golden.json" />

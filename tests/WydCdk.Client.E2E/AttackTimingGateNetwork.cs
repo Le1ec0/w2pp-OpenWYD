@@ -28,7 +28,7 @@ internal static class AttackTimingGateNetwork
             Check(currentTick > 120_001, "Local monotonic clock is too small to construct the stale-window packet.");
             Check(currentTick < uint.MaxValue - 20_000u, "Local monotonic clock is too close to its 32-bit wrap for this smoke.");
 
-            // Invalid skill -1 is rejected after timing but before mana or combat mutation.
+            // Invalid skill -2 is rejected after timing but before mana or combat mutation (-1 is the physical attack).
             await actor.Stream.WriteAsync(BuildAttack(codec, actorId, currentTick, keyword: 23));
             await actor.Stream.WriteAsync(BuildAttack(codec, actorId, unchecked(currentTick + 799u), keyword: 24));
 
@@ -62,10 +62,10 @@ internal static class AttackTimingGateNetwork
     {
         var payload = new byte[AttackRequest.OneTargetPacketSize - PacketHeader.SizeInBytes];
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(30), actorId);
-        BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(44), -1);
+        BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(44), -2);
         var bytes = codec.Encode(AttackRequest.OneTargetMessageType, actorId, tick, payload, keyword);
         var decoded = codec.Decode(bytes);
-        Check(AttackRequest.TryParse(decoded, out var attack) && attack is { SkillIndex: -1 }, "Timing smoke did not create a valid-wire invalid-skill attack.");
+        Check(AttackRequest.TryParse(decoded, out var attack) && attack is { SkillIndex: -2 }, "Timing smoke did not create a valid-wire invalid-skill attack.");
         return bytes;
     }
 
