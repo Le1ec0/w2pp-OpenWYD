@@ -12301,9 +12301,36 @@ smoke, MariaDB mutation, Site change, or game-server listener was part of this
 test.
 
 Next: continue the repository-wide BL-000 writer and lock-order audit, including
-whole-MOB writers not covered by the current focused map. This Tiny slice does
+combat and timer writers that cross character checkpoint. This Tiny slice does
 not close global BL-000; the outstanding declaration counts remain heuristic.
 Client visual E2E remains a separate client-side validation.
+
+#### BL-000 — combat and timer MOB writers versus checkpoint (06/11/2026)
+
+| C# path | Runtime writes and reservation boundary | 7.69/W2PP crosswalk | Audit disposition |
+|---|---|---|---|
+| `Program` attack dispatcher / `WorldHub.TryConsumeSkillMana` | Skill MP is written to the attacker's `MOB` before the `attackRewardLease` is acquired. The class-one Type 6 cleanup, attacker hide/Samaritan cleanup, and per-target hide cleanup also run before that lease. | TMProject and W2PP `_MSG_Attack.cpp` debit `MOB.CurrentScore.Mp` and perform these affect transitions in the attack handler. | These are persisted MOB/Affect fields; the attack request path is not covered end-to-end by the account reservation. |
+| `AcquirePartyAccountLeaseAsync` / `WorldHub.TryApplyAttackActionBatch` | The Host acquires the party accounts only around the synchronous action-batch call and passes no additional target connection IDs. The batch mutates attacker and player-target MOB/Affect under the WorldHub monitor; physical and skill branches can write a target participant outside the attacker's party. | Both `_MSG_Attack.cpp` handlers update target HP/MP and skill effects. | The party lease protects party reward/account paths, but does not cover every player state changed by the batch. The WorldHub monitor protects each in-memory operation, not the later checkpoint I/O. |
+| `LegacyPlayerAffectRuntime.TickShardCoreAsync` / `WorldHub.TryProcessPlayerTimerAffects` | A private `tickGate` serializes timer shards; there is no `LegacyAccountOperationGate` reservation. The WorldHub method changes player MOB/Affect and can run area attacks against other participants before the relay awaits socket I/O. | Both `ProcessSecMinTimer.cpp` files call `ProcessAffect`; the same timer source also advances the one-user `SaveUser` scan. | Timer mutations share persisted fields with checkpoint but are not coordinated with its account/slot lease. The source comparison establishes field ownership and call paths, not equivalent concurrency semantics. |
+
+`LegacyCharacterCheckpointRuntime` holds the account reservation and slot gate
+through snapshot capture and asynchronous store I/O. Combat and player-affect
+timer mutations do not take that account reservation (and do not take the
+checkpoint slot gate). Therefore an overlapping mutation can occur after the
+checkpoint captured its MOB and before the store finishes writing it. That can
+leave a stale persisted snapshot until a later checkpoint; this is an inferred
+race from the current boundaries, not a reproduced loss or a claim that runtime
+state was observed to diverge.
+
+This was a source and call-path audit only: no code or tests changed. The next
+implementation slice must establish the complete set of account identities
+that an attack or area timer may mutate, acquire distinct accounts in canonical
+order before any of those mutations, revalidate the captured participants,
+and release reservations before network relays. The target set must include
+non-party player targets; simply extending the current party-only lease around
+`TryApplyAttackActionBatch` would leave the preceding MP/affect writes exposed.
+Global BL-000 remains open and the 643 declaration candidates remain
+heuristics.
 
 #### Observed gate order and reservation design (05/11/2026)
 
