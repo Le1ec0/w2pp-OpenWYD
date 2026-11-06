@@ -12269,39 +12269,41 @@ call graph, and additional whole-MOB writer groups still need classification.
 
 #### BL-000 — Tiny combine reservation boundary (06/11/2026)
 
-The active Host acquires the account reservation before `TryPrepareTinyCombine`
-and `TryApplyTinyCombine` (`Program.cs`, `TinyCombineRequest` dispatch), but
-disposes it immediately after apply and before building `UpdateEtc` and the Tiny
-relay frames. Both response-planning failure branches then call
-`WorldHub.TryRollbackTinyCombine` after that disposal. If either branch is
-reachable, a checkpoint can enter the gap and persist the applied Tiny result
-before a failed response plan rolls the runtime MOB/Gold back; the durable
-account blob is not compensated by this path. The reachability audit did not
-find a current trigger for either branch after a valid apply: the first requires
-the participant to be absent or its MOB shorter than the required ABI, while
-the connection's departure runs only after its current request handler returns;
-the second requires an inconsistent outcome shape, which the accepted outcome
-builder currently returns aligned. Existing response tests cover valid success
-and failure plans but do not force a post-apply planner failure. Therefore the
-ordering is a defensive-path hardening candidate, not a reproduced or confirmed
-data-loss bug.
+`LegacyTinyCombineDispatchCoordinator.ExecuteAsync` now owns the account
+reservation across `TryPrepareTinyCombine`, `TryApplyTinyCombine`, UpdateEtc and
+relay-frame planning, and conditional `TryRollbackTinyCombine`. A forced null
+response plan after a real accepted apply rolls the player MOB/Gold and guild
+treasury back before the reservation is released. The concurrent checkpoint
+test then persists the exact pre-combine MOB. A successful response plan is
+returned only after release; the success test reacquires the account reservation
+and checkpoints the committed MOB. Production response builders still produce
+aligned frames for accepted outcomes; the forced null planner is test injection,
+so this demonstrates safe rollback ordering without asserting a current
+production trigger for response-plan failure.
+
+The extraction also fixes a reachable lock-order inversion in the invalid
+inventory-position path. Previously the Host kept the account reservation while
+awaiting `CloseForTinyCombineInvalidPositionAndCaptureAsync`, which takes the
+AutoTrade book lease; AutoTrade start takes book lease before account
+reservation. The coordinator now returns the rejection and releases the account
+lease before the Host starts trade cleanup. The test holds the book lease while
+dispatch rejects the invalid position, then confirms caller cleanup can wait on
+the book without retaining the account reservation.
 
 TMProject 7.69 `TMSrv/_MSG_CombineItemTiny.cpp` and W2PP's same-named handler
 both charge `MOB.Coin`, mutate the carry on success/failure, and then send their
 message/signal frames (`SendClientMsg`/`SendClientMessage` and
-`SendClientSignalParm`). The C# conditional rollback is an additional failure
-path, so its account lease must span response-frame construction and any
-rollback, then be released before treasury-file I/O and socket writes.
+`SendClientSignalParm`). Treasury-file I/O and socket writes remain in the Host
+after the coordinator returns. The focused self-contained Engine.Tests runner
+passed on the VPS (`PASS_TINY_COMBINE_DISPATCH_CHECKPOINT`, exit 0) using a
+disposable WorldHub and in-memory checkpoint store. No authenticated network
+smoke, MariaDB mutation, Site change, or game-server listener was part of this
+test.
 
-Next bounded slice: extract the Tiny dispatch's apply/response-plan/rollback
-boundary into a testable coordinator. Force response-plan failure after a real
-accepted `WorldHub` outcome while a checkpoint waits on the same account lease;
-prove rollback completes before the checkpoint captures state. Also prove a
-successful result is checkpointed and no lease crosses treasury storage or
-socket I/O. If the production response builders make the failure unreachable,
-record that invariant rather than claiming a data-loss defect. Run the test and
-authenticated headless smoke on the VPS against disposable account/database
-fixtures; do not use the active MariaDB service for test mutations.
+Next: continue the repository-wide BL-000 writer and lock-order audit, including
+whole-MOB writers not covered by the current focused map. This Tiny slice does
+not close global BL-000; the outstanding declaration counts remain heuristic.
+Client visual E2E remains a separate client-side validation.
 
 #### Observed gate order and reservation design (05/11/2026)
 
@@ -12329,6 +12331,9 @@ Observed acquisition order in the current implementation:
    account reservation is held, then release before relay/socket writes. Store
    adapters do not acquire application reservations or call back into WorldHub;
    the WorldHub monitor is never held during awaited I/O.
+6. Tiny combine holds the account reservation through apply, response-frame
+   planning, and conditional rollback; the reservation is released before
+   invalid-position AutoTrade cleanup, guild-treasury storage, and socket writes.
 
 This gives checkpoint `account -> slot -> snapshot/save`; AutoTrade
 `book(connection IDs) -> account keys -> snapshot/runtime/store/rollback`;

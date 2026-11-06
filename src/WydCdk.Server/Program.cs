@@ -1395,37 +1395,23 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                             continue;
                         }
 
-                        await using var tinyAccountLease = await accountOperationGate.AcquireAsync(
-                            [tinyCombineSession.AccountName], cancellationToken);
-
-                        var prepareResult = world.TryPrepareTinyCombine(
+                        var tinyDispatch = await LegacyTinyCombineDispatchCoordinator.ExecuteAsync(
+                            accountOperationGate,
+                            tinyCombineSession.AccountName,
+                            world,
                             connectionId,
                             tinyCombineRequest.Items,
                             tinyCombineRequest.InventoryPositions,
                             tinyChanceBase,
-                            out var tinyCombinePlan);
-                        if (prepareResult == LegacyTinyCombinePreparationResult.Accepted && tinyCombinePlan is not null)
-                        {
-                            var applyResult = world.TryApplyTinyCombine(
-                                connectionId,
-                                tinyCombinePlan,
-                                RandomNumberGenerator.GetInt32(115),
-                                localServer: false,
-                                out var tinyCombineOutcome);
-                            await tinyAccountLease.DisposeAsync();
-                            if (applyResult == LegacyTinyCombineApplicationResult.Accepted && tinyCombineOutcome is not null)
+                            RandomNumberGenerator.GetInt32(115),
+                            localServer: false,
+                            (outcome, _) =>
                             {
                                 var codec = LegacyFrameCodec.CreateDefault();
                                 if (!world.TryBuildUpdateEtcFrame(connectionId, codec, frame.Header.ClientTick,
-                                        frame.Header.KeywordIndex, out var updateEtcFrame) || updateEtcFrame is null)
-                                {
-                                    var rolledBack = world.TryRollbackTinyCombine(tinyCombineOutcome);
-                                    Console.WriteLine($"Tiny combine rolled back: UpdateEtc unavailable; account={tinyCombineSession.AccountName}, runtimeRollback={rolledBack}.");
-                                    continue;
-                                }
-
-                                if (!LegacyTinyCombineRelay.TryBuild(
-                                        tinyCombineOutcome,
+                                        frame.Header.KeywordIndex, out var updateEtcFrame) || updateEtcFrame is null ||
+                                    !LegacyTinyCombineRelay.TryBuild(
+                                        outcome,
                                         updateEtcFrame,
                                         codec,
                                         frame.Header.ClientTick,
@@ -1433,47 +1419,58 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                         checked((ushort)connectionId),
                                         LegacyTinyCombineRelay.ProcessingCompleteMessage,
                                         LegacyTinyCombineRelay.CombineFailedMessage,
-                                        out var tinyCombineFrames) || tinyCombineFrames is null)
-                                {
-                                    var rolledBack = world.TryRollbackTinyCombine(tinyCombineOutcome);
-                                    Console.WriteLine($"Tiny combine rolled back: relay construction failed; account={tinyCombineSession.AccountName}, runtimeRollback={rolledBack}.");
-                                    continue;
-                                }
+                                        out var plannedFrames) || plannedFrames is null)
+                                    return ValueTask.FromResult<IReadOnlyList<byte[]>?>(null);
 
-                                if (tinyCombineOutcome.GuildTaxNpcUpdate is { } guildTaxUpdate)
-                                {
-                                    if (guildTreasuryFileStore is null)
-                                    {
-                                        Console.WriteLine($"Guild treasury save skipped: category=Combines, npc={guildTaxUpdate.ConnectionId}, reason=NpcRootUnavailable; runtime-credit=true.");
-                                    }
-                                    else
-                                    {
-                                        try
-                                        {
-                                            var saveResult = await guildTreasuryFileStore.SaveAsync(world, guildTaxUpdate.ConnectionId, cancellationToken);
-                                            Console.WriteLine($"Guild treasury save: category=Combines, npc={guildTaxUpdate.ConnectionId}, result={saveResult}; runtime-credit=true.");
-                                        }
-                                        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
-                                        {
-                                            Console.WriteLine($"Guild treasury save failed: category=Combines, npc={guildTaxUpdate.ConnectionId}, error={error.GetType().Name}; runtime-credit=true.");
-                                        }
-                                    }
-                                }
+                                return ValueTask.FromResult<IReadOnlyList<byte[]>?>(plannedFrames);
+                            },
+                            cancellationToken);
 
-                                foreach (var tinyCombineFrame in tinyCombineFrames)
-                                    await stream.WriteAsync(tinyCombineFrame, cancellationToken);
+                        var prepareResult = tinyDispatch.PreparationResult;
+                        var applyResult = tinyDispatch.ApplicationResult;
+                        var tinyCombineOutcome = tinyDispatch.Outcome;
+                        var tinyCombineFrames = tinyDispatch.ResponseFrames;
+                        if (tinyDispatch.ResponsePlanningFailed && tinyCombineOutcome is not null)
+                        {
+                            Console.WriteLine($"Tiny combine rolled back: response planning failed; account={tinyCombineSession.AccountName}, runtimeRollback={tinyDispatch.RollbackSucceeded}.");
+                            continue;
+                        }
 
-                                Console.WriteLine($"Tiny combine result: category=Combines, event={(tinyCombineOutcome.Succeeded ? "Succeeded" : "Failed")}, account={tinyCombineSession.AccountName}, raw-roll={tinyCombineOutcome.RawRoll}, normalized-roll={tinyCombineOutcome.NormalizedRoll}, threshold={tinyCombineOutcome.SuccessThreshold}, gold={tinyCombineOutcome.CoinAfter}, guild-tax={(tinyCombineOutcome.GuildTaxNpcUpdate is null ? "none" : "credited")}.");
-                            }
-                            else if (applyResult == LegacyTinyCombineApplicationResult.StateChanged)
+                        if (prepareResult == LegacyTinyCombinePreparationResult.Accepted &&
+                            applyResult == LegacyTinyCombineApplicationResult.Accepted &&
+                            tinyCombineOutcome is not null && tinyCombineFrames is not null)
+                        {
+                            if (tinyCombineOutcome.GuildTaxNpcUpdate is { } guildTaxUpdate)
                             {
-                                var completeFrame = new TinyCombineCompleteConfirmation()
-                                    .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, result: 0);
-                                await stream.WriteAsync(completeFrame, cancellationToken);
-                                Console.WriteLine($"Tiny combine rejected after state changed: account={tinyCombineSession.AccountName}.");
+                                if (guildTreasuryFileStore is null)
+                                {
+                                    Console.WriteLine($"Guild treasury save skipped: category=Combines, npc={guildTaxUpdate.ConnectionId}, reason=NpcRootUnavailable; runtime-credit=true.");
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        var saveResult = await guildTreasuryFileStore.SaveAsync(world, guildTaxUpdate.ConnectionId, cancellationToken);
+                                        Console.WriteLine($"Guild treasury save: category=Combines, npc={guildTaxUpdate.ConnectionId}, result={saveResult}; runtime-credit=true.");
+                                    }
+                                    catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+                                    {
+                                        Console.WriteLine($"Guild treasury save failed: category=Combines, npc={guildTaxUpdate.ConnectionId}, error={error.GetType().Name}; runtime-credit=true.");
+                                    }
+                                }
                             }
-                            else
-                                Console.WriteLine($"Tiny combine apply rejected: account={tinyCombineSession.AccountName}, reason={applyResult}.");
+
+                            foreach (var tinyCombineFrame in tinyCombineFrames)
+                                await stream.WriteAsync(tinyCombineFrame, cancellationToken);
+
+                            Console.WriteLine($"Tiny combine result: category=Combines, event={(tinyCombineOutcome.Succeeded ? "Succeeded" : "Failed")}, account={tinyCombineSession.AccountName}, raw-roll={tinyCombineOutcome.RawRoll}, normalized-roll={tinyCombineOutcome.NormalizedRoll}, threshold={tinyCombineOutcome.SuccessThreshold}, gold={tinyCombineOutcome.CoinAfter}, guild-tax={(tinyCombineOutcome.GuildTaxNpcUpdate is null ? "none" : "credited")}.");
+                        }
+                        else if (applyResult == LegacyTinyCombineApplicationResult.StateChanged)
+                        {
+                            var completeFrame = new TinyCombineCompleteConfirmation()
+                                .ToFrame(LegacyFrameCodec.CreateDefault(), frame.Header.ClientTick, frame.Header.KeywordIndex, result: 0);
+                            await stream.WriteAsync(completeFrame, cancellationToken);
+                            Console.WriteLine($"Tiny combine rejected after state changed: account={tinyCombineSession.AccountName}.");
                         }
                         else if (prepareResult == LegacyTinyCombinePreparationResult.ItemChanged)
                         {
@@ -1503,11 +1500,12 @@ static async Task InspectConnectionAsync(TcpClient client, int connectionId, ICh
                                     await world.SendAsync(recipientId, closePlan.Frame, cancellationToken);
                             Console.WriteLine($"Tiny combine invalid position triggered trade cleanup: account={tinyCombineSession.AccountName}, close={closeDispatch.Outcome.Result}; legacy signal 900 maps to MSG_QuitTrade 0x0384.");
                         }
+                        else if (prepareResult == LegacyTinyCombinePreparationResult.Accepted)
+                            Console.WriteLine($"Tiny combine apply rejected: account={tinyCombineSession.AccountName}, reason={applyResult}.");
                         else
                             Console.WriteLine($"Tiny combine preparation rejected: account={tinyCombineSession.AccountName}, reason={prepareResult}.");
                         continue;
                     }
-
                     if (UseItemRequest.TryParse(frame, out var useItem) && useItem is not null)
                     {
                         if (!sessions.TryGet(connectionId, out var useItemSession) || useItemSession!.State != LoginSessionState.Playing)
