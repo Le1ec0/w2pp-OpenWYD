@@ -12267,6 +12267,42 @@ and covered by Engine.Tests. This remains a source audit for global BL-000: the
 candidate declaration count and textual scans do not prove a complete runtime
 call graph, and additional whole-MOB writer groups still need classification.
 
+#### BL-000 — Tiny combine reservation boundary (06/11/2026)
+
+The active Host acquires the account reservation before `TryPrepareTinyCombine`
+and `TryApplyTinyCombine` (`Program.cs`, `TinyCombineRequest` dispatch), but
+disposes it immediately after apply and before building `UpdateEtc` and the Tiny
+relay frames. Both response-planning failure branches then call
+`WorldHub.TryRollbackTinyCombine` after that disposal. If either branch is
+reachable, a checkpoint can enter the gap and persist the applied Tiny result
+before a failed response plan rolls the runtime MOB/Gold back; the durable
+account blob is not compensated by this path. The reachability audit did not
+find a current trigger for either branch after a valid apply: the first requires
+the participant to be absent or its MOB shorter than the required ABI, while
+the connection's departure runs only after its current request handler returns;
+the second requires an inconsistent outcome shape, which the accepted outcome
+builder currently returns aligned. Existing response tests cover valid success
+and failure plans but do not force a post-apply planner failure. Therefore the
+ordering is a defensive-path hardening candidate, not a reproduced or confirmed
+data-loss bug.
+
+TMProject 7.69 `TMSrv/_MSG_CombineItemTiny.cpp` and W2PP's same-named handler
+both charge `MOB.Coin`, mutate the carry on success/failure, and then send their
+message/signal frames (`SendClientMsg`/`SendClientMessage` and
+`SendClientSignalParm`). The C# conditional rollback is an additional failure
+path, so its account lease must span response-frame construction and any
+rollback, then be released before treasury-file I/O and socket writes.
+
+Next bounded slice: extract the Tiny dispatch's apply/response-plan/rollback
+boundary into a testable coordinator. Force response-plan failure after a real
+accepted `WorldHub` outcome while a checkpoint waits on the same account lease;
+prove rollback completes before the checkpoint captures state. Also prove a
+successful result is checkpointed and no lease crosses treasury storage or
+socket I/O. If the production response builders make the failure unreachable,
+record that invariant rather than claiming a data-loss defect. Run the test and
+authenticated headless smoke on the VPS against disposable account/database
+fixtures; do not use the active MariaDB service for test mutations.
+
 #### Observed gate order and reservation design (05/11/2026)
 
 Observed acquisition order in the current implementation:
